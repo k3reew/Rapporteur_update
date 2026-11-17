@@ -8,7 +8,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
 from razdel import sentenize
 
 from rapporteur.contracts import Claim, SummaryDraft, SummaryLine, TalkFragmentPack
@@ -69,6 +69,9 @@ class SummaryChecksConfig(BaseModel):
     forbidden: tuple[str, ...] = DEFAULT_FORBIDDEN
     # Порядок важности типов утверждений; типы, не названные здесь, идут последними.
     priorities: tuple[ClaimType, ...] = DEFAULT_PRIORITIES
+    # Сколько утверждений типа текст обязан использовать (не больше, чем их есть).
+    # Пусто — без требования; в поставке требование задаёт summary.yaml.
+    required: dict[ClaimType, NonNegativeInt] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _ordered(self) -> "SummaryChecksConfig":
@@ -76,7 +79,7 @@ class SummaryChecksConfig(BaseModel):
             raise ValueError("min_sentences больше max_sentences")
         if len(set(self.priorities)) != len(self.priorities):
             raise ValueError("типы в priorities повторяются")
-        if ClaimType.LISTENER_REMARK in self.priorities:
+        if ClaimType.LISTENER_REMARK in [*self.priorities, *self.required]:
             raise ValueError("реплики слушателей в текст сводки не входят")
         return self
 
@@ -111,6 +114,54 @@ def sentence_range(config: SummaryChecksConfig, claims: Sequence[Claim]) -> tupl
     return max(1, min(config.min_sentences, available)), config.max_sentences
 
 
+CLAIM_NAMES = {
+    ClaimType.CONCLUSION: "выводы автора",
+    ClaimType.RESULT: "результаты",
+    ClaimType.METHOD: "метод",
+    ClaimType.PROBLEM: "задача",
+}
+
+
+def required_claims(
+    config: SummaryChecksConfig, claims: Sequence[Claim]
+) -> list[tuple[ClaimType, int, list[str]]]:
+    """Обязательные утверждения по типам в порядке важности: тип, сколько нужно, ключи."""
+    usable = usable_claims(claims)
+    result = []
+    for claim_type in sorted(config.required, key=config.rank):
+        keys = [claim.key for claim in usable if claim.type is claim_type]
+        need = min(config.required[claim_type], len(keys))
+        if need:
+            result.append((claim_type, need, keys))
+    return result
+
+
+def required_lines(config: SummaryChecksConfig, claims: Sequence[Claim]) -> list[str]:
+    """Требование для промпта: «результаты: не меньше 2 из c3, c5, c6» или все ключи."""
+    return [
+        f"{CLAIM_NAMES[claim_type]}: {', '.join(keys)}"
+        if need == len(keys)
+        else f"{CLAIM_NAMES[claim_type]}: не меньше {need} из {', '.join(keys)}"
+        for claim_type, need, keys in required_claims(config, claims)
+    ]
+
+
+def coverage_problems(
+    draft: SummaryDraft, claims: Sequence[Claim], config: SummaryChecksConfig
+) -> list[str]:
+    used = {key for line in [*draft.sentences, *draft.conclusions] for key in line.claim_ids}
+    problems = []
+    for claim_type, need, keys in required_claims(config, claims):
+        covered = [key for key in keys if key in used]
+        if len(covered) < need:
+            missing = [key for key in keys if key not in used]
+            problems.append(
+                f"{CLAIM_NAMES[claim_type]}: отражено {len(covered)} из нужных {need}, "
+                f"используй {', '.join(missing)}"
+            )
+    return problems
+
+
 def check_summary(
     draft: SummaryDraft,
     claims: Sequence[Claim],
@@ -124,6 +175,8 @@ def check_summary(
         CheckName.NUMBERS_IN_SOURCES: number_problems(draft, claims, pack),
         CheckName.FORBIDDEN_PHRASES: forbidden_problems(draft, config.forbidden),
     }
+    if config.required:
+        checks[CheckName.COVERAGE] = coverage_problems(draft, claims, config)
     return [
         CheckResult(
             check=name,

@@ -4,12 +4,12 @@
 
 | Шаг | Файл | Ответ модели |
 | --- | --- | --- |
-| А. Факты и цитаты | [facts/v2.md](facts/v2.md) | `FactsDraft` |
-| Сверка фактов по контексту | [facts-review/v2.md](facts-review/v2.md) | `FactsDraft` |
-| В. Текст сводки | [summary/v2.md](summary/v2.md) | `SummaryDraft` |
-| Смысловой критик | [critic/v2.md](critic/v2.md) | `GroundingReview` |
+| А. Факты и цитаты | [facts/v3.md](facts/v3.md) | `FactsDraft` |
+| Сверка фактов по контексту | [facts-review/v3.md](facts-review/v3.md) | `FactsDraft` |
+| В. Текст сводки | [summary/v3.md](summary/v3.md) | `SummaryDraft` |
+| Смысловой критик | [critic/v3.md](critic/v3.md) | `GroundingReview` |
 
-Активные профили выпуска 0.2.1 используют v2. Исторические [facts/v1.md](facts/v1.md) и [summary/v1.md](summary/v1.md) сохранены. Проверки цитат и решение оператора выполняются отдельно от смыслового критика.
+Активные профили используют v3. По сравнению с v2 факты и сводка ставят выводы и результаты автора выше общего описания, а сводка получает порядок важности и обязательные утверждения из [summary.yaml](../summary.yaml). Сверка фактов и критик в v3 совпадают с v2. Редакции v2 и исторические [facts/v1.md](facts/v1.md) и [summary/v1.md](summary/v1.md) сохранены. Проверки цитат и решение оператора выполняются отдельно от смыслового критика.
 
 ## Формат файла
 

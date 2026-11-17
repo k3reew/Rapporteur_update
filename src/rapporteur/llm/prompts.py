@@ -34,6 +34,12 @@ class Prompt:
             ) from error
 
 
+def edition(version: str) -> int:
+    """Номер редакции промптов: «v3» → 3. Сверка фактов и смысловой критик работают со
+    второй редакции, обязательные утверждения и проверка сокращений — с третьей."""
+    return int(version.removeprefix("v"))
+
+
 def load_prompt(step: str, version: str, directory: Path = PROMPTS_DIR) -> Prompt:
     path = directory / step / f"{version}.md"
     try:

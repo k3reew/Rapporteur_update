@@ -25,7 +25,7 @@ from rapporteur.contracts.enums import FragmentKind, PackBlock
 from rapporteur.errors import FailureCode, StageError
 from rapporteur.llm.client import LlmClient, Message
 from rapporteur.llm.profiles import load_profile
-from rapporteur.llm.prompts import Prompt, load_prompt
+from rapporteur.llm.prompts import Prompt, edition, load_prompt
 from rapporteur.llm.structured import ask_structured
 from rapporteur.llm.tasks import json_task
 from rapporteur.settings import PROMPTS_DIR
@@ -128,7 +128,7 @@ def extract_facts(
                     sources: TalkFragmentPack = sources,
                     first: FactsArtifact = pair[0],
                 ) -> FactsArtifact:
-                    if profile.prompt_version == "v2":
+                    if edition(profile.prompt_version) >= 2:
                         if not sources.fragments:
                             return first
                         return _review_facts(client, sources, config, content)
@@ -172,7 +172,7 @@ def extract_facts(
         check=lambda facts: _facts_problems(facts, pack),
         schema=_facts_schema(pack),
     )
-    if profile.prompt_version == "v2":
+    if edition(profile.prompt_version) >= 2:
         reviewed = _review_facts(client, pack, config, result.value.model_dump_json())
         return reviewed.model_copy(update={"attempts": result.attempts + reviewed.attempts})
     return FactsArtifact(

@@ -123,6 +123,8 @@ class CheckName(StrEnum):
     NUMBERS_IN_SOURCES = "numbers_in_sources"
     FORBIDDEN_PHRASES = "forbidden_phrases"
     CRITIC = "critic"
+    # Обязательные утверждения summary.yaml (выводы, результаты) отражены в тексте.
+    COVERAGE = "coverage"
 
 
 class InferenceEngine(StrEnum):

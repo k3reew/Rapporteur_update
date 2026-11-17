@@ -29,12 +29,14 @@ from rapporteur.contracts.claims import CheckResult
 from rapporteur.contracts.enums import CheckName, ClaimType, SummaryStatus
 from rapporteur.llm.client import LlmClient, Message
 from rapporteur.llm.profiles import load_profile
-from rapporteur.llm.prompts import load_prompt
+from rapporteur.llm.prompts import edition, load_prompt
 from rapporteur.llm.structured import ask_structured
 from rapporteur.settings import PROMPTS_DIR
 from rapporteur.summarize.checks import (
+    CLAIM_NAMES,
     SummaryChecksConfig,
     check_summary,
+    required_lines,
     sentence_range,
     usable_claims,
 )
@@ -111,7 +113,16 @@ def write_summary(
     ]
     evidence = [item for claim in usable for item in claim.evidence]
     messages = [
-        Message("system", prompt.render("system", min_sentences=low, max_sentences=high)),
+        Message(
+            "system",
+            prompt.render(
+                "system",
+                min_sentences=low,
+                max_sentences=high,
+                priorities=[CLAIM_NAMES[item] for item in config.checks.priorities],
+                required=required_lines(config.checks, claims),
+            ),
+        ),
         Message(
             "user",
             prompt.render(
@@ -138,7 +149,7 @@ def write_summary(
         )
         draft = _punctuated(result.value)
         current = check_summary(draft, claims, pack, config.checks, attempt)
-        if profile.prompt_version == "v2" and all(check.passed for check in current):
+        if edition(profile.prompt_version) >= 2 and all(check.passed for check in current):
             current.append(
                 review_summary(
                     client, profile, draft, claims, pack, attempt=attempt, seed=config.seed
