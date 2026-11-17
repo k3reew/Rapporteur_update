@@ -8,9 +8,11 @@ from pydantic import BaseModel
 
 from rapporteur import (
     db,
+    departments,
     materials,
     preparation,
     processing,
+    screening,
 )
 from rapporteur.api.dependencies import ReadTx, Tx, _storage, _wake
 from rapporteur.contracts.enums import SummaryStatus, TalkStatus
@@ -33,6 +35,7 @@ class TalkProgress(BaseModel):
     error: str | None
     summary_number: int | None
     summary_status: SummaryStatus | None
+    screening: dict[str, object] | None = None
     bulk_reviewable: bool = False
     # Выбор оператора и итог обработки: только карточка, без сводки (interest.py).
     scope: Scope = Scope.AUTO
@@ -50,6 +53,7 @@ def start_processing(request: Request, conn: Tx, conference_id: str) -> Progress
     materials.require_conference(conn, conference_id)
     if not db.one(conn, "SELECT 1 FROM files WHERE conference_id = ?", conference_id):
         raise UserError("Сначала загрузите материалы")
+    departments.require_regulations(conn)
     conn.execute("UPDATE conferences SET processing_started = 1 WHERE id = ?", (conference_id,))
     processing.enqueue_ready(conn, conference_id)
     _wake(request)
@@ -78,6 +82,7 @@ def conference_progress(conn: ReadTx, conference_id: str) -> Progress:
                 card_only=bool(row["card_only"]),
                 summary_number=summary["number"] if summary else None,
                 summary_status=json.loads(summary["summary"])["status"] if summary else None,
+                screening=screening.view(conn, row["id"]),
                 bulk_reviewable=bool(
                     summary
                     and row["status"] == "processed"
@@ -160,3 +165,41 @@ def confirm_preparation(
         processing.enqueue_ready(conn, conference_id)
         _wake(request)
     return preparation.state(conn, conference_id)
+
+
+@api.get("/conferences/{conference_id}/screening")
+def conference_screening(conn: ReadTx, conference_id: str) -> list[dict[str, object]]:
+    materials.require_conference(conn, conference_id)
+    return [
+        {"talk_id": row["id"], **screening.view(conn, row["id"])}
+        for row in db.conference_talks(conn, conference_id)
+    ]
+
+
+@api.post("/conferences/{conference_id}/screening", status_code=202)
+def rescreen(request: Request, conn: Tx, conference_id: str) -> list[dict[str, object]]:
+    materials.require_conference(conn, conference_id)
+    departments.require_regulations(conn)
+    for talk in db.conference_talks(conn, conference_id):
+        if talk["status"] in ("matched", "stale", "processed", "reviewed"):
+            screening.queue(conn, talk["id"], force=True)
+            conn.execute("UPDATE talks SET job=NULL,step='screening' WHERE id=?", (talk["id"],))
+    _wake(request)
+    return conference_screening(conn, conference_id)
+
+
+@api.put("/talks/{talk_id}/screening")
+def review_screening(
+    request: Request, conn: Tx, talk_id: str, data: screening.Review
+) -> dict[str, object]:
+    screening.review(conn, talk_id, data)
+    row = db.one(
+        conn,
+        "SELECT c.processing_started FROM conferences c JOIN sections s ON "
+        "s.conference_id=c.id JOIN talks t ON t.section_id=s.id WHERE t.id=?",
+        talk_id,
+    )
+    if row and row["processing_started"]:
+        processing.enqueue(conn, [talk_id])
+        _wake(request)
+    return screening.view(conn, talk_id)

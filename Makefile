@@ -37,7 +37,7 @@ RUN = ASR_ENABLED=$(ASR_ENABLED) $(COMPOSE) $(ASR_FLAGS) up
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: help up start down ps logs config check lint test format pull lock bundle install prepare doctor
+.PHONY: bundle-docs help up start down ps logs config check lint test format pull lock bundle install prepare doctor
 
 help:
 	@grep -E '^## ' Makefile | sed 's/^## //'
@@ -112,15 +112,21 @@ bundle:
 	cp compose.yaml Makefile $(BUNDLE)/
 	mkdir -p $(BUNDLE)/scripts
 	cp scripts/doctor.sh scripts/asr-mode.sh $(BUNDLE)/scripts/
-	cp docs/offline.md $(BUNDLE)/README.md
-	sed 's|(offline.md\#|(README.md\#|g' docs/workflow.md > $(BUNDLE)/WORKFLOW.md
-	cp docs/acceptance.md $(BUNDLE)/ACCEPTANCE.md
-	cp docs/benchmarks/2026-11-14-redesign.md $(BUNDLE)/VALIDATION.md
+	$(MAKE) bundle-docs
 	sed 's|^OLLAMA_MODELS_DIR=.*|OLLAMA_MODELS_DIR=./models|; s|^ASR_MODELS_DIR=.*|ASR_MODELS_DIR=./models/asr|' .env.example > $(BUNDLE)/.env.example
 	printf '\n# Образ Ollama из комплекта: тег вместо digest (docs/offline.md).\nOLLAMA_IMAGE=%s\n' \
 	  "$(OLLAMA_TAG)" >> $(BUNDLE)/.env.example
-	cd $(BUNDLE) && find images.tar.gz models compose.yaml Makefile .env.example README.md WORKFLOW.md ACCEPTANCE.md VALIDATION.md scripts -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+	cd $(BUNDLE) && find images.tar.gz models compose.yaml Makefile .env.example README.md WORKFLOW.md ACCEPTANCE.md VALIDATION.md scripts docs -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 	@du -sh $(BUNDLE)
+
+## make bundle-docs — обновить инструкции внутри подготовленного комплекта
+bundle-docs:
+	mkdir -p $(BUNDLE)/docs
+	cp -a docs/. $(BUNDLE)/docs/
+	printf '# Офлайн-установка «Репортёра»\n\n[Перенос, запуск и обновление](docs/offline.md)\n\n[Выпуск 0.3.0 и резервное копирование](docs/release-0.3.0.md)\n' > $(BUNDLE)/README.md
+	printf '# Руководство оператора\n\n[Открыть руководство](docs/workflow.md)\n' > $(BUNDLE)/WORKFLOW.md
+	printf '# Серверная приёмка\n\n[Открыть порядок проверки](docs/acceptance.md)\n' > $(BUNDLE)/ACCEPTANCE.md
+	printf '# Локальная проверка 0.3.0\n\n[Протокол](docs/benchmarks/2026-11-17-release-0.3.0.md)\n' > $(BUNDLE)/VALIDATION.md
 
 ## make install — в каталоге комплекта: проверить контрольные суммы и загрузить образы
 install:

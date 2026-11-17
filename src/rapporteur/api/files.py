@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from rapporteur import (
     db,
+    departments,
     materials,
     processing,
 )
@@ -58,6 +59,9 @@ async def upload_material(
     def require() -> None:
         with database.read() as conn:
             materials.require_conference(conn, conference_id)
+            from rapporteur.departments import require_regulations
+
+            require_regulations(conn)
 
     await run_in_threadpool(require)
     work = storage.root / "tmp"
@@ -210,6 +214,7 @@ def change_purpose(request: Request, conn: Tx, file_id: str, data: PurposeWrite)
     row = db.one(conn, "SELECT * FROM files WHERE id=?", file_id)
     if row is None:
         raise NotFoundError("Материал не найден")
+    departments.require_regulations(conn)
     if row["kind"] in (FileKind.AUDIO, FileKind.VIDEO, FileKind.IMAGE):
         raise UserError("Для записи и изображения назначение определяется форматом")
     if data.purpose == "presentation" and row["media_type"] not in (PPTX, "application/pdf"):

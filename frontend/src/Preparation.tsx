@@ -1,3 +1,5 @@
+import { Interest } from './Interest';
+import type { Screening } from './talkTypes';
 import { useState } from 'react';
 import { request } from './api';
 import { LegacyTalks } from './LegacyTalks';
@@ -18,6 +20,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
   const url = `/api/v1/conferences/${conferenceId}/preparation`;
   const { data: state, setData: setState, error: loadError, refresh } = useResource<State>(url, 5000);
   const { data: review, error: materialsError } = useResource<Review>(`/api/v1/conferences/${conferenceId}/materials`, 5000);
+  const { data: interests, refresh: refreshInterests } = useResource<({ talk_id: string } & Screening)[]>(`/api/v1/conferences/${conferenceId}/screening`, 5000);
   const [draft, setDraft] = useState<{ version: number; talks: Talk[] }>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -109,6 +112,9 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
           }}>Объединить со следующим</button>
           <button onClick={() => editTalks(talks.filter((_, i) => i !== index))}>Исключить из разбиения</button></div>
       </fieldset></details>)}
+      {state?.job === 'confirmed' && !!interests?.length && <section aria-label="Отбор докладов"><h3>Интерес отделов</h3>
+        {interests.map(item => <div key={item.talk_id}><b>{review?.talks.find(talk => talk.id === item.talk_id)?.title ?? 'Доклад'}</b><Interest key={item.version} talkId={item.talk_id} value={item} refresh={refreshInterests} /></div>)}
+      </section>}
       <footer className="step-footer"><button className="link" disabled={busy || running || !!draft} onClick={() => void act(false)}>Подготовить заново</button>
       <button className="primary" disabled={busy || running || !talks.length || talks.some(t => !t.links.length || !t.title.trim())}
         onClick={() => void act(true)}>{state?.job === 'confirmed' && !draft ? 'Запустить обработку' : 'Подтвердить и обработать'}</button></footer>

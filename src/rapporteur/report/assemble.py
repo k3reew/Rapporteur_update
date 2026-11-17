@@ -28,6 +28,7 @@ from rapporteur.contracts.reports import (
     ReportVariables,
     SkippedTalk,
 )
+from rapporteur.llm.prompts import edition
 from rapporteur.report.template import Period
 
 _SKIP_REASONS = {
@@ -141,6 +142,11 @@ def build_report_input(
             )
             if not talk.title or not talk.speakers:
                 warnings.append(f"Уточните тему или автора: {_name(talk)}")
+            if (
+                edition(summary.prompt_versions.get("summary", "v1")) >= 3
+                and len(summary.sentences) < 6
+            ):
+                warnings.append(f"Короткая сводка: проверьте полноту источников — {_name(talk)}")
             if summary.status is SummaryStatus.NEEDS_ATTENTION:
                 warnings.append(f"Сводка не прошла проверки, нужна правка: {_name(talk)}")
             if talk.status is TalkStatus.STALE:
@@ -193,13 +199,23 @@ def _report_talk(
             _clean(person.affiliation) for person in speakers if person.affiliation
         ),
         status=talk.status,
-        summary=" ".join(line.text for line in summary.sentences) if summary else None,
+        summary=_summary_text(summary) if summary else None,
         conclusions=[line.text for line in summary.conclusions] if summary else [],
         card_only=summary is None,
         authors=authors,
         organizations=organizations,
         contacts=contacts,
     )
+
+
+def _summary_text(summary: Summary) -> str:
+    """С редакции v3 длинная сводка (от 6 предложений) делится на два абзаца: задача и подход,
+    затем результаты и ограничения."""
+    sentences = [line.text for line in summary.sentences]
+    if edition(summary.prompt_versions.get("summary", "v1")) < 3 or len(sentences) < 6:
+        return " ".join(sentences)
+    half = (len(sentences) + 1) // 2
+    return " ".join(sentences[:half]) + "\n\n" + " ".join(sentences[half:])
 
 
 def _card(talk: Talk) -> tuple[list[str], list[str], list[str]]:

@@ -12,14 +12,18 @@ from rapporteur import interest
 from rapporteur.llm.client import ScriptedClient
 
 from .fictional_talk import SLIDES
+from .workflow_support import WorkflowClient, seed_regulation
 
 
 @pytest.fixture
 def web(tmp_path: Path) -> Iterator[tuple[TestClient, ScriptedClient]]:
     from rapporteur.app import create_app
 
-    scripted = ScriptedClient([])
-    with TestClient(create_app(tmp_path, client=lambda _: scripted, process=False)) as client:
+    # Отбор отделов отвечает «интересен», сводку и факты задаёт сам тест.
+    scripted = WorkflowClient([])
+    application = create_app(tmp_path, client=lambda _: scripted, process=False)
+    seed_regulation(application.state.database)
+    with TestClient(application) as client:
         yield client, scripted
 
 

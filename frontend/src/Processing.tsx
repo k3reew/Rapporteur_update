@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 
+import { Interest } from './Interest';
 import { request } from './api';
 import { useResource } from './useResource';
 import { statusTone, talkStatuses } from './status';
@@ -7,6 +8,7 @@ import { statusTone, talkStatuses } from './status';
 import type { Progress, Scope, TalkProgress } from './talkTypes';
 
 const steps: Record<string, string> = {
+  screening: 'отбор по отделам',
   parse: 'разбор материалов',
   facts: 'факты и цитаты',
   verify: 'сверка цитат',
@@ -76,6 +78,7 @@ export function Processing(
   return (
     <section className="card" aria-labelledby="processing-title">
       <h2 id="processing-title">Проверка докладов</h2><p className="muted">Дождитесь обработки, проверьте сводки и подтвердите результаты.</p>
+      <button onClick={() => { void request(`/api/v1/conferences/${conferenceId}/screening`, { method: 'POST' }).then(refresh).catch((e: Error) => setError(e.message)); }}>Пересчитать интерес отделов</button>
       <button disabled={bulkBusy || !progress?.talks.some(t => t.bulk_reviewable)} onClick={() => void confirmAll()}>
         Подтвердить все готовые ({progress?.talks.filter(t => t.bulk_reviewable).length ?? 0})
       </button>
@@ -110,7 +113,7 @@ export function Processing(
             </small>
           </div>
           <div className="table-wrap">
-          <table>
+          <table className="processing-table">
             <thead>
               <tr>
                 <th scope="col">Доклад</th>
@@ -124,7 +127,7 @@ export function Processing(
               {progress.talks.map((talk) => {
                 const job = jobLabel(talk);
                 return (
-                  <tr key={talk.id}>
+                  <Fragment key={talk.id}><tr>
                     <th scope="row">{talk.section} · {talk.order}. {talk.title ?? 'Без названия'}</th>
                     <td>
                       <span className={`pill ${statusTone[talk.status] ?? ''}`}>{talkStatuses[talk.status] ?? talk.status}</span>
@@ -153,7 +156,7 @@ export function Processing(
                       </button>
                       {talk.job === 'failed' && <button onClick={() => void retry(talk)}>Повторить</button>}
                     </td>
-                  </tr>
+                  </tr>{talk.screening && <tr><td colSpan={4}><Interest key={talk.screening.version} talkId={talk.id} value={talk.screening} refresh={refresh} /></td></tr>}</Fragment>
                 );
               })}
             </tbody>

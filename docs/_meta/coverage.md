@@ -19,7 +19,7 @@
 | `runbook` | 2 |
 | `test-strategy` | 1 |
 | `kind-index` | 2 |
-| `reference` | 6 |
+| `reference` | 8 |
 | `legacy` | 30 |
 
 ## Решения по статусам
@@ -32,7 +32,7 @@
 
 | Правило | Число |
 |---|---|
-| `indexed` | 20 |
+| `indexed` | 22 |
 | `kind-index` | 2 |
 | `legacy` | 30 |
 

@@ -11,11 +11,15 @@ from rapporteur import db
 from rapporteur.app import create_app
 from rapporteur.llm.client import ScriptedClient
 
+from .workflow_support import seed_regulation
+
 
 @pytest.fixture
 def web(tmp_path: Path) -> Iterator[tuple[TestClient, ScriptedClient]]:
     scripted = ScriptedClient([])
-    with TestClient(create_app(tmp_path, client=lambda _: scripted, process=False)) as client:
+    application = create_app(tmp_path, client=lambda _: scripted, process=False)
+    seed_regulation(application.state.database)
+    with TestClient(application) as client:
         yield client, scripted
 
 
@@ -103,7 +107,7 @@ def test_confirmed_proposal_writes_card(web: tuple[TestClient, ScriptedClient]) 
     assert card["contacts"] == ["https://example.org"]
 
 
-def test_v1_database_gets_card_columns_and_backup(tmp_path: Path) -> None:
+def test_release_030_database_gets_card_columns_and_backup(tmp_path: Path) -> None:
     path = tmp_path / "rapporteur.db"
     database = db.Database(path)
     conference, section, talk_id = db.new_id(), db.new_id(), db.new_id()
@@ -126,10 +130,11 @@ def test_v1_database_gets_card_columns_and_backup(tmp_path: Path) -> None:
         conn.execute("ALTER TABLE talks DROP COLUMN contacts")
         conn.execute("ALTER TABLE talks DROP COLUMN scope")
         conn.execute("ALTER TABLE talks DROP COLUMN card_only")
-        conn.execute("PRAGMA user_version = 1")
+        # База выпуска 0.3.0: отбор и фоновые выпуски уже есть (v2), карточки ещё нет.
+        conn.execute("PRAGMA user_version = 2")
 
     upgraded = db.Database(path)
-    assert (tmp_path / "rapporteur.db.before-v2.bak").is_file()
+    assert (tmp_path / "rapporteur.db.before-v3.bak").is_file()
     with upgraded.read() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
         talk = db.talk(db.conference_talks(conn, conference)[0])

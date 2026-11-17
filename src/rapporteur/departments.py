@@ -47,6 +47,17 @@ def revisions(conn: sqlite3.Connection) -> dict[str, int]:
     return {item["id"]: item["version"] for item in latest(conn)}
 
 
+def require_regulations(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    usable = [dep for dep in latest(conn) if any(p["text"].strip() for p in dep["pages"])]
+    if not usable:
+        raise UserError(
+            "Сначала загрузите положение хотя бы одного отдела в разделе «Отделы».",
+            409,
+            code="departments_required",
+        )
+    return usable
+
+
 def paragraphs(department: dict[str, Any]) -> dict[str, str]:
     result = {}
     for page in department["pages"]:
@@ -151,6 +162,16 @@ def run_once(database: db.Database, factory: Callable[[ModelProfile], LlmClient]
                         },
                         ensure_ascii=False,
                     )
+                    schema = Matches.model_json_schema()
+                    schema["properties"]["items"]["maxItems"] = 3
+                    fields = schema["$defs"]["Recommendation"]["properties"]
+                    fields["department_id"]["enum"] = [dep["id"]]
+                    fields["department_version"]["enum"] = [dep["version"]]
+                    fields["reason"]["maxLength"] = 600
+                    fields["claim_ids"]["items"]["enum"] = [c.key for c in batch]
+                    fields["claim_ids"]["maxItems"] = len(batch)
+                    fields["paragraph_ids"]["items"]["enum"] = [paragraph_id]
+                    fields["paragraph_ids"]["maxItems"] = 1
                     found = json_task(
                         client,
                         profile,
@@ -160,6 +181,8 @@ def run_once(database: db.Database, factory: Callable[[ModelProfile], LlmClient]
                         "Обоснование по-русски, с точными claim_ids и paragraph_ids из входа.",
                         content,
                         Matches,
+                        schema=schema,
+                        task=f"Рекомендации {talk_id}, отдел {dep['name']}, {paragraph_id}",
                     )
                     validate(found.items, summary, [dep])
                     allowed = {c.key for c in batch}

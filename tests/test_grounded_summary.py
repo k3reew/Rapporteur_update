@@ -217,7 +217,7 @@ def test_critic_reads_adjacent_asr_context_from_the_same_recording() -> None:
     )
     client = ScriptedClient(['{"decisions":[{"line":"s1","supported":false,"reason":"Это цель"}]}'])
     check = review_summary(client, PROFILE_V2, draft, claims, source, attempt=1, seed=1)
-    assert not check.passed
+    assert not check[0].passed
     assert "Идеальный итог, которого мы хотим достичь" in client.requests[0].messages[1].content
 
 
@@ -247,7 +247,7 @@ def test_critic_uses_bounded_windows_for_an_oversized_source() -> None:
     )
     client = ScriptedClient(['{"decisions":[{"line":"s1","supported":true,"reason":"Да"}]}'])
     check = review_summary(client, PROFILE_V2, draft, claims, source, attempt=1, seed=1)
-    assert check.passed
+    assert check[0].passed
     content = client.requests[0].messages[1].content
     assert "Результаты" in content and "LFU снизила задержку" in content
     assert len(content) < 6000
@@ -279,7 +279,7 @@ def test_critic_explanation_is_bounded_and_invalid_answers_are_repaired() -> Non
     oversized["decisions"][0]["reason"] = "Повтор объяснения. " * 100
     client = ScriptedClient([json.dumps(oversized, ensure_ascii=False), audit_answer()])
     result = review_summary(client, PROFILE_V2, draft, claims, pack(), attempt=1, seed=1)
-    assert result.passed
+    assert result[0].passed
     assert len(client.requests) == 2
     schema = client.requests[0].schema
     assert schema is not None

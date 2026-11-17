@@ -246,3 +246,11 @@ def test_asr_download_picks_whisper_size_and_drops_previous_model_files(
     }
     with pytest.raises(ValueError):
         offline_models.asr_repository("../../evil")
+
+
+def test_bundle_contains_current_release_instructions_and_checksums() -> None:
+    makefile = Path("Makefile").read_text()
+    assert "cp -a docs/. $(BUNDLE)/docs/" in makefile
+    checksum_command = next(line for line in makefile.splitlines() if "xargs -0 sha256sum" in line)
+    assert "docs" in checksum_command
+    assert "docs/benchmarks/2026-11-17-release-0.3.0.md" in makefile

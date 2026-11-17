@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from pydantic import ValidationError
 
-from rapporteur import db, departments, preparation
+from rapporteur import db, departments, model_choice, preparation
 from rapporteur.app import create_app
 from rapporteur.contracts import FragmentDraft, Summary
 from rapporteur.contracts.enums import FragmentKind, ReportFormat, TextOrigin
@@ -34,12 +34,25 @@ from rapporteur.reports import _sources
 from rapporteur.settings import TEMPLATES_DIR
 
 from .fictional_talk import SLIDES, facts_answer, summary_answer, supported_summary_answer
+from .workflow_support import WorkflowClient, seed_regulation
 
 
 @pytest.fixture
-def web(tmp_path: Path) -> Iterator[tuple[TestClient, ScriptedClient]]:
-    scripted = ScriptedClient([])
-    with TestClient(create_app(tmp_path, client=lambda _: scripted, process=False)) as client:
+def web(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[TestClient, ScriptedClient]]:
+    from rapporteur.llm.profiles import load_profile
+
+    original_profile = load_profile
+    monkeypatch.setattr(
+        model_choice,
+        "load_profile",
+        lambda: original_profile().model_copy(update={"prompt_version": "v2"}),
+    )
+    scripted = WorkflowClient([])
+    application = create_app(tmp_path, client=lambda _: scripted, process=False)
+    seed_regulation(application.state.database)
+    with TestClient(application) as client:
         yield client, scripted
 
 

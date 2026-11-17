@@ -15,7 +15,7 @@ from rapporteur.summarize.verify import verify_facts
 
 from .fictional_talk import PROFILE, SENTENCES, facts_answer, line, pack, summary_answer
 
-PROFILE_V3 = PROFILE.model_copy(update={"prompt_version": "v3"})
+PROFILE_V4 = PROFILE.model_copy(update={"prompt_version": "v4"})
 REQUIRED = SummaryChecksConfig(required={ClaimType.CONCLUSION: 3, ClaimType.RESULT: 3})
 
 
@@ -25,8 +25,16 @@ def test_shipped_summary_settings_require_conclusions_and_results() -> None:
     checks = load_checks(ROOT / "summary.yaml")
     assert checks.required == {ClaimType.CONCLUSION: 3, ClaimType.RESULT: 3}
     assert checks.explain_abbreviations
-    # Остальное совпадает со значениями по умолчанию в коде.
-    plain = checks.model_copy(update={"required": {}, "explain_abbreviations": False})
+    # Длина как у редакции v3 выпуска 0.3.0, остальное — значения по умолчанию в коде.
+    assert (checks.min_sentences, checks.max_sentences) == (6, 10)
+    plain = checks.model_copy(
+        update={
+            "required": {},
+            "explain_abbreviations": False,
+            "min_sentences": 4,
+            "max_sentences": 5,
+        }
+    )
     assert plain == SummaryChecksConfig()
 
 
@@ -38,7 +46,7 @@ def test_every_profile_has_all_prompts_of_its_edition() -> None:
 
     profiles = yaml.safe_load(PROFILES_FILE.read_text(encoding="utf-8"))["profiles"]
     for profile in profiles:
-        assert edition(profile["prompt_version"]) == 3
+        assert edition(profile["prompt_version"]) == 4
         for step in ("facts", "facts-review", "summary", "critic"):
             load_prompt(step, profile["prompt_version"])
 
@@ -82,7 +90,10 @@ def critic_answer() -> str:
             "decisions": [
                 {"line": key, "supported": True, "reason": "Поддерживается источником"}
                 for key in ["s1", "s2", "s3", "s4", "c1"]
-            ]
+            ],
+            # Критик с редакции v3 также оценивает понятность новому читателю.
+            "reader_passed": True,
+            "reader_issues": [],
         },
         ensure_ascii=False,
     )
@@ -100,7 +111,7 @@ def test_summary_must_use_results_and_conclusions() -> None:
         line("Работа направлена на снижение задержки чтения.", "c1"),
     ]
     client = ScriptedClient([summary_answer(without_result), summary_answer(), critic_answer()])
-    config = SummaryConfig(profile=PROFILE_V3, checks=REQUIRED)
+    config = SummaryConfig(profile=PROFILE_V4, checks=REQUIRED)
     result = write_summary(client, config, facts.title, claims, pack())
 
     assert result.status is SummaryStatus.READY and result.attempts == 2
@@ -190,7 +201,7 @@ def test_summary_without_definitions_avoids_abbreviations() -> None:
     client = ScriptedClient([summary_answer(), summary_answer(plain, conclusion), critic_answer()])
     checks = SummaryChecksConfig(explain_abbreviations=True)
     result = write_summary(
-        client, SummaryConfig(profile=PROFILE_V3, checks=checks), facts.title, claims, pack()
+        client, SummaryConfig(profile=PROFILE_V4, checks=checks), facts.title, claims, pack()
     )
     assert result.status is SummaryStatus.READY and result.attempts == 2
     # Порядок — по утверждениям в порядке важности: вывод c4 упоминает LFU первым.
@@ -230,7 +241,7 @@ def test_critic_sees_the_fragment_with_the_definition() -> None:
     client = ScriptedClient([summary_answer(explained, conclusion), critic_answer()])
     checks = SummaryChecksConfig(explain_abbreviations=True)
     result = write_summary(
-        client, SummaryConfig(profile=PROFILE_V3, checks=checks), facts.title, claims, source
+        client, SummaryConfig(profile=PROFILE_V4, checks=checks), facts.title, claims, source
     )
     assert result.status is SummaryStatus.READY
     assert "LRU — вытеснение давно не использованных записей [S6]" in (

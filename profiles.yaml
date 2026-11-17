@@ -16,7 +16,7 @@ profiles:
       reasoning: true
       max_tokens: 12000
       context_tokens: 32768
-    prompt_version: v3
+    prompt_version: v4
     stages: [facts, facts-review, summary, critic]
 
   # То же без рассуждения: в 10–13 раз быстрее на машине разработки. spec §6.7 требует
@@ -31,7 +31,7 @@ profiles:
       reasoning: false
       max_tokens: 6000
       context_tokens: 32768
-    prompt_version: v3
+    prompt_version: v4
     stages: [facts, facts-review, summary, critic]
 
   # Сервер: одна A100 40 ГБ, текст + изображения. Digest берется из локального манифеста.
@@ -45,5 +45,5 @@ profiles:
       reasoning: true
       max_tokens: 12000
       context_tokens: 32768
-    prompt_version: v3
+    prompt_version: v4
     stages: [facts, facts-review, summary, critic, vision, segmentation, recommendations]

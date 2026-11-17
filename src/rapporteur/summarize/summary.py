@@ -1,4 +1,4 @@
-"""Шаги В и Г spec §6.7 со смысловым критиком для промптов v2.
+"""Шаги В и Г spec §6.7 со смысловым критиком для промптов v2 и v3.
 
 Модель пишет текст только из утверждений, прошедших сверку. Код проверяет ссылки на
 утверждения, число предложений, числа и запрещённые слова; при нарушениях сводка пишется
@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
 
 from rapporteur.contracts import (
     Claim,
@@ -45,7 +45,7 @@ from rapporteur.summarize.pack import context_fragments
 from rapporteur.summarize.terms import Definition, abbreviations, find_definitions
 
 # Версия шага входит в ключ кэша.
-VERSION = "1.5.0"
+VERSION = "2.1.0"
 STEP = "summary"
 
 _SUMMARY_NAMESPACE = uuid.UUID("9a4e2c71-3b5d-4f8e-a6c0-7d1b2e3f4a5c")
@@ -68,6 +68,14 @@ class SummaryConfig(BaseModel):
     # Исправления формы ответа внутри одной попытки.
     max_repairs: NonNegativeInt = 1
     seed: int = 1
+
+    @model_validator(mode="after")
+    def reader_defaults(self) -> "SummaryConfig":
+        if edition(self.profile.prompt_version) >= 3 and "checks" not in self.model_fields_set:
+            object.__setattr__(
+                self, "checks", SummaryChecksConfig(min_sentences=6, max_sentences=10)
+            )
+        return self
 
 
 @dataclass(frozen=True)
@@ -166,7 +174,7 @@ def write_summary(
         draft = _punctuated(result.value)
         current = check_summary(draft, claims, pack, config.checks, attempt)
         if edition(profile.prompt_version) >= 2 and all(check.passed for check in current):
-            current.append(
+            current.extend(
                 review_summary(
                     client,
                     profile,

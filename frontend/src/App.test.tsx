@@ -146,6 +146,7 @@ test('активный этап не выдаёт разрешение поте�
     if (url.endsWith('/preparation')) return Response.json({ version: 1, job: 'done', error: null,
       talks: [{ title: 'Тема', speakers: [], links: [], reason: '', talk_id: null }] });
     if (url.endsWith('/materials')) return Response.json({ files: [], talks: [], sections: [] });
+    if (url.endsWith('/report-jobs')) return Response.json([]);
     if (url.endsWith('/reports')) return Response.json([]);
     if (url.endsWith('/progress')) return Response.json({ talks: [] });
     return Response.json(conference);

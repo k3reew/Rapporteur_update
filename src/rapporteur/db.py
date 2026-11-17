@@ -136,13 +136,36 @@ def _v1(conn: sqlite3.Connection) -> None:
 
 
 def _v2(conn: sqlite3.Connection) -> None:
+    """Выпуск 0.3.0: отбор по интересу отделов (screening.py) и фоновые выпуски справки
+    (report_jobs.py)."""
+    conn.execute("""CREATE TABLE talk_screenings (
+        talk_id TEXT NOT NULL REFERENCES talks(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL, input_revision INTEGER NOT NULL,
+        department_revisions TEXT NOT NULL, profile TEXT NOT NULL,
+        job TEXT NOT NULL, result TEXT NOT NULL DEFAULT '[]', error TEXT,
+        manual INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+        PRIMARY KEY(talk_id, version)
+    )""")
+    conn.execute("""CREATE TABLE report_jobs (
+        id TEXT PRIMARY KEY,
+        conference_id TEXT NOT NULL REFERENCES conferences(id) ON DELETE CASCADE,
+        idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL, snapshot TEXT NOT NULL,
+        status TEXT NOT NULL, step TEXT NOT NULL, error TEXT,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        report_version_id TEXT REFERENCES report_versions(id),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(conference_id,idempotency_key)
+    )""")
+
+
+def _v3(conn: sqlite3.Connection) -> None:
     """Карточка доклада: организации и контакты без привязки к автору (JSON-списки).
     Организация и контакты автора хранятся в talks.speakers."""
     conn.execute("ALTER TABLE talks ADD COLUMN organizations TEXT NOT NULL DEFAULT '[]'")
     conn.execute("ALTER TABLE talks ADD COLUMN contacts TEXT NOT NULL DEFAULT '[]'")
 
 
-def _v3(conn: sqlite3.Connection) -> None:
+def _v4(conn: sqlite3.Connection) -> None:
     """Сводка или только карточка (interest.py): scope — выбор оператора, card_only —
     итог последней обработки."""
     conn.execute(
@@ -152,7 +175,7 @@ def _v3(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE talks ADD COLUMN card_only INTEGER NOT NULL DEFAULT 0")
 
 
-_MIGRATIONS = (_v1, _v2, _v3)
+_MIGRATIONS = (_v1, _v2, _v3, _v4)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 
