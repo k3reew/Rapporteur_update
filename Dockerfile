@@ -79,11 +79,11 @@ FROM base AS app
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 # Пакет ставится в режиме редактирования: settings.ROOT указывает на /app, где лежат
-# prompts/, templates/ и profiles.yaml.
+# prompts/, templates/, profiles.yaml и summary.yaml.
 RUN uv sync --frozen --no-dev && chmod -R a+rX /opt/venv
 COPY prompts ./prompts
 COPY templates ./templates
-COPY profiles.yaml ./
+COPY profiles.yaml summary.yaml ./
 COPY --from=web /app/frontend/dist ./static
 ENV RAPPORTEUR_STATIC_DIR=/app/static \
     RAPPORTEUR_DATA_DIR=/data

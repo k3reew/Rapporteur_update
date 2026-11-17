@@ -36,6 +36,7 @@ from rapporteur.llm.client import LlmClient
 from rapporteur.storage import Storage, blob_key, cache_key
 from rapporteur.summarize import facts as facts_step
 from rapporteur.summarize import summary as summary_step
+from rapporteur.summarize.checks import load_checks
 from rapporteur.summarize.pack import PackSource, build_pack
 from rapporteur.summarize.quotes import QuoteConfig
 from rapporteur.summarize.verify import verify_facts
@@ -217,7 +218,7 @@ class Processor:
         claims = verify_facts(facts.facts, pack, QuoteConfig(), id_seed=facts_key)
 
         self._step(talk.id, "summary")
-        summary_config = summary_step.SummaryConfig(profile=profile)
+        summary_config = summary_step.SummaryConfig(profile=profile, checks=load_checks())
         summary_key = cache_key(
             "summary", summary_step.VERSION, facts_key, summary_config.model_dump()
         )

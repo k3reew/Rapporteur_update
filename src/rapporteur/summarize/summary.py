@@ -104,8 +104,10 @@ def write_summary(
     profile = config.profile
     prompt = load_prompt(STEP, profile.prompt_version, PROMPTS_DIR)
     low, high = sentence_range(config.checks, claims)
+    # Утверждения идут в порядке важности их типов (summary.yaml, priorities).
+    ordered = sorted(usable, key=lambda claim: config.checks.rank(claim.type))
     lines = [
-        ClaimLine(claim.key, _KIND[claim.type], claim.text, claim.evidence) for claim in usable
+        ClaimLine(claim.key, _KIND[claim.type], claim.text, claim.evidence) for claim in ordered
     ]
     evidence = [item for claim in usable for item in claim.evidence]
     messages = [

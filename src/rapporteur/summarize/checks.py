@@ -5,13 +5,16 @@
 """
 
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
 from razdel import sentenize
 
 from rapporteur.contracts import Claim, SummaryDraft, SummaryLine, TalkFragmentPack
 from rapporteur.contracts.claims import CheckResult
 from rapporteur.contracts.enums import CheckName, ClaimStatus, ClaimType
+from rapporteur.settings import SUMMARY_FILE
 from rapporteur.summarize.quotes import search_form
 
 # Слова целиком; «*» в конце — любое окончание. Оценочные эпитеты и первое лицо (spec §6.7).
@@ -47,18 +50,50 @@ DEFAULT_FORBIDDEN: tuple[str, ...] = (
 )
 
 
+# Выводы и результаты важнее общего описания доклада.
+DEFAULT_PRIORITIES: tuple[ClaimType, ...] = (
+    ClaimType.CONCLUSION,
+    ClaimType.RESULT,
+    ClaimType.METHOD,
+    ClaimType.PROBLEM,
+)
+
+
 class SummaryChecksConfig(BaseModel):
+    """Содержание сводки. Значения по умолчанию совпадают с summary.yaml поставки."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     min_sentences: PositiveInt = 4
     max_sentences: PositiveInt = 5
     forbidden: tuple[str, ...] = DEFAULT_FORBIDDEN
+    # Порядок важности типов утверждений; типы, не названные здесь, идут последними.
+    priorities: tuple[ClaimType, ...] = DEFAULT_PRIORITIES
 
     @model_validator(mode="after")
     def _ordered(self) -> "SummaryChecksConfig":
         if self.min_sentences > self.max_sentences:
             raise ValueError("min_sentences больше max_sentences")
+        if len(set(self.priorities)) != len(self.priorities):
+            raise ValueError("типы в priorities повторяются")
+        if ClaimType.LISTENER_REMARK in self.priorities:
+            raise ValueError("реплики слушателей в текст сводки не входят")
         return self
+
+    def rank(self, claim_type: ClaimType) -> int:
+        return (
+            self.priorities.index(claim_type)
+            if claim_type in self.priorities
+            else len(self.priorities)
+        )
+
+
+def load_checks(path: Path = SUMMARY_FILE) -> SummaryChecksConfig:
+    """Настройки сводки из summary.yaml; без файла — значения по умолчанию."""
+    if not path.is_file():
+        return SummaryChecksConfig()
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return SummaryChecksConfig.model_validate(data)
 
 
 def usable_claims(claims: Iterable[Claim]) -> list[Claim]:

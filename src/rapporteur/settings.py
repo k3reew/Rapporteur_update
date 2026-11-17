@@ -3,11 +3,12 @@
 import os
 from pathlib import Path
 
-# Корень репозитория или образа: рядом лежат prompts/, templates/ и profiles.yaml.
+# Корень репозитория или образа: рядом лежат prompts/, templates/, profiles.yaml и summary.yaml.
 ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_DIR = ROOT / "prompts"
 TEMPLATES_DIR = ROOT / "templates"
 PROFILES_FILE = ROOT / "profiles.yaml"
+SUMMARY_FILE = ROOT / "summary.yaml"
 
 # Том с базой SQLite, оригиналами, кэшем шагов и файлами справок.
 DATA_DIR = Path(os.environ.get("RAPPORTEUR_DATA_DIR", "/data"))
