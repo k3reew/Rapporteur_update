@@ -142,7 +142,17 @@ def _v2(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE talks ADD COLUMN contacts TEXT NOT NULL DEFAULT '[]'")
 
 
-_MIGRATIONS = (_v1, _v2)
+def _v3(conn: sqlite3.Connection) -> None:
+    """Сводка или только карточка (interest.py): scope — выбор оператора, card_only —
+    итог последней обработки."""
+    conn.execute(
+        "ALTER TABLE talks ADD COLUMN scope TEXT NOT NULL DEFAULT 'auto' "
+        "CHECK (scope IN ('auto', 'summary', 'card'))"
+    )
+    conn.execute("ALTER TABLE talks ADD COLUMN card_only INTEGER NOT NULL DEFAULT 0")
+
+
+_MIGRATIONS = (_v1, _v2, _v3)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 
@@ -249,6 +259,7 @@ def talk(row: Row) -> Talk:
         speakers=[Speaker.model_validate(item) for item in json.loads(row["speakers"])],
         organizations=json.loads(row["organizations"]),
         contacts=json.loads(row["contacts"]),
+        card_only=bool(row["card_only"]),
     )
 
 

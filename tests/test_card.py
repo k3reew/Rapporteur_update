@@ -124,15 +124,18 @@ def test_v1_database_gets_card_columns_and_backup(tmp_path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.execute("ALTER TABLE talks DROP COLUMN organizations")
         conn.execute("ALTER TABLE talks DROP COLUMN contacts")
+        conn.execute("ALTER TABLE talks DROP COLUMN scope")
+        conn.execute("ALTER TABLE talks DROP COLUMN card_only")
         conn.execute("PRAGMA user_version = 1")
 
     upgraded = db.Database(path)
     assert (tmp_path / "rapporteur.db.before-v2.bak").is_file()
     with upgraded.read() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
         talk = db.talk(db.conference_talks(conn, conference)[0])
     assert talk.organizations == [] and talk.contacts == []
     assert talk.speakers[0].contacts == []
+    assert talk.card_only is False
 
 
 def test_contacts_are_found_without_model() -> None:

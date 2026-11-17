@@ -78,6 +78,8 @@ class Talk(ContractModel):
     speakers: list[Speaker]
     organizations: list[NonEmptyStr] = Field(default_factory=list)
     contacts: list[NonEmptyStr] = Field(default_factory=list)
+    # Доклад не интересен отделам или так решил оператор: в справке только карточка.
+    card_only: bool = False
 
     @model_validator(mode="after")
     def _insufficient_needs_title(self) -> Self:

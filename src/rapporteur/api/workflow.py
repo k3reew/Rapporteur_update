@@ -15,6 +15,7 @@ from rapporteur import (
 from rapporteur.api.dependencies import ReadTx, Tx, _storage, _wake
 from rapporteur.contracts.enums import SummaryStatus, TalkStatus
 from rapporteur.errors import NotFoundError, UserError
+from rapporteur.interest import Scope
 
 api = APIRouter()
 
@@ -33,6 +34,9 @@ class TalkProgress(BaseModel):
     summary_number: int | None
     summary_status: SummaryStatus | None
     bulk_reviewable: bool = False
+    # Выбор оператора и итог обработки: только карточка, без сводки (interest.py).
+    scope: Scope = Scope.AUTO
+    card_only: bool = False
 
 
 class Progress(BaseModel):
@@ -70,6 +74,8 @@ def conference_progress(conn: ReadTx, conference_id: str) -> Progress:
                 job=row["job"],
                 step=row["step"],
                 error=row["error"],
+                scope=row["scope"],
+                card_only=bool(row["card_only"]),
                 summary_number=summary["number"] if summary else None,
                 summary_status=json.loads(summary["summary"])["status"] if summary else None,
                 bulk_reviewable=bool(
@@ -103,6 +109,33 @@ def retry_talk(request: Request, conn: Tx, talk_id: str) -> Response:
     processing.enqueue(conn, [talk_id])
     _wake(request)
     return Response(status_code=202)
+
+
+class ScopeWrite(BaseModel):
+    scope: Scope
+
+
+@api.put("/talks/{talk_id}/scope", status_code=204)
+def set_scope(request: Request, conn: Tx, talk_id: str, data: ScopeWrite) -> Response:
+    """Сводка или только карточка. После запуска обработки доклад с материалами
+    обрабатывается заново: сводка из кэша или новая, либо отметка «только карточка»."""
+    row = db.one(
+        conn,
+        "SELECT talks.*, conferences.processing_started FROM talks "
+        "JOIN sections ON sections.id = talks.section_id "
+        "JOIN conferences ON conferences.id = sections.conference_id WHERE talks.id = ?",
+        talk_id,
+    )
+    if row is None:
+        raise NotFoundError("Доклад не найден")
+    if row["scope"] == data.scope.value:
+        return Response(status_code=204)
+    conn.execute("UPDATE talks SET scope = ? WHERE id = ?", (data.scope.value, talk_id))
+    reportable = row["status"] in (*processing.READY_STATUSES, "processed", "reviewed")
+    if row["processing_started"] and reportable and row["job"] not in ("queued", "running"):
+        processing.enqueue(conn, [talk_id])
+        _wake(request)
+    return Response(status_code=204)
 
 
 @api.get("/conferences/{conference_id}/preparation")

@@ -42,4 +42,5 @@ variables:
     description: >-
       Доклады справки по порядку. Поля доклада: title, speakers, affiliations,
       section_title, summary, conclusions и карточка authors, organizations,
-      contacts (ReportTalk в contracts/).
+      contacts (ReportTalk в contracts/). У доклада только с карточкой
+      (card_only) summary пусто, conclusions — пустой список.

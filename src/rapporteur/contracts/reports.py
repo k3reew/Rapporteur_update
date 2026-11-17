@@ -36,8 +36,10 @@ class ReportTalk(ContractModel):
     speakers: list[NonEmptyStr]
     affiliations: list[NonEmptyStr]
     status: TalkStatus
-    summary: NonEmptyStr
+    # None — доклад только с карточкой (card_only): не интересен отделам или так решил оператор.
+    summary: NonEmptyStr | None
     conclusions: list[NonEmptyStr]
+    card_only: bool = False
     authors: list[NonEmptyStr] = Field(default_factory=list)
     organizations: list[NonEmptyStr] = Field(default_factory=list)
     contacts: list[NonEmptyStr] = Field(default_factory=list)
@@ -83,7 +85,10 @@ class ReportInput(ContractModel):
             raise PydanticCustomError(
                 "selection_mismatch", "выборка не совпадает с докладами справки"
             )
-        unreviewed = any(talk.status is not TalkStatus.REVIEWED for talk in self.talks)
+        # Карточку оператор подтвердил на этапе «Доклады»; проверять нужно сводки.
+        unreviewed = any(
+            talk.status is not TalkStatus.REVIEWED and not talk.card_only for talk in self.talks
+        )
         if unreviewed and not self.unreviewed_confirmed:
             raise PydanticCustomError(
                 "unreviewed_not_confirmed",

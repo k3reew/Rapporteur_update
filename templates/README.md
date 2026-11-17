@@ -54,7 +54,9 @@ Word меняет прямые кавычки на типографские, doc
 {%p if talk.contacts %}
 Контакты: {{ talk.contacts | join("; ") }}
 {%p endif %}
+{%p if talk.summary %}
 {{ talk.summary | типографика }}
+{%p endif %}
 {%p if talk.conclusions %}
 Основные выводы:
 {%p for conclusion in talk.conclusions %}

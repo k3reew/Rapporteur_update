@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 from rapporteur import db, departments
 from rapporteur.contracts import ReportSelection, ReportVersion, Summary
-from rapporteur.contracts.enums import TalkStatus
+from rapporteur.contracts.enums import REPORTABLE_TALK_STATUSES, TalkStatus
 from rapporteur.contracts.reports import ReportFile
 from rapporteur.errors import NotFoundError, UserError
 from rapporteur.materials import require_conference
@@ -60,15 +60,25 @@ def _sources(conn: sqlite3.Connection, conference_id: str) -> ReportSources:
 def _check(sources: ReportSources, selection: ReportSelection, unreviewed_confirmed: bool) -> None:
     """Частые причины отказа проверяются заранее, чтобы человек сразу видел, что исправить."""
     talks = {talk.id: talk for talk in sources.talks if talk.id in selection.talk_ids}
-    summarized = {s.talk_id for s in sources.summaries if s.talk_id in talks and s.sentences}
-    if not summarized:
-        raise UserError("Ни у одного выбранного доклада нет готовой сводки")
+    summarized = {
+        s.talk_id
+        for s in sources.summaries
+        if s.talk_id in talks and s.sentences and not talks[s.talk_id].card_only
+    }
+    # Доклад только с карточкой входит в справку без сводки (interest.py).
+    cards = {
+        talk_id
+        for talk_id, talk in talks.items()
+        if talk.card_only and talk.status in REPORTABLE_TALK_STATUSES
+    }
+    if not summarized and not cards:
+        raise UserError("Ни у одного выбранного доклада нет готовой сводки или карточки")
     unreviewed = [
         talk_id for talk_id in summarized if talks[talk_id].status is not TalkStatus.REVIEWED
     ]
     if unreviewed and not unreviewed_confirmed:
         raise UserError("В справке есть непроверенные доклады: подтвердите сборку без проверки")
-    dated = any(sources.talk_day(talks[talk_id]) for talk_id in summarized)
+    dated = any(sources.talk_day(talks[talk_id]) for talk_id in summarized | cards)
     if not (selection.days or dated or sources.conference.start_date):
         raise UserError("Укажите даты конференции: без них в справке нет периода проведения")
 

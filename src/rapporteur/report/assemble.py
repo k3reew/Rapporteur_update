@@ -119,6 +119,11 @@ def build_report_input(
         summary = sources.summary_by_talk.get(talk_id)
         if talk.status not in REPORTABLE_TALK_STATUSES:
             reason = _SKIP_REASONS.get(talk.status, f"статус {talk.status.value}")
+        elif talk.card_only:
+            included.append(_report_talk(sources, talk, talk.title or "Тема не установлена", None))
+            if not talk.title or not talk.speakers:
+                warnings.append(f"Уточните тему или автора: {_name(talk)}")
+            continue
         elif summary is None:
             reason = "нет сводки"
         elif any(
@@ -174,7 +179,9 @@ def build_report_input(
     return AssembledInput(input=report_input, warnings=warnings)
 
 
-def _report_talk(sources: ReportSources, talk: Talk, title: str, summary: Summary) -> ReportTalk:
+def _report_talk(
+    sources: ReportSources, talk: Talk, title: str, summary: Summary | None
+) -> ReportTalk:
     speakers = [person for person in talk.speakers if person.role is PersonRole.SPEAKER]
     authors, organizations, contacts = _card(talk)
     return ReportTalk(
@@ -186,8 +193,9 @@ def _report_talk(sources: ReportSources, talk: Talk, title: str, summary: Summar
             _clean(person.affiliation) for person in speakers if person.affiliation
         ),
         status=talk.status,
-        summary=" ".join(line.text for line in summary.sentences),
-        conclusions=[line.text for line in summary.conclusions],
+        summary=" ".join(line.text for line in summary.sentences) if summary else None,
+        conclusions=[line.text for line in summary.conclusions] if summary else [],
+        card_only=summary is None,
         authors=authors,
         organizations=organizations,
         contacts=contacts,

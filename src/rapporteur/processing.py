@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
-from rapporteur import db, departments, materials, model_choice, preparation
+from rapporteur import db, departments, interest, materials, model_choice, preparation
 from rapporteur.contracts import (
     FactsArtifact,
     ModelProfile,
@@ -143,7 +143,10 @@ class Processor:
                 talk.id, "failed", "internal_error: внутренняя ошибка, см. журнал", talk.revision
             )
         else:
-            self._save(talk.id, summary, pack, talk.revision)
+            if summary is None:
+                self._save_card(talk.id, talk.revision)
+            else:
+                self._save(talk.id, summary, pack, talk.revision)
         return True
 
     def _take(self) -> _Talk | None:
@@ -195,11 +198,14 @@ class Processor:
                 (job, error, talk_id),
             )
 
-    def _process(self, talk: _Talk) -> tuple[Summary, TalkFragmentPack]:
+    def _process(self, talk: _Talk) -> tuple[Summary | None, TalkFragmentPack]:
+        """Сводка доклада; None — докладу достаточно карточки (interest.py)."""
         pack = self._pack(talk)
         # Модель — выбранная на странице «Управление» или профиль по умолчанию.
         with self.database.read() as conn:
             profile = model_choice.active_profile(conn)
+            if not interest.needs_summary(conn, talk.id, pack):
+                return None, pack
 
         self._step(talk.id, "facts")
         facts_config = facts_step.FactsConfig(profile=profile)
@@ -357,20 +363,41 @@ class Processor:
             lambda: notes_parser.parse_notes(self.storage.get(blob_key(sha)), sha, config),
         )
 
+    def _current(self, conn: sqlite3.Connection, talk_id: str, revision: int) -> db.Row | None:
+        """Доклад, если результат обработки ещё к нему относится; иначе — повтор очереди."""
+        talk = db.one(conn, "SELECT status, input_revision, job FROM talks WHERE id = ?", talk_id)
+        if talk is None or talk["job"] != "running":
+            return None  # Доклад удалили или поставили заново, пока шла обработка.
+        if talk["input_revision"] != revision:
+            job = "queued" if talk["status"] not in ("insufficient_data", "not_held") else None
+            conn.execute("UPDATE talks SET job=?, step=NULL WHERE id=?", (job, talk_id))
+            return None
+        return talk
+
+    def _save_card(self, talk_id: str, revision: int) -> None:
+        """Доклад без сводки: карточка подтверждена на этапе «Доклады», в справку он идёт
+        темой, авторами, организациями и контактами."""
+        with self.database.tx() as conn:
+            talk = self._current(conn, talk_id, revision)
+            if talk is None:
+                return
+            if can_transition(TalkStatus(talk["status"]), TalkStatus.PROCESSED):
+                conn.execute(
+                    "UPDATE talks SET status = ? WHERE id = ?",
+                    (TalkStatus.PROCESSED.value, talk_id),
+                )
+            conn.execute(
+                "UPDATE talks SET card_only = 1, job = 'done', step = NULL, error = NULL "
+                "WHERE id = ?",
+                (talk_id,),
+            )
+
     def _save(self, talk_id: str, summary: Summary, pack: TalkFragmentPack, revision: int) -> None:
         """Новая машинная сводка становится очередной версией и требует проверки человеком.
         Тот же результат из кэша повторно не записывается."""
         with self.database.tx() as conn:
-            talk = db.one(
-                conn, "SELECT status, input_revision, job FROM talks WHERE id = ?", talk_id
-            )
+            talk = self._current(conn, talk_id, revision)
             if talk is None:
-                return  # Доклад удалили, пока шла обработка.
-            if talk["job"] != "running":
-                return
-            if talk["input_revision"] != revision:
-                job = "queued" if talk["status"] not in ("insufficient_data", "not_held") else None
-                conn.execute("UPDATE talks SET job=?, step=NULL WHERE id=?", (job, talk_id))
                 return
             known = db.one(
                 conn,
@@ -401,7 +428,7 @@ class Processor:
                         (TalkStatus.PROCESSED.value, talk_id),
                     )
             conn.execute(
-                "UPDATE talks SET job = 'done', step = NULL, error = NULL "
+                "UPDATE talks SET card_only = 0, job = 'done', step = NULL, error = NULL "
                 "WHERE id = ? AND job = 'running'",
                 (talk_id,),
             )
