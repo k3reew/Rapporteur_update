@@ -76,6 +76,8 @@ class ReviewTalk(BaseModel):
     title: str | None
     status: TalkStatus
     speakers: list[Speaker] = []
+    organizations: list[str] = []
+    contacts: list[str] = []
 
 
 class ReviewSection(BaseModel):
@@ -366,6 +368,8 @@ def review(conn: sqlite3.Connection, conference_id: str) -> Materials:
                 order=row["position"],
                 status=row["status"],
                 speakers=db.talk(row).speakers,
+                organizations=json.loads(row["organizations"]),
+                contacts=json.loads(row["contacts"]),
             )
             for row in talks
         ],

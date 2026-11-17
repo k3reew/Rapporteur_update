@@ -16,7 +16,7 @@ from rapporteur.contracts.base import NonEmptyStr
 from rapporteur.contracts.enums import FileKind, FragmentKind, TextOrigin
 from rapporteur.contracts.fragments import PageLocator, TimeLocator
 from rapporteur.errors import FailureCode, StageError, UserError
-from rapporteur.ingest import documents, notes
+from rapporteur.ingest import card, documents, notes
 from rapporteur.llm.client import LlmClient
 from rapporteur.llm.tasks import json_task
 from rapporteur.storage import Storage, blob_key, cache_key
@@ -591,4 +591,78 @@ def propose(
                     reason="Проверьте тему и привязку к записи.",
                 )
             )
-    return proposed
+    known_talks = {talk.id: talk for talk in existing.talks}
+    by_id = {file["id"]: file for file in files}
+    return [
+        with_card(
+            talk,
+            known_talks.get(talk.talk_id) if talk.talk_id else None,
+            _card_lines(talk, by_id, extracted),
+        )
+        for talk in proposed
+    ]
+
+
+# Карточка берётся из титульной и последней страниц документов и презентаций: на них
+# обычно авторы, организации и контакты. Заметки, программа и описания изображений
+# моделью не подходят.
+_CARD_KINDS = (FileKind.PRESENTATION, FileKind.DOCUMENT, FileKind.IMAGE)
+
+
+def _card_lines(
+    talk: ProposedTalk, files: dict[str, db.Row], extracted: dict[str, Prepared]
+) -> list[str]:
+    lines: list[str] = []
+    for link in talk.links:
+        file = files.get(link.file_id)
+        if file is None or file["kind"] not in _CARD_KINDS or link.file_id not in extracted:
+            continue
+        pages: dict[int, list[str]] = {}
+        for fragment in slice_fragments(extracted[link.file_id].fragments, link):
+            if isinstance(fragment.locator, PageLocator) and fragment.origin is not TextOrigin.VLM:
+                pages.setdefault(fragment.locator.page_no, []).append(fragment.normalized_text)
+        if not pages:
+            continue
+        for number in dict.fromkeys((min(pages), max(pages))):
+            lines.extend(line for text in pages[number] for line in text.splitlines())
+    return lines
+
+
+def with_card(
+    talk: ProposedTalk, known: materials.ReviewTalk | None, lines: list[str]
+) -> ProposedTalk:
+    """Дополняет карточку: сначала сведения из реестра (их мог исправить оператор), затем
+    найденное на страницах. Заполненные поля не заменяются."""
+    previous = {speaker.name: speaker for speaker in (known.speakers if known else [])}
+    hints = card.card_hints(lines, [speaker.name for speaker in talk.speakers], talk.title)
+    speakers = []
+    for speaker in talk.speakers:
+        before = previous.get(speaker.name)
+        affiliation = (
+            speaker.affiliation
+            or (before.affiliation if before else None)
+            or hints.affiliations.get(speaker.name)
+        )
+        contacts = (
+            speaker.contacts
+            or (before.contacts if before else [])
+            or hints.speaker_contacts.get(speaker.name, [])
+        )
+        speakers.append(
+            speaker.model_copy(update={"affiliation": affiliation, "contacts": contacts})
+        )
+    attributed = {contact for speaker in speakers for contact in speaker.contacts}
+    affiliations = {speaker.affiliation for speaker in speakers if speaker.affiliation}
+    organizations = (
+        talk.organizations
+        or (known.organizations if known else [])
+        or [item for item in hints.organizations if item not in affiliations]
+    )
+    contacts = (
+        talk.contacts
+        or (known.contacts if known else [])
+        or [item for item in hints.contacts if item not in attributed]
+    )
+    return talk.model_copy(
+        update={"speakers": speakers, "organizations": organizations, "contacts": contacts}
+    )

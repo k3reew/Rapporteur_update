@@ -133,3 +133,170 @@ def test_v1_database_gets_card_columns_and_backup(tmp_path: Path) -> None:
         talk = db.talk(db.conference_talks(conn, conference)[0])
     assert talk.organizations == [] and talk.contacts == []
     assert talk.speakers[0].contacts == []
+
+
+def test_contacts_are_found_without_model() -> None:
+    from rapporteur.ingest.card import find_contacts
+
+    text = (
+        "E-mail: Ivanov@BMSTU.ru, тел. +7 (495) 123-45-67, 8 800 555-35-35; "
+        "сайт https://example.org/lab. ORCID 0000-0002-1825-0097, t.me/lab_news. "
+        "В 2026 году заслушано 8 докладов по 15 темам."
+    )
+    assert find_contacts(text) == [
+        "ivanov@bmstu.ru",
+        "+7 (495) 123-45-67",
+        "8 800 555-35-35",
+        "https://example.org/lab",
+        "ORCID 0000-0002-1825-0097",
+        "t.me/lab_news",
+    ]
+
+
+def test_card_hints_attribute_by_line_email_and_single_author() -> None:
+    from rapporteur.ingest.card import card_hints
+
+    title = "Кэширование в распределённых системах"
+    hints = card_hints(
+        [
+            title,
+            "Иванов И. И.¹, Петров П. П.²",
+            "¹МГТУ им. Н. Э. Баумана",
+            "²ИСП РАН",
+            "ivanov@bmstu.ru",
+            "+7 495 000-00-00",
+        ],
+        ["Иванов И. И.", "Петров П. П."],
+        title,
+    )
+    assert hints.organizations == ["МГТУ им. Н. Э. Баумана", "ИСП РАН"]
+    assert hints.affiliations == {}
+    assert hints.speaker_contacts == {"Иванов И. И.": ["ivanov@bmstu.ru"]}
+    assert hints.contacts == ["+7 495 000-00-00"]
+
+    same_line = card_hints(
+        ["Петров П. П., ИСП РАН, petrov@ispras.ru", "Иванов И. И., МГТУ им. Н. Э. Баумана"],
+        ["Иванов И. И.", "Петров П. П."],
+    )
+    assert same_line.affiliations == {
+        "Петров П. П.": "ИСП РАН",
+        "Иванов И. И.": "МГТУ им. Н. Э. Баумана",
+    }
+    assert same_line.speaker_contacts == {"Петров П. П.": ["petrov@ispras.ru"]}
+    assert same_line.organizations == []
+
+    single = card_hints(
+        [
+            "Цифровой университет",
+            "Сидоров Алексей Петрович",
+            "АО «НПО Технология»",
+            "Тел.: +7 (495) 123-45-67",
+            "Спасибо за внимание!",
+            "www.example.org",
+        ],
+        ["Сидоров Алексей Петрович"],
+        "Цифровой университет",
+    )
+    assert single.affiliations == {"Сидоров Алексей Петрович": "АО «НПО Технология»"}
+    assert single.speaker_contacts == {
+        "Сидоров Алексей Петрович": ["+7 (495) 123-45-67", "www.example.org"]
+    }
+    assert single.organizations == [] and single.contacts == []
+
+
+def test_email_matches_common_transliterations() -> None:
+    from rapporteur.ingest.card import card_hints
+
+    hints = card_hints(
+        ["habarov.ae@example.org", "tsoy@example.org", "unknown@example.org"],
+        ["Хабаров А. Е.", "Цой В. Р."],
+    )
+    assert hints.speaker_contacts == {
+        "Хабаров А. Е.": ["habarov.ae@example.org"],
+        "Цой В. Р.": ["tsoy@example.org"],
+    }
+    assert hints.contacts == ["unknown@example.org"]
+
+
+def test_preparation_proposes_card_from_first_page(
+    web: tuple[TestClient, ScriptedClient],
+) -> None:
+    import json
+
+    client, scripted = web
+    conference = client.post("/api/v1/conferences", json={"title": "Карточки"}).json()["id"]
+    base = f"/api/v1/conferences/{conference}"
+    text = "\n".join(
+        [
+            "Кэширование в распределённых системах",
+            "Иванов И. И.",
+            "МГТУ им. Н. Э. Баумана",
+            "ivanov@bmstu.ru",
+            "Доклад описывает кэширование ответов в центре обработки данных.",
+        ]
+    )
+    uploaded = client.post(
+        base + "/materials",
+        params={"path": "речь.txt", "purpose": "document"},
+        headers={"Content-Type": "application/octet-stream"},
+        content=text.encode(),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    scripted.responses.append(
+        json.dumps(
+            {
+                "title": "Кэширование в распределённых системах",
+                "speakers": ["Иванов И. И."],
+                "talk_index": None,
+                "confidence": 1,
+                "reason": "Титульная страница",
+            }
+        )
+    )
+    assert client.post(base + "/preparation").status_code == 202
+    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
+    talk = client.get(base + "/preparation").json()["talks"][0]
+    assert talk["speakers"] == [
+        {
+            "name": "Иванов И. И.",
+            "affiliation": "МГТУ им. Н. Э. Баумана",
+            "role": "speaker",
+            "contacts": ["ivanov@bmstu.ru"],
+        }
+    ]
+    assert talk["organizations"] == [] and talk["contacts"] == []
+
+
+def test_card_keeps_registry_values_and_fills_only_gaps() -> None:
+    from rapporteur.contracts import Speaker
+    from rapporteur.contracts.enums import TalkStatus
+    from rapporteur.materials import ReviewTalk
+    from rapporteur.preparation import Link, ProposedTalk, with_card
+
+    known = ReviewTalk(
+        id="t",
+        section_id="s",
+        section="Секция",
+        order=1,
+        title="Кэширование",
+        status=TalkStatus.MATCHED,
+        speakers=[Speaker(name="Иванов И. И.", affiliation="ИСП РАН")],
+        organizations=["Исправлено оператором"],
+    )
+    proposal = ProposedTalk(
+        talk_id="t",
+        title="Кэширование",
+        speakers=[Speaker(name="Иванов И. И."), Speaker(name="Петров П. П.")],
+        links=[Link(file_id="f")],
+    )
+    result = with_card(
+        proposal,
+        known,
+        ["Иванов И. И., МГТУ", "Петров П. П., АО «Пример»", "petrov@example.org", "+7 495 1112233"],
+    )
+    assert [(s.name, s.affiliation, s.contacts) for s in result.speakers] == [
+        ("Иванов И. И.", "ИСП РАН", []),
+        ("Петров П. П.", "АО «Пример»", ["petrov@example.org"]),
+    ]
+    assert result.organizations == ["Исправлено оператором"]
+    assert result.contacts == ["+7 495 1112233"]
