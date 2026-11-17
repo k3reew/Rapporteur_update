@@ -274,6 +274,53 @@ def test_preparation_proposes_card_from_first_page(
     assert talk["organizations"] == [] and talk["contacts"] == []
 
 
+def test_folder_talk_takes_authors_from_the_title_slide(
+    web: tuple[TestClient, ScriptedClient],
+) -> None:
+    """Доклад из папки заводится в реестре без авторов: подготовка берёт их с титульного
+    слайда, и карточка относит к автору организацию и контакт."""
+    import io
+
+    import pptx
+
+    client, scripted = web
+    deck = pptx.Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[0])
+    slide.shapes.title.text = "Кэширование запросов"
+    slide.placeholders[1].text = "Петров Алексей Сергеевич\nИнститут примера\npetrov@example.org"
+    buffer = io.BytesIO()
+    deck.save(buffer)
+    conference = client.post("/api/v1/conferences", json={"title": "Папки"}).json()["id"]
+    base = f"/api/v1/conferences/{conference}"
+    uploaded = client.post(
+        base + "/materials",
+        params={"path": "01_Петров/доклад.pptx", "purpose": "presentation"},
+        headers={"Content-Type": "application/octet-stream"},
+        content=buffer.getvalue(),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    assert client.get(base + "/materials").json()["talks"][0]["speakers"] == []
+
+    # Подготовка описывает изображение слайда моделью.
+    scripted.responses.append('{"description": "Титульный слайд с темой и автором"}')
+    assert client.post(base + "/preparation").status_code == 202
+    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
+    state = client.get(base + "/preparation").json()
+    assert state["job"] == "done", state
+    assert state["talks"][0]["speakers"] == [
+        {
+            "name": "Петров Алексей Сергеевич",
+            "affiliation": "Институт примера",
+            "role": "speaker",
+            "contacts": ["petrov@example.org"],
+        }
+    ]
+    # Реестр уже знал доклад: модель спрашивалась только об изображении, не о теме и авторах.
+    assert [request.schema["title"] for request in scripted.requests if request.schema] == [
+        "Visual"
+    ]
+
+
 def test_card_keeps_registry_values_and_fills_only_gaps() -> None:
     from rapporteur.contracts import Speaker
     from rapporteur.contracts.enums import TalkStatus

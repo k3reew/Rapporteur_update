@@ -592,9 +592,11 @@ def propose(
             if known
             else (material.title_candidates.title if material.title_candidates else None)
         )
+        # Доклад из папки заводится в реестре без авторов: тогда берутся авторы титульной
+        # страницы, иначе карточка осталась бы без них.
         speakers = (
             known.speakers
-            if known
+            if known and known.speakers
             else [
                 Speaker(name=s)
                 for s in (material.title_candidates.speakers if material.title_candidates else [])
