@@ -119,6 +119,8 @@ def test_talk_without_interest_gets_card_and_enters_the_report(
     version = client.get(f"/api/v1/conferences/{conference}/reports").json()[0]
     assert version["input"]["talks"][0]["card_only"] is True
     assert version["input"]["talks"][0]["summary"] is None
+    # Рекомендации строятся по сводке: у карточки их нет, предупреждать не о чем.
+    assert not [w for w in version["warnings"] if w.startswith("Рекомендации отделам")]
     docx = client.get(f"/api/v1/report-versions/{version['id']}/files/docx").content
     text = [p.text for p in Document(io.BytesIO(docx)).paragraphs]
     start = text.index("1. «Кэширование запросов»")

@@ -240,7 +240,9 @@ def report_snapshot(
     if not deps:
         return result, warnings
     for talk in db.conference_talks(conn, conference_id):
-        if talk["status"] not in ("reviewed", "processed", "stale"):
+        # Рекомендации строятся по фактам сводки; у доклада только с карточкой их нет
+        # (interest.py), прежние рекомендации его сводки в справку не идут.
+        if talk["status"] not in ("reviewed", "processed", "stale") or talk["card_only"]:
             continue
         recs = view(conn, talk["id"])
         if not recs["version"] or recs["stale"] or not recs["reviewed"]:
