@@ -311,7 +311,9 @@ class Processor:
                 file["id"]: preparation.extract(file, self.storage, client, profile)
                 for file in files
             }
-            proposal = preparation.propose(files, extracted, existing, client, profile)
+            proposal = preparation.propose(
+                files, extracted, existing, client, profile, self.storage
+            )
         except Exception as error:
             log.exception("Подготовка конференции %s", conference_id)
             with self.database.tx() as conn:

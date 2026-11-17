@@ -2,8 +2,10 @@
 
 import base64
 import json
+import logging
 import sqlite3
 import urllib.request
+from collections.abc import Callable
 from itertools import pairwise
 from pathlib import PurePosixPath
 from typing import Self
@@ -20,6 +22,8 @@ from rapporteur.ingest import card, documents, notes
 from rapporteur.llm.client import LlmClient
 from rapporteur.llm.tasks import json_task
 from rapporteur.storage import Storage, blob_key, cache_key
+
+log = logging.getLogger("rapporteur.preparation")
 
 VERSION = "1.0.0"
 _RECORDINGS = (FileKind.AUDIO, FileKind.VIDEO)
@@ -434,6 +438,7 @@ def propose(
     existing: materials.Materials,
     client: LlmClient,
     profile: ModelProfile,
+    storage: Storage | None = None,
 ) -> list[ProposedTalk]:
     proposed: list[ProposedTalk] = []
     program = "\n".join(
@@ -593,11 +598,29 @@ def propose(
             )
     known_talks = {talk.id: talk for talk in existing.talks}
     by_id = {file["id"]: file for file in files}
+
+    def model_card(lines: list[str], names: list[str]) -> card.CardHints:
+        def ask() -> card.CardAnswer:
+            prompt = card.card_prompt(lines, names)
+            return json_task(client, profile, card.CARD_INSTRUCTION, prompt, card.CardAnswer)
+
+        key = cache_key("card", card.VERSION, lines, names, profile.model_dump(mode="json"))
+        try:
+            answer = (
+                storage.cached(f"cache/card/{key}.json", card.CardAnswer, ask) if storage else ask()
+            )
+        except StageError as error:
+            # Карточка без модели лучше, чем сорванная подготовка: оператор дополнит её.
+            log.warning("Карточка доклада без модели: %s", error.message)
+            return card.CardHints()
+        return card.grounded(answer, lines, names)
+
     return [
         with_card(
             talk,
             known_talks.get(talk.talk_id) if talk.talk_id else None,
             _card_lines(talk, by_id, extracted),
+            model_card,
         )
         for talk in proposed
     ]
@@ -629,12 +652,25 @@ def _card_lines(
 
 
 def with_card(
-    talk: ProposedTalk, known: materials.ReviewTalk | None, lines: list[str]
+    talk: ProposedTalk,
+    known: materials.ReviewTalk | None,
+    lines: list[str],
+    model: Callable[[list[str], list[str]], card.CardHints] | None = None,
 ) -> ProposedTalk:
     """Дополняет карточку: сначала сведения из реестра (их мог исправить оператор), затем
-    найденное на страницах. Заполненные поля не заменяются."""
+    найденное шаблонами на страницах, затем — если шаблонов не хватило — моделью.
+    Заполненные поля не заменяются."""
     previous = {speaker.name: speaker for speaker in (known.speakers if known else [])}
-    hints = card.card_hints(lines, [speaker.name for speaker in talk.speakers], talk.title)
+    names = [speaker.name for speaker in talk.speakers]
+    hints = card.card_hints(lines, names, talk.title)
+    missing = [
+        speaker.name
+        for speaker in talk.speakers
+        if not speaker.affiliation
+        and not (speaker.name in previous and previous[speaker.name].affiliation)
+    ]
+    if model is not None and card.needs_model(lines, names, missing, hints):
+        hints = card.merge(hints, model(lines, names))
     speakers = []
     for speaker in talk.speakers:
         before = previous.get(speaker.name)

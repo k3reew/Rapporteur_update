@@ -143,6 +143,130 @@ def card_hints(
     return hints
 
 
+class CardAuthor(BaseModel):
+    name: str
+    organizations: list[str] = Field(default_factory=list)
+    contacts: list[str] = Field(default_factory=list)
+
+
+class CardAnswer(BaseModel):
+    """Ответ модели: организации и контакты по авторам и не отнесённые ни к кому."""
+
+    authors: list[CardAuthor] = Field(default_factory=list)
+    organizations: list[str] = Field(default_factory=list)
+    contacts: list[str] = Field(default_factory=list)
+
+
+CARD_INSTRUCTION = (
+    "Определи организации и контакты авторов доклада по его титульной и последней страницам. "
+    "Для каждого автора из списка укажи организации и контакты, только если связь видна: "
+    "та же строка, одинаковые сноски ¹ ² или * у фамилии и организации, e-mail с фамилией. "
+    "Копируй организации и контакты дословно, без знаков сносок. Тема доклада, должности "
+    "и учёные степени организациями не являются. Организации и контакты, которые нельзя "
+    "уверенно отнести к автору, перечисли в organizations и contacts доклада."
+)
+
+
+def needs_model(
+    lines: Sequence[str], speakers: Sequence[str], missing: Sequence[str], hints: CardHints
+) -> bool:
+    """Модель нужна, если шаблоны не смогли распределить организации между авторами без
+    организации или если похожие на организации строки (кавычки, аббревиатуры) не
+    распознаны."""
+    if not missing:
+        return False
+    if len(speakers) > 1 and (hints.organizations or hints.contacts):
+        return True
+    if hints.organizations or hints.affiliations:
+        return False
+    surnames = {key for name in speakers for key in _surnames(name)}
+    for raw in lines:
+        line = " ".join(normalize_text(raw).split())
+        rest = line
+        for start, end, _ in reversed(_contact_spans(line)):
+            rest = rest[:start] + " " + rest[end:]
+        if surnames & set(_words(rest)) or len(rest) > _MAX_LINE:
+            continue
+        if "«" in rest or '"' in rest or re.search(r"\b[A-ZА-ЯЁ]{2,}\b", rest):
+            return True
+    return False
+
+
+def card_prompt(lines: Sequence[str], speakers: Sequence[str], limit: int = 6000) -> str:
+    text = "\n".join(" ".join(line.split()) for line in lines if line.strip())
+    return "Авторы: " + "; ".join(speakers) + "\nСтраницы:\n" + text[:limit]
+
+
+def grounded(answer: CardAnswer, lines: Sequence[str], speakers: Sequence[str]) -> CardHints:
+    """Принимает из ответа модели только то, что есть на страницах: организации — по словам
+    текста, контакты — среди найденных шаблонами, авторов — из списка."""
+    page = " " + _key(" ".join(lines)) + " "
+    known_contacts = {_contact_key(item): item for item in find_contacts("\n".join(lines))}
+
+    def organizations(values: Iterable[str]) -> list[str]:
+        result = []
+        for value in values:
+            value = _FOOTNOTE.sub("", " ".join(value.split())).strip(" ,;:–-")
+            key = _key(value)
+            if key and f" {key} " in page and len(value) <= _MAX_LINE:
+                result.append(value)
+        return _unique(result)
+
+    def contacts(values: Iterable[str]) -> list[str]:
+        return _unique(
+            known_contacts[_contact_key(value)]
+            for value in values
+            if _contact_key(value) in known_contacts
+        )
+
+    hints = CardHints()
+    surnames = {name: _surnames(name) for name in speakers}
+    for author in answer.authors:
+        owners = [name for name, keys in surnames.items() if keys & set(_words(author.name))]
+        if len(owners) != 1:
+            continue
+        found = organizations(author.organizations)
+        if found:
+            hints.affiliations.setdefault(owners[0], "; ".join(found))
+        if contacts(author.contacts):
+            hints.speaker_contacts.setdefault(owners[0], contacts(author.contacts))
+    hints.organizations = organizations(answer.organizations)
+    hints.contacts = contacts(answer.contacts)
+    return hints
+
+
+def merge(rules: CardHints, model: CardHints) -> CardHints:
+    """Шаблоны важнее модели; модель дополняет авторов без организации и контактов."""
+    affiliations = model.affiliations | rules.affiliations
+    # Контакт, отнесённый шаблонами к автору, модель другому не передаёт.
+    taken = {item for values in rules.speaker_contacts.values() for item in values}
+    speaker_contacts = {
+        name: kept
+        for name, values in model.speaker_contacts.items()
+        if (kept := [item for item in values if item not in taken])
+    } | rules.speaker_contacts
+    attributed = {item for values in speaker_contacts.values() for item in values}
+    assigned = {part.strip() for value in affiliations.values() for part in value.split(";")}
+    return CardHints(
+        affiliations=affiliations,
+        speaker_contacts=speaker_contacts,
+        organizations=[
+            item
+            for item in _unique([*rules.organizations, *model.organizations])
+            if item not in assigned
+        ],
+        contacts=[
+            item for item in _unique([*rules.contacts, *model.contacts]) if item not in attributed
+        ],
+    )
+
+
+def _contact_key(value: str) -> str:
+    value = value.removeprefix("ORCID ").casefold()
+    digits = re.sub(r"\D", "", value)
+    return digits if "@" not in value and "." not in value and len(digits) >= 10 else value.strip()
+
+
 def _organization(line: str) -> str | None:
     line = _LABEL.sub(" ", line)
     line = _LEADING_INITIALS.sub("", " ".join(line.split()))

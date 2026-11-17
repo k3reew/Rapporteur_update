@@ -300,3 +300,135 @@ def test_card_keeps_registry_values_and_fills_only_gaps() -> None:
     ]
     assert result.organizations == ["Исправлено оператором"]
     assert result.contacts == ["+7 495 1112233"]
+
+
+FOOTNOTES = [
+    "Кэширование в распределённых системах",
+    "Иванов И. И.¹, Петров П. П.²",
+    "¹ Институт системного программирования",
+    "² Лаборатория «Пример»",
+    "ivanov@example.org; +7 495 111-22-33",
+]
+
+
+def test_model_is_asked_only_when_rules_leave_gaps() -> None:
+    from rapporteur.ingest.card import card_hints, needs_model
+
+    both = ["Иванов И. И.", "Петров П. П."]
+    hints = card_hints(FOOTNOTES, both, FOOTNOTES[0])
+    assert needs_model(FOOTNOTES, both, both, hints)
+    assert not needs_model(FOOTNOTES, both, [], hints)
+
+    single = ["Сидоров А. П."]
+    plain = ["Сидоров А. П.", "Спасибо за внимание"]
+    assert not needs_model(plain, single, single, card_hints(plain, single))
+    unknown = ["Сидоров А. П.", "«Яндекс»"]
+    assert needs_model(unknown, single, single, card_hints(unknown, single))
+
+
+def test_model_answer_is_grounded_in_pages() -> None:
+    from rapporteur.ingest.card import CardAnswer, CardAuthor, grounded
+
+    answer = CardAnswer(
+        authors=[
+            CardAuthor(
+                name="Иванов",
+                organizations=["¹ Институт системного программирования"],
+                contacts=["ivanov@example.org", "ivanov@invented.org"],
+            ),
+            CardAuthor(name="Петров П. П.", organizations=["Придуманный институт"]),
+            CardAuthor(name="Сидоров", organizations=["Лаборатория «Пример»"]),
+        ],
+        organizations=["Лаборатория «Пример»", "Министерство всего"],
+        contacts=["+7 (495) 111-22-33"],
+    )
+    hints = grounded(answer, FOOTNOTES, ["Иванов И. И.", "Петров П. П."])
+    assert hints.affiliations == {"Иванов И. И.": "Институт системного программирования"}
+    assert hints.speaker_contacts == {"Иванов И. И.": ["ivanov@example.org"]}
+    assert hints.organizations == ["Лаборатория «Пример»"]
+    assert hints.contacts == ["+7 495 111-22-33"]
+
+
+def test_card_uses_model_for_footnotes_and_rules_win() -> None:
+    from rapporteur.contracts import Speaker
+    from rapporteur.ingest.card import CardHints
+    from rapporteur.preparation import Link, ProposedTalk, with_card
+
+    asked: list[list[str]] = []
+
+    def model(lines: list[str], names: list[str]) -> CardHints:
+        asked.append(names)
+        return CardHints(
+            affiliations={
+                "Иванов И. И.": "Институт системного программирования",
+                "Петров П. П.": "Лаборатория «Пример»",
+            },
+            speaker_contacts={"Петров П. П.": ["ivanov@example.org"]},
+        )
+
+    proposal = ProposedTalk(
+        title=FOOTNOTES[0],
+        speakers=[Speaker(name="Иванов И. И."), Speaker(name="Петров П. П.")],
+        links=[Link(file_id="f")],
+    )
+    result = with_card(proposal, None, FOOTNOTES, model)
+    assert asked == [["Иванов И. И.", "Петров П. П."]]
+    assert [(s.affiliation, s.contacts) for s in result.speakers] == [
+        ("Институт системного программирования", ["ivanov@example.org"]),
+        ("Лаборатория «Пример»", []),
+    ]
+    assert result.organizations == []
+    assert result.contacts == ["+7 495 111-22-33"]
+
+
+def test_preparation_asks_model_for_card_and_caches_answer(
+    web: tuple[TestClient, ScriptedClient], tmp_path: Path
+) -> None:
+    import json
+
+    client, scripted = web
+    conference = client.post("/api/v1/conferences", json={"title": "Сноски"}).json()["id"]
+    base = f"/api/v1/conferences/{conference}"
+    uploaded = client.post(
+        base + "/materials",
+        params={"path": "речь.txt", "purpose": "document"},
+        headers={"Content-Type": "application/octet-stream"},
+        content="\n".join(FOOTNOTES).encode(),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    scripted.responses.extend(
+        [
+            json.dumps(
+                {
+                    "title": FOOTNOTES[0],
+                    "speakers": ["Иванов И. И.", "Петров П. П."],
+                    "talk_index": None,
+                    "confidence": 1,
+                    "reason": "Титульная страница",
+                }
+            ),
+            json.dumps(
+                {
+                    "authors": [
+                        {"name": "Иванов И. И.", "organizations": [FOOTNOTES[2][2:]]},
+                        {"name": "Петров П. П.", "organizations": ["Лаборатория «Пример»"]},
+                    ],
+                    "organizations": [],
+                    "contacts": [],
+                }
+            ),
+        ]
+    )
+    assert client.post(base + "/preparation").status_code == 202
+    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
+    state = client.get(base + "/preparation").json()
+    assert state["job"] == "done", state
+    speakers = state["talks"][0]["speakers"]
+    assert [s["affiliation"] for s in speakers] == [
+        "Институт системного программирования",
+        "Лаборатория «Пример»",
+    ]
+    assert speakers[0]["contacts"] == ["ivanov@example.org"]
+    assert state["talks"][0]["contacts"] == ["+7 495 111-22-33"]
+    assert len(list((tmp_path / "cache" / "card").iterdir())) == 1
+    assert not scripted.responses
