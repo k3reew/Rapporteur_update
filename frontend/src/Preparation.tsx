@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { request } from './api';
 import { LegacyTalks } from './LegacyTalks';
+import { CardEditor, cleanCard, type Speaker } from './TalkCard';
 import type { Review } from './materialTypes';
 import { useResource } from './useResource';
 import { useUnsavedChanges } from './useUnsavedChanges';
 
 type Link = { file_id: string; start_ms: number | null; end_ms: number | null; page_start: number | null; page_end: number | null };
-type Speaker = { name: string; role?: string; affiliation?: string | null };
-type Talk = { talk_id: string | null; title: string; speakers: Speaker[]; links: Link[]; reason: string };
+type Talk = {
+  talk_id: string | null; title: string; speakers: Speaker[]; organizations?: string[]; contacts?: string[];
+  links: Link[]; reason: string;
+};
 type State = { version: number; job: string | null; error: string | null; talks: Talk[]; warnings?: string[] };
 const headers = { 'Content-Type': 'application/json' };
 
@@ -51,7 +54,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
     try {
       if (confirm && (draft || state?.job !== 'confirmed')) {
         const response = await request(url, { method: 'PUT', headers,
-          body: JSON.stringify({ version: draft?.version ?? state?.version, talks }) });
+          body: JSON.stringify({ version: draft?.version ?? state?.version, talks: talks.map(cleanCard) }) });
         setState(await response.json()); setDraft(undefined); onConfirmed();
       }
       if (confirm) await startProcessing();
@@ -75,9 +78,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
     {(state?.job === 'done' || state?.job === 'confirmed') && <>
       <p>Предложено докладов: {talks.length}. Время указано в секундах от начала оригинала.</p>
       {talks.map((talk, index) => <details className="talk-editor" key={index}><summary><span><strong>{talk.title || 'Тема не указана'}</strong><small>{talk.speakers.map(s => s.name).join(', ') || 'Автор не установлен'} · материалов {talk.links.length}</small></span><span className="detail-action">Изменить</span></summary><fieldset className="talk-editor-body" disabled={busy || running}>
-        <label className="field">Тема доклада {index + 1}<input value={talk.title} onChange={e => update(index, { title: e.target.value })} /></label>
-        <label className="field">Авторы (через точку с запятой)<input value={talk.speakers.map(s => s.name).join('; ')}
-          onChange={e => update(index, { speakers: e.target.value.split(';').filter(s => s.trim()).map(name => talk.speakers.find(s => s.name === name.trim()) ?? { name: name.trim() }) })} /></label>
+        <CardEditor card={talk} titleLabel={`Тема доклада ${index + 1}`} onChange={value => update(index, value)} />
         <small>{talk.reason}</small>
         {talk.links.map((link, position) => {
           const file = files.find(f => f.source.id === link.file_id);

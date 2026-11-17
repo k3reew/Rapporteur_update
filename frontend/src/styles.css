@@ -217,6 +217,16 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
   .talk-editor > summary { gap: .8rem; }
   .row { gap: .6rem; }
 }
+/* Карточка доклада: авторы строками, на узком экране поля друг под другом. */
+.card-authors legend { margin-bottom: .5rem; font-size: .85rem; font-weight: 550; color: var(--mut); }
+.card-author { display: grid; grid-template-columns: 2fr 1fr 2fr 2fr auto; gap: .6rem; align-items: end; padding-bottom: .3rem; }
+.card-author .field { margin-bottom: .6rem; }
+.card-author .link { margin-bottom: 1rem; }
+.card-people { margin: 0 0 .6rem; padding: 0; list-style: none; }
+.card-people li + li { margin-top: .35rem; }
+.card-people small { display: block; }
+.card-view p { margin: .3rem 0; }
+@media (max-width: 900px) { .card-author { grid-template-columns: 1fr; gap: 0; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 .report-selection .check { padding: .65rem 0; border-bottom: 1px solid var(--border); }
 .department-upload { margin: 2rem 0; }

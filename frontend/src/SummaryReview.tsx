@@ -4,6 +4,7 @@ import { Recommendations } from './Departments';
 import type { TalkProgress } from './talkTypes';
 import { request } from './api';
 import { statusTone } from './status';
+import { CardEditor, CardView, cleanCard, type Card } from './TalkCard';
 import { talkStatuses } from './status';
 
 type Line = { text: string; claim_ids: string[] };
@@ -111,8 +112,8 @@ export function SummaryReview(
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [talks, setTalks] = useState<TalkProgress[]>([]);
-  const [metadata, setMetadata] = useState<{ title: string | null; speakers: { name: string }[]; revision: number }>();
-  const [metaDraft, setMetaDraft] = useState<{ title: string; speakers: string }>();
+  const [metadata, setMetadata] = useState<Omit<Card, 'title'> & { title: string | null; revision: number }>();
+  const [metaDraft, setMetaDraft] = useState<Card>();
   const [pending, setPending] = useState<string>();
   const allowNavigation = useRef(false);
   useEffect(() => {
@@ -147,10 +148,10 @@ export function SummaryReview(
   }
   async function saveMetadata() {
     if (!metaDraft || !metadata) return;
+    const card = cleanCard(metaDraft);
     await request(`/api/v1/talks/${talkId}`, { method: 'PUT', headers: json,
-      body: JSON.stringify({ title: metaDraft.title.trim() || null,
-        speakers: metaDraft.speakers.split(';').filter(s => s.trim()).map(name => metadata.speakers.find(s => s.name === name.trim()) ?? { name: name.trim() }),
-        revision: metadata.revision }),
+      body: JSON.stringify({ title: card.title || null, speakers: card.speakers,
+        organizations: card.organizations, contacts: card.contacts, revision: metadata.revision }),
     });
     setMetadata(await (await request(`/api/v1/talks/${talkId}`)).json()); setMetaDraft(undefined);
   }
@@ -301,12 +302,11 @@ export function SummaryReview(
         <h2 id="summary-title">{metadata?.title ?? title ?? view.talk_title ?? 'Доклад без названия'}</h2>
       {metadata && <div className="talk-metadata">
         {metaDraft ? <>
-          <label className="field">Тема<input value={metaDraft.title} onChange={e => setMetaDraft({ ...metaDraft, title: e.target.value })} /></label>
-          <label className="field">Авторы через точку с запятой<input value={metaDraft.speakers} onChange={e => setMetaDraft({ ...metaDraft, speakers: e.target.value })} /></label>
-          <button onClick={() => void saveMetadata().catch(e => setError((e as Error).message))}>Сохранить тему и авторов</button>
+          <CardEditor card={metaDraft} onChange={setMetaDraft} />
+          <button onClick={() => void saveMetadata().catch(e => setError((e as Error).message))}>Сохранить карточку</button>
           <button onClick={() => setMetaDraft(undefined)}>Отменить</button>
-        </> : <><p>{metadata.speakers.map(s => s.name).join('; ') || 'Автор не установлен'}</p>
-          <button className="link" onClick={() => setMetaDraft({ title: metadata.title ?? '', speakers: metadata.speakers.map(s => s.name).join('; ') })}>Править тему и авторов</button></>}
+        </> : <><CardView card={{ ...metadata, title: metadata.title ?? '' }} />
+          <button className="link" onClick={() => setMetaDraft({ ...metadata, title: metadata.title ?? '' })}>Править карточку</button></>}
       </div>}
 
         <div className="kv">
