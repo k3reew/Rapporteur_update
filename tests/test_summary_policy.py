@@ -20,10 +20,14 @@ REQUIRED = SummaryChecksConfig(required={ClaimType.CONCLUSION: 3, ClaimType.RESU
 
 
 def test_shipped_summary_settings_require_conclusions_and_results() -> None:
-    checks = load_checks()
+    from rapporteur.settings import ROOT
+
+    checks = load_checks(ROOT / "summary.yaml")
     assert checks.required == {ClaimType.CONCLUSION: 3, ClaimType.RESULT: 3}
+    assert checks.explain_abbreviations
     # Остальное совпадает со значениями по умолчанию в коде.
-    assert checks.model_copy(update={"required": {}}) == SummaryChecksConfig()
+    plain = checks.model_copy(update={"required": {}, "explain_abbreviations": False})
+    assert plain == SummaryChecksConfig()
 
 
 def test_every_profile_has_all_prompts_of_its_edition() -> None:
@@ -126,3 +130,112 @@ def test_coverage_asks_for_some_of_many_results() -> None:
         "результаты: отражено 1 из нужных 2, используй c5, c6"
     ]
     assert coverage_problems(draft, many, SummaryChecksConfig()) == []
+
+
+def test_abbreviations_and_their_definitions_are_found() -> None:
+    from rapporteur.summarize.pack import PackSource, build_pack
+    from rapporteur.summarize.terms import abbreviations, find_definitions, unexplained
+
+    from .fictional_talk import CONFERENCE, DECK, TALK, slide_draft
+
+    assert abbreviations("СУБД и LFU-кэш в XXI веке, COVID-19, 32 ГБ; снова СУБД") == [
+        "СУБД",
+        "LFU",
+        "COVID-19",
+        "ГБ",
+    ]
+    source = build_pack(
+        CONFERENCE,
+        TALK,
+        [
+            PackSource(
+                DECK,
+                [
+                    slide_draft(1, "Используется система управления базами данных (СУБД)."),
+                    slide_draft(2, "Политика LFU (вытеснение редко используемых записей)."),
+                    slide_draft(3, "ЦОД — центр обработки данных, где стоит стенд"),
+                    slide_draft(4, "Новая политика Least Recently Used (LRU) проще"),
+                ],
+            )
+        ],
+    )
+    found = find_definitions(source, ["СУБД", "LFU", "ЦОД", "LRU", "API"])
+    assert {key: (item.definition, item.label) for key, item in found.items()} == {
+        "СУБД": ("система управления базами данных", "S1"),
+        "LFU": ("вытеснение редко используемых записей", "S2"),
+        "ЦОД": ("центр обработки данных, где стоит стенд", "S3"),
+        "LRU": ("Least Recently Used", "S4"),
+    }
+    lines = [
+        "Используется система управления базами данных (СУБД), СУБД хранит данные.",
+        "LFU (вытеснение редко используемых записей) снизила задержку.",
+        "ЦОД — центр обработки данных.",
+        "Объём 32 ГБ, а LRU быстрее; в РФ.",
+    ]
+    assert unexplained(lines, ["ГБ", "РФ"]) == ["LRU"]
+
+
+def test_summary_without_definitions_avoids_abbreviations() -> None:
+    from rapporteur.contracts.enums import CheckName, SummaryStatus
+
+    facts = FactsDraft.model_validate_json(facts_answer())
+    claims = verify_facts(facts, pack(), QuoteConfig(), "test")
+    plain = [
+        SENTENCES[0],
+        line("Автор сравнил две политики вытеснения записей на стенде из 4 узлов.", "c2"),
+        line("Показано, что одна из политик снизила задержку на 23 %.", "c3"),
+        SENTENCES[3],
+    ]
+    conclusion = [line("Одна из политик эффективнее при неравномерной нагрузке.", "c4")]
+    client = ScriptedClient([summary_answer(), summary_answer(plain, conclusion), critic_answer()])
+    checks = SummaryChecksConfig(explain_abbreviations=True)
+    result = write_summary(
+        client, SummaryConfig(profile=PROFILE_V3, checks=checks), facts.title, claims, pack()
+    )
+    assert result.status is SummaryStatus.READY and result.attempts == 2
+    # Порядок — по утверждениям в порядке важности: вывод c4 упоминает LFU первым.
+    assert "Расшифровки нет в материалах: LFU, LRU." in client.requests[0].messages[1].content
+    assert "Не расшифровывай общеизвестные сокращения: РФ" in client.requests[0].messages[0].content
+    repair = client.requests[1].messages[-1].content
+    assert "сокращения без расшифровки при первом упоминании: LRU, LFU" in repair
+    states = [(c.attempt, c.passed) for c in result.checks if c.check is CheckName.ABBREVIATIONS]
+    assert states == [(1, False), (2, True)]
+
+
+def test_critic_sees_the_fragment_with_the_definition() -> None:
+    import json
+
+    from rapporteur.contracts.enums import SummaryStatus
+    from rapporteur.summarize.pack import PackSource, build_pack
+
+    from .fictional_talk import CONFERENCE, DECK, SLIDES, TALK, slide_draft
+
+    slides = [*SLIDES, "Термины: LRU (вытеснение давно не использованных записей)."]
+    source = build_pack(
+        CONFERENCE, TALK, [PackSource(DECK, [slide_draft(n, t) for n, t in enumerate(slides, 1)])]
+    )
+    facts = FactsDraft.model_validate_json(facts_answer())
+    claims = verify_facts(facts, source, QuoteConfig(), "test")
+    explained = [
+        SENTENCES[0],
+        line(
+            "Автор сравнил политику вытеснения давно не использованных записей (LRU) "
+            "и одну из альтернатив на стенде из 4 узлов.",
+            "c2",
+        ),
+        line("Показано, что альтернативная политика снизила задержку на 23 %.", "c3"),
+        SENTENCES[3],
+    ]
+    conclusion = [line("Альтернатива эффективнее LRU при неравномерной нагрузке.", "c4")]
+    client = ScriptedClient([summary_answer(explained, conclusion), critic_answer()])
+    checks = SummaryChecksConfig(explain_abbreviations=True)
+    result = write_summary(
+        client, SummaryConfig(profile=PROFILE_V3, checks=checks), facts.title, claims, source
+    )
+    assert result.status is SummaryStatus.READY
+    assert "LRU — вытеснение давно не использованных записей [S6]" in (
+        client.requests[0].messages[1].content
+    )
+    reviewed = json.loads(client.requests[1].messages[1].content)
+    s2 = next(item for item in reviewed if item["line"] == "s2")
+    assert [source["label"] for source in s2["sources"]] == ["S3", "S6"]

@@ -125,6 +125,8 @@ class CheckName(StrEnum):
     CRITIC = "critic"
     # Обязательные утверждения summary.yaml (выводы, результаты) отражены в тексте.
     COVERAGE = "coverage"
+    # Сокращения расшифрованы при первом упоминании (summarize/terms.py).
+    ABBREVIATIONS = "abbreviations"
 
 
 class InferenceEngine(StrEnum):

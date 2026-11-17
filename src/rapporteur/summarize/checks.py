@@ -11,11 +11,12 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
 from razdel import sentenize
 
+from rapporteur import settings
 from rapporteur.contracts import Claim, SummaryDraft, SummaryLine, TalkFragmentPack
 from rapporteur.contracts.claims import CheckResult
 from rapporteur.contracts.enums import CheckName, ClaimStatus, ClaimType
-from rapporteur.settings import SUMMARY_FILE
 from rapporteur.summarize.quotes import search_form
+from rapporteur.summarize.terms import unexplained
 
 # Слова целиком; «*» в конце — любое окончание. Оценочные эпитеты и первое лицо (spec §6.7).
 DEFAULT_FORBIDDEN: tuple[str, ...] = (
@@ -50,6 +51,13 @@ DEFAULT_FORBIDDEN: tuple[str, ...] = (
 )
 
 
+# Сокращения, понятные читателю справки без расшифровки. Единицы измерения сюда же:
+# «32 ГБ» сокращением для расшифровки не считается.
+DEFAULT_KNOWN_ABBREVIATIONS: tuple[str, ...] = (
+    "РФ", "США", "ЕС", "СССР", "ООН", "СНГ", "ВВП", "СМИ", "РАН", "ИТ", "IT", "ИИ",
+    "КБ", "МБ", "ГБ", "ТБ", "ПБ", "KB", "MB", "GB", "TB",
+)  # fmt: skip
+
 # Выводы и результаты важнее общего описания доклада.
 DEFAULT_PRIORITIES: tuple[ClaimType, ...] = (
     ClaimType.CONCLUSION,
@@ -72,6 +80,9 @@ class SummaryChecksConfig(BaseModel):
     # Сколько утверждений типа текст обязан использовать (не больше, чем их есть).
     # Пусто — без требования; в поставке требование задаёт summary.yaml.
     required: dict[ClaimType, NonNegativeInt] = Field(default_factory=dict)
+    # Сокращения в тексте расшифровываются при первом упоминании, кроме общеизвестных.
+    explain_abbreviations: bool = False
+    known_abbreviations: tuple[str, ...] = DEFAULT_KNOWN_ABBREVIATIONS
 
     @model_validator(mode="after")
     def _ordered(self) -> "SummaryChecksConfig":
@@ -91,8 +102,10 @@ class SummaryChecksConfig(BaseModel):
         )
 
 
-def load_checks(path: Path = SUMMARY_FILE) -> SummaryChecksConfig:
-    """Настройки сводки из summary.yaml; без файла — значения по умолчанию."""
+def load_checks(path: Path | None = None) -> SummaryChecksConfig:
+    """Настройки сводки из summary.yaml (settings.SUMMARY_FILE); без файла — значения
+    по умолчанию."""
+    path = path or settings.SUMMARY_FILE
     if not path.is_file():
         return SummaryChecksConfig()
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -177,6 +190,8 @@ def check_summary(
     }
     if config.required:
         checks[CheckName.COVERAGE] = coverage_problems(draft, claims, config)
+    if config.explain_abbreviations:
+        checks[CheckName.ABBREVIATIONS] = abbreviation_problems(draft, config)
     return [
         CheckResult(
             check=name,
@@ -185,6 +200,18 @@ def check_summary(
             details="; ".join(problems) if problems else None,
         )
         for name, problems in checks.items()
+    ]
+
+
+def abbreviation_problems(draft: SummaryDraft, config: SummaryChecksConfig) -> list[str]:
+    lines = [line.text for line in [*draft.sentences, *draft.conclusions]]
+    missing = unexplained(lines, config.known_abbreviations)
+    if not missing:
+        return []
+    return [
+        f"сокращения без расшифровки при первом упоминании: {', '.join(missing)}. "
+        "Расшифруй по материалам, например «полное название (СУБД)», "
+        "или замени описанием без сокращения"
     ]
 
 

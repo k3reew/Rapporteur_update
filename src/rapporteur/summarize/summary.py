@@ -42,9 +42,10 @@ from rapporteur.summarize.checks import (
 )
 from rapporteur.summarize.grounding import review_summary
 from rapporteur.summarize.pack import context_fragments
+from rapporteur.summarize.terms import Definition, abbreviations, find_definitions
 
 # Версия шага входит в ключ кэша.
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 STEP = "summary"
 
 _SUMMARY_NAMESPACE = uuid.UUID("9a4e2c71-3b5d-4f8e-a6c0-7d1b2e3f4a5c")
@@ -112,6 +113,17 @@ def write_summary(
         ClaimLine(claim.key, _KIND[claim.type], claim.text, claim.evidence) for claim in ordered
     ]
     evidence = [item for claim in usable for item in claim.evidence]
+    # Расшифровки сокращений из материалов; без расшифровки сокращение в текст не входит.
+    glossary: dict[str, Definition] = {}
+    unexplained: list[str] = []
+    if config.checks.explain_abbreviations:
+        used = [
+            item
+            for item in abbreviations(" ".join(claim.text for claim in ordered))
+            if item not in config.checks.known_abbreviations
+        ]
+        glossary = find_definitions(pack, used)
+        unexplained = [item for item in used if item not in glossary]
     messages = [
         Message(
             "system",
@@ -121,6 +133,8 @@ def write_summary(
                 max_sentences=high,
                 priorities=[CLAIM_NAMES[item] for item in config.checks.priorities],
                 required=required_lines(config.checks, claims),
+                explain_abbreviations=config.checks.explain_abbreviations,
+                known_abbreviations=config.checks.known_abbreviations,
             ),
         ),
         Message(
@@ -131,6 +145,8 @@ def write_summary(
                 claims=lines,
                 has_conclusions=any(claim.type is ClaimType.CONCLUSION for claim in usable),
                 fragments=context_fragments(pack, evidence),
+                glossary=list(glossary.values()),
+                unexplained=unexplained,
             ),
         ),
     ]
@@ -152,7 +168,14 @@ def write_summary(
         if edition(profile.prompt_version) >= 2 and all(check.passed for check in current):
             current.append(
                 review_summary(
-                    client, profile, draft, claims, pack, attempt=attempt, seed=config.seed
+                    client,
+                    profile,
+                    draft,
+                    claims,
+                    pack,
+                    attempt=attempt,
+                    seed=config.seed,
+                    glossary={key: item.label for key, item in glossary.items()},
                 )
             )
         checks.extend(current)

@@ -1,7 +1,7 @@
 """Смысловая проверка предложений по их привязанным источникам, отдельно от поиска цитат."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,6 +12,7 @@ from rapporteur.llm.client import LlmClient, Message
 from rapporteur.llm.prompts import load_prompt
 from rapporteur.llm.structured import ask_structured
 from rapporteur.summarize.pack import context_fragments
+from rapporteur.summarize.terms import abbreviations
 
 
 class LineDecision(BaseModel):
@@ -37,24 +38,27 @@ def review_summary(
     *,
     attempt: int,
     seed: int,
+    glossary: Mapping[str, str] | None = None,
 ) -> CheckResult:
+    """glossary — метка фрагмента с расшифровкой сокращения: если строка расшифровывает
+    сокращение, критик видит и этот фрагмент."""
     by_key = {claim.key: claim for claim in claims}
+    fragments = {fragment.label: fragment for fragment in pack.fragments}
     lines = []
     expected: list[str] = []
     for prefix, items in (("s", draft.sentences), ("c", draft.conclusions)):
         for number, line in enumerate(items, 1):
             expected.append(f"{prefix}{number}")
             evidence = [item for key in line.claim_ids for item in by_key[key].evidence]
-            lines.append(
-                {
-                    "line": f"{prefix}{number}",
-                    "text": line.text,
-                    "sources": [
-                        {"label": fragment.label, "text": fragment.text}
-                        for fragment in context_fragments(pack, evidence)
-                    ],
-                }
-            )
+            sources = [
+                {"label": fragment.label, "text": fragment.text}
+                for fragment in context_fragments(pack, evidence)
+            ]
+            for abbreviation in abbreviations(line.text):
+                label = (glossary or {}).get(abbreviation)
+                if label and label in fragments and all(s["label"] != label for s in sources):
+                    sources.append({"label": label, "text": fragments[label].text})
+            lines.append({"line": f"{prefix}{number}", "text": line.text, "sources": sources})
     schema = GroundingReview.model_json_schema()
     schema["$defs"]["LineDecision"]["properties"]["line"]["enum"] = expected
     schema["properties"]["decisions"]["minItems"] = len(expected)
