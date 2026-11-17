@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rapporteur import db, materials, model_choice, settings
 from rapporteur.contracts import FragmentDraft, ModelProfile, Speaker
+from rapporteur.contracts.base import NonEmptyStr
 from rapporteur.contracts.enums import FileKind, FragmentKind, TextOrigin
 from rapporteur.contracts.fragments import PageLocator, TimeLocator
 from rapporteur.errors import FailureCode, StageError, UserError
@@ -72,6 +73,9 @@ class ProposedTalk(BaseModel):
     talk_id: str | None = None
     title: str = Field(min_length=1, max_length=1000)
     speakers: list[Speaker] = Field(default_factory=list)
+    # Карточка: организации и контакты, не отнесённые к автору.
+    organizations: list[NonEmptyStr] = Field(default_factory=list)
+    contacts: list[NonEmptyStr] = Field(default_factory=list)
     links: list[Link] = Field(min_length=1)
     reason: str = ""
 
@@ -378,8 +382,14 @@ def apply(
         talk_id = item.talk_id or materials.add_talk(conn, conference_id, item.title, None)
         changed.add(talk_id)
         conn.execute(
-            "UPDATE talks SET title=?, speakers=? WHERE id=?",
-            (item.title, db.dumps([s.model_dump(mode="json") for s in item.speakers]), talk_id),
+            "UPDATE talks SET title=?, speakers=?, organizations=?, contacts=? WHERE id=?",
+            (
+                item.title,
+                db.dumps([s.model_dump(mode="json") for s in item.speakers]),
+                db.dumps(item.organizations),
+                db.dumps(item.contacts),
+                talk_id,
+            ),
         )
         for link in item.links:
             conn.execute(

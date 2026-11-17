@@ -1,7 +1,7 @@
 """База SQLite на томе данных (ADR-014).
 
-Схема создаётся при старте приложения. Истории миграций нет: при несовместимом изменении схемы
-dev-данные загружаются заново, а установка с данными получит миграцию вместе с изменением.
+Схема создаётся при старте приложения, затем шаги _MIGRATIONS доводят её до текущей версии
+(PRAGMA user_version). Перед каждым шагом рядом с базой сохраняется копия .before-vN.bak.
 Каждая запись идёт в транзакции BEGIN IMMEDIATE: веб-запросы и фоновая обработка работают
 в одном процессе и не мешают друг другу.
 """
@@ -103,6 +103,49 @@ CREATE INDEX IF NOT EXISTS files_talk ON files (talk_id);
 Row = sqlite3.Row
 
 
+def _v1(conn: sqlite3.Connection) -> None:
+    """Подготовка по материалам, отделы и рекомендации."""
+    conn.execute("ALTER TABLE talks ADD COLUMN input_revision INTEGER NOT NULL DEFAULT 0")
+    conn.execute("""CREATE TABLE material_links (
+        id TEXT PRIMARY KEY,
+        file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        talk_id TEXT NOT NULL REFERENCES talks(id) ON DELETE CASCADE,
+        start_ms INTEGER, end_ms INTEGER, page_start INTEGER, page_end INTEGER
+    )""")
+    conn.execute("CREATE INDEX links_talk ON material_links(talk_id)")
+    conn.execute("""CREATE TABLE preparations (
+        conference_id TEXT PRIMARY KEY REFERENCES conferences(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL DEFAULT 1,
+        job TEXT NOT NULL, error TEXT, proposal TEXT NOT NULL DEFAULT '[]'
+    )""")
+    conn.execute("""CREATE TABLE departments (
+        id TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL,
+        original_name TEXT NOT NULL, sha256 TEXT NOT NULL,
+        pages TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(id, version)
+    )""")
+    conn.execute("""CREATE TABLE recommendations (
+        talk_id TEXT PRIMARY KEY REFERENCES talks(id) ON DELETE CASCADE,
+        summary_version INTEGER NOT NULL, department_revisions TEXT NOT NULL,
+        version INTEGER NOT NULL, items TEXT NOT NULL, reviewed INTEGER NOT NULL DEFAULT 0
+    )""")
+    conn.execute("""CREATE TABLE recommendation_jobs (
+        talk_id TEXT PRIMARY KEY REFERENCES talks(id) ON DELETE CASCADE,
+        job TEXT NOT NULL, error TEXT
+    )""")
+
+
+def _v2(conn: sqlite3.Connection) -> None:
+    """Карточка доклада: организации и контакты без привязки к автору (JSON-списки).
+    Организация и контакты автора хранятся в talks.speakers."""
+    conn.execute("ALTER TABLE talks ADD COLUMN organizations TEXT NOT NULL DEFAULT '[]'")
+    conn.execute("ALTER TABLE talks ADD COLUMN contacts TEXT NOT NULL DEFAULT '[]'")
+
+
+_MIGRATIONS = (_v1, _v2)
+SCHEMA_VERSION = len(_MIGRATIONS)
+
+
 class Database:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -113,46 +156,21 @@ class Database:
             self._migrate(conn)
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
-        if conn.execute("PRAGMA user_version").fetchone()[0] >= 1:
-            return
-        # Backup before the first upgrade; SQLite backup also includes committed WAL data.
-        with sqlite3.connect(str(self.path) + ".before-v1.bak") as backup:
-            conn.backup(backup)
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            conn.execute("ALTER TABLE talks ADD COLUMN input_revision INTEGER NOT NULL DEFAULT 0")
-            conn.execute("""CREATE TABLE material_links (
-                id TEXT PRIMARY KEY,
-                file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-                talk_id TEXT NOT NULL REFERENCES talks(id) ON DELETE CASCADE,
-                start_ms INTEGER, end_ms INTEGER, page_start INTEGER, page_end INTEGER
-            )""")
-            conn.execute("CREATE INDEX links_talk ON material_links(talk_id)")
-            conn.execute("""CREATE TABLE preparations (
-                conference_id TEXT PRIMARY KEY REFERENCES conferences(id) ON DELETE CASCADE,
-                version INTEGER NOT NULL DEFAULT 1,
-                job TEXT NOT NULL, error TEXT, proposal TEXT NOT NULL DEFAULT '[]'
-            )""")
-            conn.execute("""CREATE TABLE departments (
-                id TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL,
-                original_name TEXT NOT NULL, sha256 TEXT NOT NULL,
-                pages TEXT NOT NULL, created_at TEXT NOT NULL,
-                PRIMARY KEY(id, version)
-            )""")
-            conn.execute("""CREATE TABLE recommendations (
-                talk_id TEXT PRIMARY KEY REFERENCES talks(id) ON DELETE CASCADE,
-                summary_version INTEGER NOT NULL, department_revisions TEXT NOT NULL,
-                version INTEGER NOT NULL, items TEXT NOT NULL, reviewed INTEGER NOT NULL DEFAULT 0
-            )""")
-            conn.execute("""CREATE TABLE recommendation_jobs (
-                talk_id TEXT PRIMARY KEY REFERENCES talks(id) ON DELETE CASCADE,
-                job TEXT NOT NULL, error TEXT
-            )""")
-            conn.execute("PRAGMA user_version = 1")
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
+        """Шаги схемы по PRAGMA user_version; перед каждым — копия базы рядом с ней."""
+        for number, step in enumerate(_MIGRATIONS, 1):
+            if conn.execute("PRAGMA user_version").fetchone()[0] >= number:
+                continue
+            # SQLite backup also includes committed WAL data.
+            with sqlite3.connect(f"{self.path}.before-v{number}.bak") as backup:
+                conn.backup(backup)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                step(conn)
+                conn.execute(f"PRAGMA user_version = {number}")
+                conn.execute("COMMIT")
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
 
     def connect(self) -> sqlite3.Connection:
         # Соединение живёт в одном запросе, но FastAPI может открыть и закрыть его в разных
@@ -229,6 +247,8 @@ def talk(row: Row) -> Talk:
         date=row["date"],
         status=row["status"],
         speakers=[Speaker.model_validate(item) for item in json.loads(row["speakers"])],
+        organizations=json.loads(row["organizations"]),
+        contacts=json.loads(row["contacts"]),
     )
 
 

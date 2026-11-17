@@ -263,7 +263,7 @@ def test_migration_preserves_old_data_and_backup(tmp_path: Path) -> None:
         assert (
             conn.execute("SELECT title FROM conferences WHERE id='a'").fetchone()[0] == "Сохранить"
         )
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     with sqlite3.connect(str(path) + ".before-v1.bak") as conn:
         assert (
             conn.execute("SELECT title FROM conferences WHERE id='a'").fetchone()[0] == "Сохранить"
