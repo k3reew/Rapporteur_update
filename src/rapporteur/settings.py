@@ -15,3 +15,5 @@ DATA_DIR = Path(os.environ.get("RAPPORTEUR_DATA_DIR", "/data"))
 STATIC_DIR = os.environ.get("RAPPORTEUR_STATIC_DIR")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 ASR_URL = os.environ.get("ASR_URL", "http://asr:18764")
+# Запущен ли ASR (make передаёт по ASR_MODE). Без него записи пропускаются с предупреждением.
+ASR_ENABLED = os.environ.get("ASR_ENABLED", "1") != "0"

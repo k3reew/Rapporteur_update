@@ -243,6 +243,7 @@ class Processor:
         presentations: list[PackSource] = []
         notes: list[PackSource] = []
         transcripts: list[PackSource] = []
+        asr_skipped = False
         with self.database.read() as conn:
             profile = model_choice.active_profile(conn)
         for file in talk.files:
@@ -257,9 +258,9 @@ class Processor:
             elif file["kind"] == FileKind.NOTES.value:
                 fragments = self._notes(file["sha256"]).fragments
             else:
-                fragments = preparation.extract(
-                    file, self.storage, self.client(profile), profile
-                ).fragments
+                prepared = preparation.extract(file, self.storage, self.client(profile), profile)
+                fragments = prepared.fragments
+                asr_skipped |= preparation.ASR_DISABLED in prepared.warnings
             link = preparation.Link(
                 file_id=file["id"],
                 start_ms=file["start_ms"],
@@ -281,8 +282,12 @@ class Processor:
         )
         if not pack.fragments:
             raise StageError(
-                FailureCode.NO_SOURCES, "В материалах доклада нет текста или читаемых изображений"
+                FailureCode.NO_SOURCES,
+                "В материалах доклада нет текста или читаемых изображений"
+                + ("; распознавание речи выключено, запись не расшифрована" if asr_skipped else ""),
             )
+        if asr_skipped:
+            log.warning("Доклад %s: запись пропущена, распознавание речи выключено", talk.id)
         return pack
 
     def _prepare_once(self) -> bool:

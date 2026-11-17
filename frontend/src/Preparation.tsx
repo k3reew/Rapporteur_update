@@ -8,7 +8,7 @@ import { useUnsavedChanges } from './useUnsavedChanges';
 type Link = { file_id: string; start_ms: number | null; end_ms: number | null; page_start: number | null; page_end: number | null };
 type Speaker = { name: string; role?: string; affiliation?: string | null };
 type Talk = { talk_id: string | null; title: string; speakers: Speaker[]; links: Link[]; reason: string };
-type State = { version: number; job: string | null; error: string | null; talks: Talk[] };
+type State = { version: number; job: string | null; error: string | null; talks: Talk[]; warnings?: string[] };
 const headers = { 'Content-Type': 'application/json' };
 
 export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferenceId: string; onConfirmed: () => void; onStarted?: () => void }) {
@@ -70,6 +70,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
     {(state?.job === null || state?.job === 'failed') && !legacy && <div className="empty-state"><p>Подготовьте доклады из загруженных материалов.</p><button disabled={busy || !files.length} onClick={() => void act(false)}>Подготовить доклады</button></div>}
     <details className="manual-talks" open={legacy || manualOpen} onToggle={event => setManualOpen(event.currentTarget.open)}><summary>{legacy ? 'Ручной реестр докладов' : 'Добавить доклад вручную и настроить привязки'}</summary><LegacyTalks conferenceId={conferenceId} onStarted={onStarted} enabled={legacy || manualOpen} /></details>
     {running && <p role="status">Подготовка выполняется. Можно закрыть страницу и вернуться позже.</p>}
+    {state?.warnings?.map(warning => <p key={warning} className="notice" role="status">{warning}</p>)}
     {(error || loadError || materialsError || state?.error) && <p role="alert">{error || loadError || materialsError || state?.error}</p>}
     {(state?.job === 'done' || state?.job === 'confirmed') && <>
       <p>Предложено докладов: {talks.length}. Время указано в секундах от начала оригинала.</p>

@@ -380,6 +380,68 @@ def test_preparation_worker_proposes_unbound_document_and_restores_queue(
     assert client.get(base + "/progress").json()["talks"][0]["status"] == "matched"
 
 
+def test_recordings_are_skipped_without_asr(
+    web: tuple[TestClient, ScriptedClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ASR_MODE=off: подготовка не обращается к ASR, предупреждает и не кэширует пропуск."""
+    from uuid import uuid4
+
+    from rapporteur import settings
+
+    monkeypatch.setattr(settings, "ASR_ENABLED", False)
+    client, scripted = web
+    conference = client.post("/api/v1/conferences", json={"title": "Без ASR"}).json()["id"]
+    base = f"/api/v1/conferences/{conference}"
+    document = client.post(
+        base + "/materials",
+        params={"path": "речь.txt", "purpose": "document"},
+        headers={"Content-Type": "application/octet-stream"},
+        content="Тема доклада: кэширование. Иванов И. И.".encode(),
+    )
+    assert document.status_code == 201, document.text
+    recording = str(uuid4())
+    with client.app.state.database.tx() as conn:  # type: ignore[attr-defined]
+        conn.execute(
+            "INSERT INTO files(id,conference_id,sha256,original_name,relative_path,kind,"
+            "media_type,size_bytes,duration_ms) VALUES (?,?,?,?,?,?,?,?,?)",
+            (recording, conference, "a" * 64, "x.wav", "x.wav", "audio", "audio/wav", 1, 10000),
+        )
+    scripted.responses.append(
+        json.dumps(
+            {
+                "title": "Кэширование",
+                "speakers": ["Иванов И. И."],
+                "talk_index": None,
+                "confidence": 1,
+                "reason": "Текст выступления",
+            }
+        )
+    )
+    assert client.post(base + "/preparation").status_code == 202
+    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
+    state = client.get(base + "/preparation").json()
+    # Обращение к ASR (http://asr) завершилось бы ошибкой подготовки.
+    assert state["job"] == "done", state
+    assert "Распознавание речи выключено" in state["warnings"][0]
+    assert [talk["title"] for talk in state["talks"]] == ["Кэширование"]
+    assert len(list((tmp_path / "cache" / "prepared").iterdir())) == 1
+    assert client.get("/api/v1/system").json()["asr_enabled"] is False
+
+    proposal = {
+        "version": state["version"],
+        "talks": [
+            {"title": "Запись", "links": [{"file_id": recording, "start_ms": 0, "end_ms": 10000}]}
+        ],
+    }
+    assert client.put(base + "/preparation", json=proposal).status_code == 200
+    assert client.post(base + "/processing").status_code == 202
+    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
+    progress = client.get(base + "/progress").json()["talks"]
+    failed = next(talk for talk in progress if talk["title"] == "Запись")
+    assert failed["job"] == "failed"
+    assert "распознавание речи выключено" in failed["error"]
+
+
 def test_long_documents_are_batched_cached_and_keep_evidence(tmp_path: Path) -> None:
     from uuid import uuid4
 

@@ -21,6 +21,8 @@ from rapporteur.llm.tasks import json_task
 from rapporteur.storage import Storage, blob_key, cache_key
 
 VERSION = "1.0.0"
+_RECORDINGS = (FileKind.AUDIO, FileKind.VIDEO)
+ASR_DISABLED = "Распознавание речи выключено (ASR_MODE): запись не расшифрована"
 
 
 class Prepared(BaseModel):
@@ -120,6 +122,10 @@ def extract(
     profile: ModelProfile,
 ) -> Prepared:
     key = prepared_key(file, profile.model_dump_json())
+    if file["kind"] in _RECORDINGS and not settings.ASR_ENABLED and not storage.exists(key):
+        # Не кэшируется: после включения ASR запись расшифруется. Готовая расшифровка
+        # из кэша используется и без ASR.
+        return Prepared(fragments=[], warnings=[ASR_DISABLED])
 
     def compute() -> Prepared:
         sha, kind = file["sha256"], file["kind"]
@@ -256,14 +262,32 @@ def queue(conn: sqlite3.Connection, conference_id: str) -> None:
 def state(conn: sqlite3.Connection, conference_id: str) -> dict[str, object]:
     materials.require_conference(conn, conference_id)
     row = db.one(conn, "SELECT * FROM preparations WHERE conference_id = ?", conference_id)
+    warnings = _warnings(conn, conference_id)
     if not row:
-        return {"version": 0, "job": None, "error": None, "talks": []}
+        return {"version": 0, "job": None, "error": None, "talks": [], "warnings": warnings}
     return {
         "version": row["version"],
         "job": row["job"],
         "error": row["error"],
         "talks": json.loads(row["proposal"]),
+        "warnings": warnings,
     }
+
+
+def _warnings(conn: sqlite3.Connection, conference_id: str) -> list[str]:
+    if settings.ASR_ENABLED:
+        return []
+    recordings = conn.execute(
+        "SELECT count(*) FROM files WHERE conference_id = ? AND kind IN (?, ?)",
+        (conference_id, *_RECORDINGS),
+    ).fetchone()[0]
+    if not recordings:
+        return []
+    return [
+        f"Распознавание речи выключено (ASR_MODE), записей в конференции: {recordings}. "
+        "Доклады по нерасшифрованным записям не предлагаются, их текст не входит в сводки. "
+        "Записи можно привязать вручную или включить распознавание."
+    ]
 
 
 def slice_fragments(fragments: list[FragmentDraft], link: Link) -> list[FragmentDraft]:

@@ -35,6 +35,8 @@ class SystemInfo(BaseModel):
     ollama_url: str
     ollama_available: bool
     ollama_models: list[str]
+    # Распознавание речи запущено (ASR_MODE); без него записи не расшифровываются.
+    asr_enabled: bool
     profiles: list[ProfileInfo]
     templates: list[TemplateInfo]
     # Доклады по состоянию обработки: queued, running, failed.
@@ -93,6 +95,7 @@ def system(request: Request) -> SystemInfo:
         ollama_url=settings.OLLAMA_URL,
         ollama_available=models is not None,
         ollama_models=[item.name for item in models or []],
+        asr_enabled=settings.ASR_ENABLED,
         profiles=_profiles(),
         templates=_templates(),
         queue=queue,

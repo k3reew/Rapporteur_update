@@ -10,6 +10,7 @@ type SystemInfo = {
   ollama_url: string;
   ollama_available: boolean;
   ollama_models: string[];
+  asr_enabled: boolean;
   profiles: { name: string; model: string; reasoning: boolean; prompt_version: string; default: boolean }[];
   templates: { name: string; version: string }[];
   queue: Partial<Record<'queued' | 'running' | 'failed', number>>;
@@ -184,6 +185,12 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
               {info.ollama_available
                 ? <span className="pill ok">доступна</span>
                 : <span className="pill bad">недоступна</span>}
+            </div>
+            <div>
+              <b>Распознавание речи</b>
+              {info.asr_enabled
+                ? <span className="pill ok">включено</span>
+                : <span className="pill warn">выключено, записи не расшифровываются</span>}
             </div>
             <div><b>В очереди</b>{info.queue.queued ?? 0}</div>
             <div><b>Обрабатывается</b>{info.queue.running ?? 0}</div>
