@@ -24,10 +24,10 @@ Docker Compose читает `.env` в каталоге запуска и фор�
 | `OLLAMA_MODELS_DIR` | `./models/ollama` | Каталог над blobs и manifests |
 | `ASR_MODELS_DIR` | `./models/asr` | Каталог CTranslate2 Whisper |
 | `LLM_GPU_ID` | `0` | UUID или номер GPU Ollama |
-| `ASR_GPU_ID` | `1` | Другая GPU для ASR |
-| `ASR_DEVICE` | `cuda` | Устройство распознавания |
+| `ASR_MODE` | `auto` | Режим распознавания речи: `auto`, `off`, `cpu`, `gpu` |
+| `ASR_GPU_ID` | `1` | Другая GPU для ASR в режиме `gpu` |
 | `ASR_COMPUTE_TYPE` | `пусто` | float16 на GPU, int8 на CPU |
-| `ASR_REVISION` | `large-v3` | Резервная метка ASR при отсутствии manifest.json |
+| `ASR_REVISION` | `small` | Размер Whisper для `make prepare`; метка ASR при отсутствии manifest.json |
 | `ASR_THREADS` | `4` | OMP_NUM_THREADS контейнера ASR |
 | `RAPPORTEUR_PROFILE` | `server` | Базовый профиль обработки |
 | `OLLAMA_CONTEXT_LENGTH` | `32768` | Контекст по умолчанию сервиса Ollama |
@@ -43,7 +43,22 @@ Docker Compose читает `.env` в каталоге запуска и фор�
 
 В офлайн-комплекте путь Ollama по умолчанию `./models`, ASR — `./models/asr`. В исходниках это `./models/ollama` и `./models/asr`. При переносе `.env` между каталогами относительные пути необходимо сопоставить с новым местом запуска.
 
-В контейнере app используются `RAPPORTEUR_DATA_DIR=/data`, `RAPPORTEUR_STATIC_DIR=/app/static`, `OLLAMA_URL`, `ASR_URL`, `OLLAMA_MODELS_PATH=/models/ollama`, `ASR_MODEL_DIR=/models/asr`. Первые два задаются образом, остальные подключением Compose. Для самостоятельного Python-запуска эти значения задаёт вызывающий процесс.
+В контейнере app используются `RAPPORTEUR_DATA_DIR=/data`, `RAPPORTEUR_STATIC_DIR=/app/static`, `OLLAMA_URL`, `ASR_URL`, `ASR_ENABLED`, `OLLAMA_MODELS_PATH=/models/ollama`, `ASR_MODEL_DIR=/models/asr`. Первые два задаются образом, остальные подключением Compose. Для самостоятельного Python-запуска эти значения задаёт вызывающий процесс.
+
+### Распознавание речи
+
+ASR необязателен. `scripts/asr-mode.sh` переводит `ASR_MODE` в один из трёх режимов, Makefile запускает соответствующий профиль Compose и передаёт приложению `ASR_ENABLED`.
+
+| `ASR_MODE` | Сервис | Устройство | Когда применять |
+| --- | --- | --- | --- |
+| `auto` | `asr` или нет | `gpu` при двух GPU и больше, иначе `off` | Значение по умолчанию |
+| `off` | нет | — | Одна GPU, записей нет или они не нужны |
+| `cpu` | `asr-cpu` | процессор, int8 | Одна GPU занята Ollama, записи нужны |
+| `gpu` | `asr` | карта `ASR_GPU_ID` | Две карты и больше; `make doctor` требует карту, отличную от `LLM_GPU_ID` |
+
+Без ASR подготовка не обращается к распознаванию. Запись без готовой расшифровки пропускается, а этап «Доклады» показывает предупреждение. Такой пропуск не кэшируется: после включения распознавания запись расшифруется. Расшифровка, сделанная раньше, берётся из кэша и без ASR. Состояние распознавания видно в «Настройках».
+
+`ASR_REVISION` выбирает модель `Systran/faster-whisper-<размер>` для `make prepare`, по умолчанию `small`. При смене размера файлы прежней модели из её `manifest.json` удаляются. Ключи кэша расшифровок включают манифест модели.
 
 ### Приоритет модели
 
@@ -63,9 +78,9 @@ Docker Compose читает `.env` в каталоге запуска и фор�
 
 ### Формат весов
 
-Ollama читает каталог с blobs и manifests. ASR читает CTranslate2-каталог с `model.bin`, `config.json`, `tokenizer.json`, `preprocessor_config.json` и подготовленным `manifest.json`. Свободный файл Whisper `.pt` не является таким каталогом.
+Ollama читает каталог с blobs и manifests. ASR читает CTranslate2-каталог с `model.bin`, `config.json`, `tokenizer.json` и подготовленным `manifest.json`; у large-v3 есть ещё `preprocessor_config.json`. Свободный файл Whisper `.pt` не является таким каталогом.
 
-Стандартная серверная поставка использует Qwen 27B Q4_K_M и Whisper large-v3. Диагностическая 4B входит в подготовленный комплект от 14 ноября. Профиль `smoke` из локальной проверки был временным переопределением и описан в протоколе. Файл проекта не содержит этого профиля.
+Стандартная серверная поставка использует Qwen 27B Q4_K_M и Whisper small; large-v3 задаётся через `ASR_REVISION`. Диагностическая 4B входит в подготовленный комплект от 14 ноября. Профиль `smoke` из локальной проверки был временным переопределением и описан в протоколе. Файл проекта не содержит этого профиля.
 
 ### Промпты и бланк
 

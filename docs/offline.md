@@ -18,7 +18,7 @@
 
 ## Подготовка
 
-Требуются Linux, Docker Engine, Compose v2, GNU make, драйвер NVIDIA и NVIDIA Container Toolkit. Для штатного профиля задаются две доступные отдельные GPU. Серверный профиль использует Qwen3.5 27B Q4_K_M и Whisper large-v3.
+Требуются Linux, Docker Engine, Compose v2, GNU make, драйвер NVIDIA и NVIDIA Container Toolkit. Ollama нужна одна GPU. Распознавание речи на отдельной карте требует второй GPU. При одной карте ASR по умолчанию выключен или работает на процессоре (`ASR_MODE`, [конфигурация](configuration.md#распознавание-речи)). Серверный профиль использует Qwen3.5 27B Q4_K_M и Whisper small.
 
 Проверьте окружение следующими командами.
 
@@ -81,12 +81,12 @@ make install
 
 ```dotenv
 LLM_GPU_ID=GPU-uuid-первой-карты
+ASR_MODE=gpu
 ASR_GPU_ID=GPU-uuid-второй-карты
 OLLAMA_MODELS_DIR=./models
 ASR_MODELS_DIR=./models/asr
 RAPPORTEUR_STORAGE=./storage
 RAPPORTEUR_PROFILE=server
-ASR_DEVICE=cuda
 WEB_BIND_ADDRESS=127.0.0.1
 WEB_PORT=18763
 OLLAMA_IMAGE=ollama/ollama:0.40.13
@@ -130,7 +130,7 @@ RAPPORTEUR_STORAGE=/srv/rapporteur/storage
 
 ### Регулярная работа
 
-`make ps` показывает состояние, `make logs` открывает журнал, `make down` останавливает сервисы с сохранением данных. Для подробного журнала применяйте `docker compose logs --tail 100 app asr ollama`. Выход из просмотра журнала — Ctrl+C.
+`make ps` показывает состояние, `make logs` открывает журнал, `make down` останавливает сервисы с сохранением данных. Для подробного журнала применяйте `docker compose logs --tail 100 app asr asr-cpu ollama`. Выход из просмотра журнала — Ctrl+C.
 
 На сервере используются install, config, doctor, start, ps, logs и down. Команды prepare, bundle, check и lock относятся к полному исходному репозиторию.
 
