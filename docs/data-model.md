@@ -198,10 +198,9 @@
 | `input_revision` | `INTEGER` | NOT NULL | - | `0` |
 | `organizations` | `TEXT` | NOT NULL | - | `'[]'` |
 | `contacts` | `TEXT` | NOT NULL | - | `'[]'` |
-| `scope` | `TEXT` | NOT NULL, `auto`/`summary`/`card` | - | `'auto'` |
 | `card_only` | `INTEGER` | NOT NULL | - | `0` |
 
-`speakers` хранит JSON-список авторов: `name`, `role` (`speaker` или `coauthor`), `affiliation` и `contacts`. `organizations` и `contacts` доклада — сведения карточки, не отнесённые к конкретному автору (миграция v2). `scope` — выбор оператора «по интересу отделов», «сводка» или «только карточка», `card_only` — итог последней обработки: докладу достаточно карточки (миграция v3).
+`speakers` хранит JSON-список авторов: `name`, `role` (`speaker` или `coauthor`), `affiliation` и `contacts`. `organizations` и `contacts` доклада — сведения карточки, не отнесённые к конкретному автору (миграция v3). `card_only` — итог последней обработки: доклад без интереса отделов получил только карточку (миграция v4, `interest.py`).
 
 ## Связи и состояния
 

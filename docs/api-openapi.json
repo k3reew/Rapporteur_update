@@ -637,7 +637,7 @@
     "/api/v1/talks/{talk_id}": {
       "put": {
         "summary": "Update Talk",
-        "description": "Название и докладчики реестра: они идут в справку вместо ответа модели (ADR-008).",
+        "description": "Карточка реестра: тема, авторы, организации и контакты идут в справку вместо ответа\nмодели (ADR-008).",
         "operationId": "update_talk_api_v1_talks__talk_id__put",
         "parameters": [
           {
@@ -2069,7 +2069,9 @@
           "numbers_in_sources",
           "forbidden_phrases",
           "critic",
-          "reader_context"
+          "reader_context",
+          "coverage",
+          "abbreviations"
         ],
         "title": "CheckName"
       },
@@ -3171,6 +3173,22 @@
             "type": "array",
             "title": "Speakers"
           },
+          "organizations": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Organizations"
+          },
+          "contacts": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Contacts"
+          },
           "links": {
             "items": {
               "$ref": "#/components/schemas/Link"
@@ -3552,8 +3570,15 @@
             "$ref": "#/components/schemas/TalkStatus"
           },
           "summary": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Summary"
           },
           "conclusions": {
@@ -3563,6 +3588,35 @@
             },
             "type": "array",
             "title": "Conclusions"
+          },
+          "card_only": {
+            "type": "boolean",
+            "title": "Card Only",
+            "default": false
+          },
+          "authors": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Authors"
+          },
+          "organizations": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Organizations"
+          },
+          "contacts": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Contacts"
           }
         },
         "additionalProperties": false,
@@ -3578,7 +3632,7 @@
           "conclusions"
         ],
         "title": "ReportTalk",
-        "description": "Доклад в справке. Название и докладчики — из реестра, текст — из сводки."
+        "description": "Доклад в справке. Название и докладчики — из реестра, текст — из сводки.\n\nКарточка перед сводкой: authors — все авторы с организацией в скобках, organizations —\nорганизации, не указанные у авторов, contacts — контакты с фамилией автора, если авторов\nнесколько. В версиях справки до карточки эти поля пусты."
       },
       "ReportVariables": {
         "properties": {
@@ -3715,6 +3769,22 @@
             },
             "type": "array",
             "title": "Speakers",
+            "default": []
+          },
+          "organizations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Organizations",
+            "default": []
+          },
+          "contacts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Contacts",
             "default": []
           }
         },
@@ -3860,6 +3930,14 @@
           "role": {
             "$ref": "#/components/schemas/PersonRole",
             "default": "speaker"
+          },
+          "contacts": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Contacts"
           }
         },
         "additionalProperties": false,
@@ -3868,7 +3946,7 @@
           "name"
         ],
         "title": "Speaker",
-        "description": "Докладчик или соавтор. Порядок — порядок в списке доклада."
+        "description": "Докладчик или соавтор. Порядок — порядок в списке доклада.\n\naffiliation — организация или несколько через «;»; contacts — e-mail, телефоны, сайты\nавтора в том виде, в каком они указаны в материалах."
       },
       "Summary": {
         "properties": {
@@ -4087,6 +4165,10 @@
             "type": "array",
             "title": "Ollama Models"
           },
+          "asr_enabled": {
+            "type": "boolean",
+            "title": "Asr Enabled"
+          },
           "profiles": {
             "items": {
               "$ref": "#/components/schemas/ProfileInfo"
@@ -4115,6 +4197,7 @@
           "ollama_url",
           "ollama_available",
           "ollama_models",
+          "asr_enabled",
           "profiles",
           "templates",
           "queue"
@@ -4285,6 +4368,16 @@
             "type": "boolean",
             "title": "Bulk Reviewable",
             "default": false
+          },
+          "card_only": {
+            "type": "boolean",
+            "title": "Card Only",
+            "default": false
+          },
+          "reportable": {
+            "type": "boolean",
+            "title": "Reportable",
+            "default": false
           }
         },
         "type": "object",
@@ -4402,6 +4495,36 @@
             "type": "array",
             "title": "Speakers"
           },
+          "organizations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizations"
+          },
+          "contacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contacts"
+          },
           "revision": {
             "anyOf": [
               {
@@ -4419,7 +4542,8 @@
         "required": [
           "title"
         ],
-        "title": "TalkUpdate"
+        "title": "TalkUpdate",
+        "description": "Карточка доклада. organizations и contacts без привязки к автору: None оставляет\nпрежние значения, чтобы правка темы и авторов их не стирала."
       },
       "TemplateInfo": {
         "properties": {
