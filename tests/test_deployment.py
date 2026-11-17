@@ -202,3 +202,47 @@ def test_cuda_prefetch_uses_native_locked_wheel_and_registry_metadata(
     main()
     assert fetched == [wheel["url"]]
     assert all("--no-installer-metadata" in command for command in commands)
+
+
+def test_asr_download_picks_whisper_size_and_drops_previous_model_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from rapporteur import offline_models
+
+    # Прежняя large-v3: её preprocessor_config.json сломал бы small.
+    (tmp_path / "preprocessor_config.json").write_text("{}")
+    (tmp_path / "vocabulary.json").write_text("{}")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"files": {"preprocessor_config.json": "x", "vocabulary.json": "y"}})
+    )
+    (tmp_path / "notes.txt").write_text("файл администратора")
+    requested: list[str] = []
+
+    def read_json(url: str) -> tuple[dict[str, object], bytes]:
+        requested.append(url)
+        names = ["config.json", "model.bin", "tokenizer.json", "vocabulary.txt"]
+        return {"sha": "abc", "siblings": [{"rfilename": n, "size": 2} for n in names]}, b""
+
+    def download(url: str, path: Path, sha256: str | None, size: int) -> None:
+        path.write_bytes(b"ok")
+
+    monkeypatch.setattr(offline_models, "read_json", read_json)
+    monkeypatch.setattr(offline_models, "download", download)
+    offline_models.asr(tmp_path, "small")
+
+    assert "Systran/faster-whisper-small" in requested[0]
+    assert not (tmp_path / "preprocessor_config.json").exists()
+    assert not (tmp_path / "vocabulary.json").exists()
+    assert (tmp_path / "notes.txt").exists()
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["repository"] == "Systran/faster-whisper-small"
+    assert set(manifest["files"]) == {
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt",
+    }
+    with pytest.raises(ValueError):
+        offline_models.asr_repository("../../evil")

@@ -58,7 +58,7 @@ def transcribe(data: Input) -> dict[str, Any]:
     # A read-only models directory is fingerprinted by the offline preparation manifest.
     manifest = Path(os.environ.get("ASR_MODEL_DIR", "/models/asr")) / "manifest.json"
     revision = (
-        manifest.read_text() if manifest.is_file() else os.environ.get("ASR_REVISION", "large-v3")
+        manifest.read_text() if manifest.is_file() else os.environ.get("ASR_REVISION", "small")
     )
     with _lock, tempfile.TemporaryDirectory(prefix="asr-") as tmp:
         try:

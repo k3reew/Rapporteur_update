@@ -157,11 +157,26 @@ def ollama(root: Path, model: str) -> dict[str, Any]:
     return result
 
 
-def asr(root: Path) -> None:
-    repo = "Systran/faster-whisper-large-v3"
+# Модели faster-whisper от Systran; размер задаёт ASR_REVISION, по умолчанию small.
+_ASR_MODEL = re.compile(r"(?:tiny|base|small|medium)(?:\.en)?|large-v[123]")
+DEFAULT_ASR_MODEL = "small"
+
+
+def asr_repository(model: str) -> str:
+    if not _ASR_MODEL.fullmatch(model):
+        raise ValueError(
+            f"Неизвестная модель Whisper {model!r}: tiny, base, small, medium, large-v1…v3"
+        )
+    return f"Systran/faster-whisper-{model}"
+
+
+def asr(root: Path, model: str = DEFAULT_ASR_MODEL) -> None:
+    repo = asr_repository(model)
     info, _ = read_json(f"https://huggingface.co/api/models/{repo}/revision/main?blobs=true")
     revision = info["sha"]
     root.mkdir(parents=True, exist_ok=True)
+    previous = root / "manifest.json"
+    stale = set(json.loads(previous.read_text()).get("files", {})) if previous.is_file() else set()
     files = {}
     for item in info["siblings"]:
         name = item["rfilename"]
@@ -183,6 +198,11 @@ def asr(root: Path) -> None:
                 size,
             )
         files[name] = digest(root / name)
+    # Файлы прежней модели мешают новой: preprocessor_config.json от large-v3 задаёт
+    # 128 мел-полос, а small ждёт 80.
+    for name in stale - files.keys():
+        if "/" not in name:
+            (root / name).unlink(missing_ok=True)
     (root / "manifest.json").write_text(
         json.dumps({"repository": repo, "revision": revision, "files": files}, indent=2)
     )
@@ -194,14 +214,15 @@ def main() -> None:
     parser.add_argument("--kind", choices=["ollama", "asr", "all"], default="asr")
     parser.add_argument("--directory", type=Path, default=Path("/models/asr"))
     parser.add_argument("--model", default="qwen3.5:27b")
+    parser.add_argument("--asr-model", default=os.environ.get("ASR_REVISION") or DEFAULT_ASR_MODEL)
     args = parser.parse_args()
     if args.kind == "all":
         ollama(args.directory / "ollama", args.model)
-        asr(args.directory / "asr")
+        asr(args.directory / "asr", args.asr_model)
     elif args.kind == "ollama":
         ollama(args.directory, args.model)
     else:
-        asr(args.directory)
+        asr(args.directory, args.asr_model)
 
 
 if __name__ == "__main__":

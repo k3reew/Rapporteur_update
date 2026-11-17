@@ -35,7 +35,7 @@ fi
 [[ -d "$models/blobs" ]] || { echo "Нет весов Ollama в $models: выполните make prepare на машине с интернетом"; exit 1; }
 [[ -d "$models/manifests" || -d "$models/manifests-v2" ]] || { echo 'Нет манифестов Ollama'; exit 1; }
 if [[ "$asr_mode" != off ]]; then
-  [[ -f "$speech/model.bin" && -f "$speech/tokenizer.json" && -f "$speech/config.json" && -f "$speech/preprocessor_config.json" ]] || { echo "Неполные веса ASR в $speech: выполните make prepare или задайте ASR_MODE=off"; exit 1; }
+  [[ -f "$speech/model.bin" && -f "$speech/tokenizer.json" && -f "$speech/config.json" ]] || { echo "Неполные веса ASR в $speech: выполните make prepare или задайте ASR_MODE=off"; exit 1; }
 fi
 if command -v ss >/dev/null && ss -H -ltn | awk '{print $4}' | grep -qE ":${port}$"; then
   if ! docker compose ps --status running --format '{{.Service}}' | grep -qE '^app(-shared)?$'; then
