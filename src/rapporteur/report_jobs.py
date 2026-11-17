@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rapporteur import db, departments, reports, screening
+from rapporteur import db, departments, interest, reports, screening
 from rapporteur.contracts import ReportInput
 from rapporteur.errors import NotFoundError, UserError
 from rapporteur.report.assemble import build_report_input, report_variables, template_context
@@ -108,20 +108,26 @@ def enqueue(
                     "talk_ids": [
                         UUID(row["id"])
                         for row in db.conference_talks(conn, conference_id)
-                        if screening.view(conn, row["id"])["eligible"]
+                        if interest.reportable(conn, row["id"])
                     ]
                 }
+            )
+        # Сначала отбор: без него доклад не получил ни сводку, ни карточку (interest.py).
+        own = {row["id"] for row in db.conference_talks(conn, conference_id)}
+        if any(
+            str(talk_id) in own and not interest.reportable(conn, str(talk_id))
+            for talk_id in selection_request.talk_ids or []
+        ):
+            raise UserError(
+                "Для выбранных докладов подтвердите актуальный интерес отделов "
+                "и дождитесь их обработки.",
+                409,
+                code="screening_required",
             )
         sources, selection = reports.select_input(conn, conference_id, selection_request)
         interests = {
             str(talk_id): screening.view(conn, str(talk_id)) for talk_id in selection.talk_ids
         }
-        if any(not item["eligible"] for item in interests.values()):
-            raise UserError(
-                "Для выбранных докладов подтвердите актуальный интерес отделов.",
-                409,
-                code="screening_required",
-            )
         input_revisions = {
             row["id"]: row["input_revision"]
             for row in db.conference_talks(conn, conference_id)

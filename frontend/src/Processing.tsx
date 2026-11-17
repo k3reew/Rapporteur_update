@@ -5,7 +5,7 @@ import { request } from './api';
 import { useResource } from './useResource';
 import { statusTone, talkStatuses } from './status';
 
-import type { Progress, Scope, TalkProgress } from './talkTypes';
+import type { Progress, TalkProgress } from './talkTypes';
 
 const steps: Record<string, string> = {
   screening: 'отбор по отделам',
@@ -15,11 +15,6 @@ const steps: Record<string, string> = {
   summary: 'текст сводки',
 };
 const POLL_MS = 5000;
-const scopes: [Scope, string][] = [
-  ['auto', 'По интересу отделов'],
-  ['summary', 'Сводка'],
-  ['card', 'Только карточка'],
-];
 
 function jobLabel(talk: TalkProgress) {
   switch (talk.job) {
@@ -41,18 +36,6 @@ export function Processing(
   async function retry(talk: TalkProgress) {
     try {
       await request(`/api/v1/talks/${talk.id}/retry`, { method: 'POST' });
-      refresh();
-    } catch (reason) {
-      setError((reason as Error).message);
-    }
-  }
-
-  async function changeScope(talk: TalkProgress, scope: Scope) {
-    setError('');
-    try {
-      await request(`/api/v1/talks/${talk.id}/scope`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }),
-      });
       refresh();
     } catch (reason) {
       setError((reason as Error).message);
@@ -119,7 +102,6 @@ export function Processing(
                 <th scope="col">Доклад</th>
                 <th scope="col">Статус</th>
                 <th scope="col">Обработка</th>
-                <th scope="col">Результат</th>
                 <th scope="col"><span hidden>Действие</span></th>
               </tr>
             </thead>
@@ -131,7 +113,8 @@ export function Processing(
                     <th scope="row">{talk.section} · {talk.order}. {talk.title ?? 'Без названия'}</th>
                     <td>
                       <span className={`pill ${statusTone[talk.status] ?? ''}`}>{talkStatuses[talk.status] ?? talk.status}</span>
-                      {talk.summary_status === 'needs_attention' && <><br /><small>Сводка требует внимания</small></>}
+                      {talk.card_only && <><br /><span className="pill">только карточка</span></>}
+                      {talk.summary_status === 'needs_attention' && !talk.card_only && <><br /><small>Сводка требует внимания</small></>}
                     </td>
                     <td>
                       {job ? (
@@ -141,14 +124,6 @@ export function Processing(
                         </span>
                       ) : <span className="muted">—</span>}
                       {talk.error && <><br /><small>{talk.error}</small></>}
-                    </td>
-                    <td>
-                      <select aria-label={`Результат: ${talk.title ?? 'доклад без названия'}`} value={talk.scope ?? 'auto'}
-                        disabled={talk.job === 'queued' || talk.job === 'running'}
-                        onChange={event => void changeScope(talk, event.target.value as Scope)}>
-                        {scopes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                      </select>
-                      {talk.card_only && <><br /><span className="pill">только карточка</span></>}
                     </td>
                     <td className="row">
                       <button disabled={talk.summary_number === null || talk.card_only} onClick={() => onOpen(talk)}>

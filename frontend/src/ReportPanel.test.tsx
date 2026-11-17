@@ -23,7 +23,7 @@ const conference = {
 const progress = {
   processing_started: true,
   files: 1,
-  talks: [{ id: 'talk', section: 'Секция', order: 1, title: 'Доклад', status: 'processed', job: 'done', step: null, error: null, summary_number: 1, summary_status: 'ready', screening: { eligible: true } }],
+  talks: [{ id: 'talk', section: 'Секция', order: 1, title: 'Доклад', status: 'processed', job: 'done', step: null, error: null, summary_number: 1, summary_status: 'ready', screening: { eligible: true }, reportable: true }],
 };
 const version = {
   id: 'version',
@@ -95,4 +95,22 @@ test('восстанавливает неудачное задание посл�
   fireEvent.click(screen.getByRole('button', { name: 'Повторить сборку' }));
   await screen.findByText('Справка собирается · В очереди');
   expect(api).toHaveBeenCalledWith('/api/v1/report-jobs/saved/retry', { method: 'POST' });
+});
+
+test('доклад без интереса отделов выбирается карточкой, без отбора — нет', async () => {
+  const api = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/progress')) return Response.json({ ...progress, talks: [
+      { ...progress.talks[0], id: 'card', title: 'Карточка', summary_number: null, summary_status: null, card_only: true },
+      { ...progress.talks[0], id: 'wait', title: 'Ждёт отбора', reportable: false },
+    ] });
+    if (url.endsWith('/report-jobs')) return Response.json(init?.method === 'POST' ? { id: 'job' } : []);
+    if (url.endsWith('/reports')) return Response.json([]);
+    return Response.json(conference);
+  });
+  vi.stubGlobal('fetch', api);
+  render(<ReportPanel conferenceId="conference" />);
+  const card = await screen.findByRole<HTMLInputElement>('checkbox', { name: /Карточка/ });
+  expect(card.checked).toBe(true);
+  expect(screen.getByText('· только карточка')).toBeDefined();
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /Ждёт отбора/ }).disabled).toBe(true);
 });

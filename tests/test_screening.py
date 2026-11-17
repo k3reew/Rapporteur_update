@@ -86,10 +86,13 @@ def test_enqueue_requires_usable_regulations(
 
 
 @pytest.mark.parametrize(
-    "status,eligible", [("relevant", True), ("not_relevant", False), ("uncertain", False)]
+    "status,eligible,queued",
+    # Без интереса отделов доклад обрабатывается до карточки, без фактов и сводки
+    # (interest.py); неопределённый ждёт решения оператора.
+    [("relevant", True, True), ("not_relevant", False, True), ("uncertain", False, False)],
 )
 def test_interest_selects_only_supported_relevant_talks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str, eligible: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str, eligible: bool, queued: bool
 ) -> None:
     from rapporteur import screening
 
@@ -108,7 +111,7 @@ def test_interest_selects_only_supported_relevant_talks(
         processing.enqueue(conn, [talk])
         row = db.one(conn, "SELECT job FROM talks WHERE id=?", talk)
         assert row is not None
-        assert (row["job"] == "queued") is eligible
+        assert (row["job"] == "queued") is queued
 
 
 def test_regulation_change_invalidates_screening_and_manual_review(
@@ -192,7 +195,7 @@ def test_screening_cache_and_input_revision(
         assert screening.view(conn, talk)["state"] == "queued"
 
 
-def test_filtered_talk_never_enters_full_processing(
+def test_filtered_talk_gets_card_without_facts_or_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from rapporteur.processing import Processor
@@ -201,16 +204,19 @@ def test_filtered_talk_never_enters_full_processing(
     add_regulation(database)
     client = ScriptedClient([decision("not_relevant")])
     worker = Processor(database, storage, lambda _: client)
-    monkeypatch.setattr(
-        worker, "_screen_pack", lambda _: pack().model_copy(update={"talk_id": UUID(talk)})
-    )
-    entered = []
-    monkeypatch.setattr(worker, "_process", lambda talk: entered.append(talk))
+    source = pack().model_copy(update={"talk_id": UUID(talk)})
+    monkeypatch.setattr(worker, "_screen_pack", lambda _: source)
+    monkeypatch.setattr(worker, "_pack", lambda _: source)
     with database.tx() as conn:
         processing.enqueue(conn, [talk])
     assert worker.run_once()
-    assert not entered
     assert not worker.run_once()
+    # Единственный запрос к модели — отбор; фактов и сводки нет.
+    assert len(client.requests) == 1
+    with database.read() as conn:
+        row = db.one(conn, "SELECT job, card_only FROM talks WHERE id=?", talk)
+        summaries = conn.execute("SELECT count(*) FROM summaries").fetchone()[0]
+    assert row is not None and (row["job"], row["card_only"], summaries) == ("done", 1, 0)
 
 
 def test_screening_failure_keeps_departments_available_for_operator(

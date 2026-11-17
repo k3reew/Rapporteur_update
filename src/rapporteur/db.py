@@ -166,12 +166,8 @@ def _v3(conn: sqlite3.Connection) -> None:
 
 
 def _v4(conn: sqlite3.Connection) -> None:
-    """Сводка или только карточка (interest.py): scope — выбор оператора, card_only —
-    итог последней обработки."""
-    conn.execute(
-        "ALTER TABLE talks ADD COLUMN scope TEXT NOT NULL DEFAULT 'auto' "
-        "CHECK (scope IN ('auto', 'summary', 'card'))"
-    )
+    """Итог последней обработки: доклад без интереса отделов получил только карточку
+    (interest.py)."""
     conn.execute("ALTER TABLE talks ADD COLUMN card_only INTEGER NOT NULL DEFAULT 0")
 
 

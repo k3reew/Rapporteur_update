@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { request } from './api';
 import type { Screening } from './talkTypes';
 
-const labels: Record<string, string> = { not_started: 'Отбор ещё не выполнен', queued: 'Отбор в очереди', running: 'Определяется интерес отделов', relevant: 'Есть интерес отделов', not_relevant: 'Пропущен — интерес не найден', uncertain: 'Интерес требует решения', stale: 'Отбор устарел' };
+const labels: Record<string, string> = { not_started: 'Отбор ещё не выполнен', queued: 'Отбор в очереди', running: 'Определяется интерес отделов', relevant: 'Есть интерес отделов', not_relevant: 'Интерес не найден — только карточка', uncertain: 'Интерес требует решения', stale: 'Отбор устарел' };
 
 export function Interest({ talkId, value, refresh }: { talkId: string; value: Screening; refresh: () => void }) {
   const [choice, setChoice] = useState<string[] | null>(null);
@@ -29,6 +29,6 @@ export function Interest({ talkId, value, refresh }: { talkId: string; value: Sc
     </div>)}
     {(error || value.error) && <p role="alert">{error || value.error}</p>}
     {editable && <div className="row"><button disabled={busy || !selected.length} onClick={() => void save(selected)}>Подтвердить интерес</button>
-      <button disabled={busy} onClick={() => void save([])}>Пропустить доклад</button></div>}
+      <button disabled={busy} onClick={() => void save([])}>Только карточка</button></div>}
   </details>;
 }

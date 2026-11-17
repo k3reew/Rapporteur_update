@@ -60,14 +60,16 @@ ClientFactory = Callable[[ModelProfile], LlmClient]
 
 
 def enqueue(conn: sqlite3.Connection, talk_ids: list[str]) -> None:
-    """Повторная постановка во время обработки допустима: доклад пройдёт цепочку ещё раз."""
+    """Повторная постановка во время обработки допустима: доклад пройдёт цепочку ещё раз.
+    Обработка ждёт итога отбора: сводки для интересного отделам доклада или карточки для
+    остальных (interest.py)."""
     departments.require_regulations(conn)
     for talk_id in talk_ids:
         screening.queue(conn, talk_id)
-        eligible = screening.view(conn, talk_id)["eligible"]
+        decided = interest.route(conn, talk_id) is not None
         conn.execute(
             "UPDATE talks SET job=?, step=?, error=NULL, queued_at=? WHERE id=?",
-            ("queued" if eligible else None, None if eligible else "screening", db.now(), talk_id),
+            ("queued" if decided else None, None if decided else "screening", db.now(), talk_id),
         )
 
 
@@ -150,7 +152,7 @@ class Processor:
         screened = screening.run_once(self.database, self.storage, self.client, self._screen_pack)
         if screened is not None:
             with self.database.tx() as conn:
-                if screening.view(conn, screened)["eligible"]:
+                if interest.route(conn, screened) is not None:
                     enqueue(conn, [screened])
                 elif error := screening.view(conn, screened)["error"]:
                     conn.execute(
@@ -213,7 +215,7 @@ class Processor:
                 "SELECT id FROM talks WHERE job='queued' ORDER BY queued_at"
             ).fetchall()
             for row in rows:
-                if not screening.view(conn, row["id"])["eligible"]:
+                if interest.route(conn, row["id"]) is None:
                     try:
                         enqueue(conn, [row["id"]])
                     except UserError as error:
@@ -257,7 +259,7 @@ class Processor:
         # Модель — выбранная на странице «Управление» или профиль по умолчанию.
         with self.database.read() as conn:
             profile = model_choice.active_profile(conn)
-            if not interest.needs_summary(conn, talk.id, pack):
+            if interest.route(conn, talk.id) is interest.Route.CARD:
                 return None, pack
 
         self._step(talk.id, "facts")

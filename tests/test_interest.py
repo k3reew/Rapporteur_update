@@ -1,26 +1,47 @@
-"""Сводка только для докладов, интересных отделам; остальным — карточка."""
+"""Сводка для докладов, интересных отделам; остальным — карточка (interest.py)."""
 
 import io
+import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from docx import Document
 from fastapi.testclient import TestClient
 
 from rapporteur import interest
-from rapporteur.llm.client import ScriptedClient
+from rapporteur.llm.client import ChatRequest, ChatResponse
 
 from .fictional_talk import SLIDES
-from .workflow_support import WorkflowClient, seed_regulation
+from .workflow_support import DEPARTMENT, WorkflowClient, seed_regulation
+
+
+class Classifier(WorkflowClient):
+    """Отбор отделов отвечает заданным решением; остальные ответы задаёт тест."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+        self.status = "not_relevant"
+
+    def chat(self, request: ChatRequest) -> ChatResponse:
+        schema: dict[str, Any] = request.schema or {}
+        if schema.get("title") == "Decision" and self.status != "relevant":
+            answer = {
+                "status": self.status,
+                "reason": "Вымышленное решение отбора",
+                "evidence": [],
+                "paragraphs": [],
+            }
+            return ChatResponse(json.dumps(answer, ensure_ascii=False), "", "stop", 100, 50, 0.0)
+        return super().chat(request)
 
 
 @pytest.fixture
-def web(tmp_path: Path) -> Iterator[tuple[TestClient, ScriptedClient]]:
+def web(tmp_path: Path) -> Iterator[tuple[TestClient, Classifier]]:
     from rapporteur.app import create_app
 
-    # Отбор отделов отвечает «интересен», сводку и факты задаёт сам тест.
-    scripted = WorkflowClient([])
+    scripted = Classifier()
     application = create_app(tmp_path, client=lambda _: scripted, process=False)
     seed_regulation(application.state.database)
     with TestClient(application) as client:
@@ -55,8 +76,13 @@ def progress(client: TestClient, conference: str) -> dict[str, object]:
     return talks[0]
 
 
-def test_card_only_talk_skips_the_model_and_enters_the_report(
-    web: tuple[TestClient, ScriptedClient],
+def run(client: TestClient) -> None:
+    while client.app.state.processor.run_once():  # type: ignore[attr-defined]
+        pass
+
+
+def test_talk_without_interest_gets_card_and_enters_the_report(
+    web: tuple[TestClient, Classifier],
 ) -> None:
     client, scripted = web
     conference, talk_id = bound_talk(client)
@@ -66,25 +92,31 @@ def test_card_only_talk_skips_the_model_and_enters_the_report(
         "contacts": ["ivanov@example.org"],
     }
     assert client.put(f"/api/v1/talks/{talk_id}", json=card).status_code == 204
-    assert client.put(f"/api/v1/talks/{talk_id}/scope", json={"scope": "card"}).status_code == 204
     assert client.post(f"/api/v1/conferences/{conference}/processing").status_code == 202
-    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
+    run(client)
 
     talk = progress(client, conference)
-    # Модель не вызывалась: у ScriptedClient нет ответов, иначе обработка упала бы.
+    # Факты и сводка не запрашивались: ScriptedClient без ответов упал бы.
     assert not scripted.requests
-    assert (talk["job"], talk["status"], talk["card_only"], talk["scope"]) == (
+    assert talk["screening"]["state"] == "not_relevant"  # type: ignore[index]
+    assert (talk["job"], talk["status"], talk["card_only"], talk["reportable"]) == (
         "done",
         "processed",
         True,
-        "card",
+        True,
     )
     assert talk["summary_number"] is None
 
-    # Карточка не требует подтверждения непроверенных сводок.
-    built = client.post(f"/api/v1/conferences/{conference}/reports", json={})
-    assert built.status_code == 201, built.text
-    version = built.json()
+    # Фоновый выпуск без списка докладов берёт доклады с актуальным отбором, включая карточки;
+    # карточка не требует подтверждения непроверенных сводок.
+    job = client.post(
+        f"/api/v1/conferences/{conference}/report-jobs", json={"idempotency_key": "card"}
+    )
+    assert job.status_code == 202, job.text
+    run(client)
+    done = client.get(f"/api/v1/report-jobs/{job.json()['id']}").json()
+    assert done["status"] == "done", done["error"]
+    version = client.get(f"/api/v1/conferences/{conference}/reports").json()[0]
     assert version["input"]["talks"][0]["card_only"] is True
     assert version["input"]["talks"][0]["summary"] is None
     docx = client.get(f"/api/v1/report-versions/{version['id']}/files/docx").content
@@ -97,44 +129,72 @@ def test_card_only_talk_skips_the_model_and_enters_the_report(
     assert len(text) == start + 3
 
 
-def test_scope_change_requeues_processed_talk(web: tuple[TestClient, ScriptedClient]) -> None:
+def test_undecided_talk_waits_for_the_operator(web: tuple[TestClient, Classifier]) -> None:
+    client, scripted = web
+    scripted.status = "uncertain"
+    conference, talk_id = bound_talk(client)
+    client.post(f"/api/v1/conferences/{conference}/processing")
+    run(client)
+
+    talk = progress(client, conference)
+    assert (talk["job"], talk["step"], talk["card_only"], talk["reportable"]) == (
+        None,
+        "screening",
+        False,
+        False,
+    )
+    refused = client.post(
+        f"/api/v1/conferences/{conference}/report-jobs",
+        json={"idempotency_key": "wait", "talk_ids": [talk_id]},
+    )
+    assert refused.status_code == 409 and refused.json()["code"] == "screening_required"
+
+    # «Только карточка»: пустой список отделов.
+    version = talk["screening"]["version"]  # type: ignore[index]
+    decided = client.put(
+        f"/api/v1/talks/{talk_id}/screening", json={"version": version, "department_ids": []}
+    )
+    assert decided.status_code == 200, decided.text
+    assert progress(client, conference)["job"] == "queued"
+    run(client)
+    talk = progress(client, conference)
+    assert (talk["job"], talk["card_only"], talk["reportable"]) == ("done", True, True)
+    assert not scripted.requests
+
+
+def test_operator_interest_sends_card_talk_to_summary(web: tuple[TestClient, Classifier]) -> None:
     client, _ = web
     conference, talk_id = bound_talk(client)
-    client.put(f"/api/v1/talks/{talk_id}/scope", json={"scope": "card"})
     client.post(f"/api/v1/conferences/{conference}/processing")
-    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
-    assert progress(client, conference)["job"] == "done"
+    run(client)
+    talk = progress(client, conference)
+    assert talk["card_only"] is True
 
-    assert client.put(f"/api/v1/talks/{talk_id}/scope", json={"scope": "summary"}).status_code == (
-        204
+    version = talk["screening"]["version"]  # type: ignore[index]
+    decided = client.put(
+        f"/api/v1/talks/{talk_id}/screening",
+        json={"version": version, "department_ids": [DEPARTMENT]},
     )
-    assert progress(client, conference)["job"] == "queued"
-    assert client.put(f"/api/v1/talks/{talk_id}/scope", json={"scope": "x"}).status_code == 422
-    assert client.put("/api/v1/talks/missing/scope", json={"scope": "card"}).status_code == 404
+    assert decided.status_code == 200, decided.text
+    talk = progress(client, conference)
+    # До новой обработки карточка не соответствует отбору и в справку не выбирается.
+    assert (talk["job"], talk["reportable"]) == ("queued", False)
+    assert talk["screening"]["state"] == "relevant"  # type: ignore[index]
 
 
 @pytest.mark.parametrize(
-    ("scope", "decision", "expected"),
+    ("state", "expected"),
     [
-        ("auto", None, True),
-        ("auto", True, True),
-        ("auto", False, False),
-        ("summary", False, True),
-        ("card", True, False),
+        ("relevant", interest.Route.SUMMARY),
+        ("not_relevant", interest.Route.CARD),
+        ("uncertain", None),
+        ("stale", None),
+        ("queued", None),
+        ("running", None),
+        ("not_started", None),
     ],
 )
-def test_operator_choice_overrides_classification(
-    web: tuple[TestClient, ScriptedClient],
-    monkeypatch: pytest.MonkeyPatch,
-    scope: str,
-    decision: bool | None,
-    expected: bool,
+def test_screening_state_decides_summary_or_card(
+    state: str, expected: interest.Route | None
 ) -> None:
-    from .fictional_talk import pack
-
-    client, _ = web
-    _, talk_id = bound_talk(client)
-    client.put(f"/api/v1/talks/{talk_id}/scope", json={"scope": scope})
-    monkeypatch.setattr(interest, "classify", lambda conn, talk, source: decision)
-    with client.app.state.database.read() as conn:  # type: ignore[attr-defined]
-        assert interest.needs_summary(conn, talk_id, pack()) is expected
+    assert interest.decided({"state": state}) is expected

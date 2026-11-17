@@ -128,7 +128,6 @@ def test_release_030_database_gets_card_columns_and_backup(tmp_path: Path) -> No
     with sqlite3.connect(path) as conn:
         conn.execute("ALTER TABLE talks DROP COLUMN organizations")
         conn.execute("ALTER TABLE talks DROP COLUMN contacts")
-        conn.execute("ALTER TABLE talks DROP COLUMN scope")
         conn.execute("ALTER TABLE talks DROP COLUMN card_only")
         # База выпуска 0.3.0: отбор и фоновые выпуски уже есть (v2), карточки ещё нет.
         conn.execute("PRAGMA user_version = 2")

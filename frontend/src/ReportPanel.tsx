@@ -19,6 +19,11 @@ const jobSteps: Record<string, string> = { queued: 'В очереди', running:
 const json = { 'Content-Type': 'application/json' };
 const formats: Record<string, string> = { docx: 'DOCX', md: 'Markdown', pdf: 'PDF' };
 
+/** Доклад с актуальным отбором: готовая сводка у интересного отделам или карточка у остальных. */
+function canReport(talk: TalkProgress) {
+  return !!talk.reportable && (!!talk.card_only || talk.summary_number !== null);
+}
+
 export function ReportPanel({ conferenceId }: { conferenceId: string }) {
   const base = `/api/v1/conferences/${conferenceId}`;
   const { data: jobs = [], error: jobsError, refresh: refreshJobs } = useResource<ReportJob[]>(`${base}/report-jobs`, 2000);
@@ -49,7 +54,7 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
       const progress: Progress = await (await request(`${base}/progress`, { signal })).json();
       if (signal.aborted) return;
       setTalks(progress.talks);
-      setSelected(progress.talks.filter(talk => talk.screening?.eligible && talk.summary_number).map(talk => talk.id));
+      setSelected(progress.talks.filter(canReport).map(talk => talk.id));
       const history = await (await request(`${base}/reports`, { signal })).json();
       if (!signal.aborted) setVersions(history);
     }
@@ -158,12 +163,12 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Сборка</h3>
         <p className="muted">
-          Выберите доклады для справки. Доклады без готовой сводки в неё не войдут. Подтверждённые рекомендации отделам включаются вместе с основаниями.
+          Выберите доклады для справки. Доклады без интереса отделов входят карточкой: тема, авторы, организации и контакты. Остальные доклады без готовой сводки в неё не войдут. Подтверждённые рекомендации отделам включаются вместе с основаниями.
         </p>
         <fieldset disabled={!!busy} className="report-selection"><legend>Доклады — выбрано {selected.length} из {talks.length}</legend>
-          {talks.map(talk => <label className="check" key={talk.id}><input type="checkbox" aria-label={talk.title ?? 'Без темы'} disabled={!talk.screening?.eligible || !talk.summary_number} checked={selected.includes(talk.id)}
+          {talks.map(talk => <label className="check" key={talk.id}><input type="checkbox" aria-label={talk.title ?? 'Без темы'} disabled={!canReport(talk)} checked={selected.includes(talk.id)}
             onChange={event => setSelected(previous => event.target.checked ? [...previous, talk.id] : previous.filter(id => id !== talk.id))} />
-            <span>{talk.title ?? 'Без темы'} <small>· {talk.status === 'reviewed' ? 'проверен' : talk.summary_status === 'stale' ? 'сводка устарела' : talk.summary_number ? 'ожидает проверки' : 'нет сводки'}</small></span></label>)}
+            <span>{talk.title ?? 'Без темы'} <small>· {talk.card_only ? 'только карточка' : talk.status === 'reviewed' ? 'проверен' : talk.summary_status === 'stale' ? 'сводка устарела' : talk.summary_number ? 'ожидает проверки' : 'нет сводки'}</small></span></label>)}
         </fieldset>
         {datesDirty && <p className="notice">Сохраните сведения о конференции перед сборкой.</p>}
         <div className="row">
