@@ -4,7 +4,7 @@ import { request } from './api';
 import { useResource } from './useResource';
 import { statusTone, talkStatuses } from './status';
 
-import type { Progress, TalkProgress } from './talkTypes';
+import type { Progress, Scope, TalkProgress } from './talkTypes';
 
 const steps: Record<string, string> = {
   parse: 'разбор материалов',
@@ -13,6 +13,11 @@ const steps: Record<string, string> = {
   summary: 'текст сводки',
 };
 const POLL_MS = 5000;
+const scopes: [Scope, string][] = [
+  ['auto', 'По интересу отделов'],
+  ['summary', 'Сводка'],
+  ['card', 'Только карточка'],
+];
 
 function jobLabel(talk: TalkProgress) {
   switch (talk.job) {
@@ -40,6 +45,18 @@ export function Processing(
     }
   }
 
+  async function changeScope(talk: TalkProgress, scope: Scope) {
+    setError('');
+    try {
+      await request(`/api/v1/talks/${talk.id}/scope`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }),
+      });
+      refresh();
+    } catch (reason) {
+      setError((reason as Error).message);
+    }
+  }
+
   async function confirmAll() {
     const items = (progress?.talks ?? []).filter(t => t.bulk_reviewable)
       .map(t => ({ talk_id: t.id, version: t.summary_number }));
@@ -54,7 +71,8 @@ export function Processing(
     } catch (e) { setError((e as Error).message); }
     finally { setBulkBusy(false); }
   }
-  const ready = progress?.talks.filter((talk) => talk.summary_number !== null).length ?? 0;
+  const ready = progress?.talks.filter((talk) => talk.summary_number !== null && !talk.card_only).length ?? 0;
+  const cards = progress?.talks.filter((talk) => talk.card_only && talk.job === 'done').length ?? 0;
   return (
     <section className="card" aria-labelledby="processing-title">
       <h2 id="processing-title">Проверка докладов</h2><p className="muted">Дождитесь обработки, проверьте сводки и подтвердите результаты.</p>
@@ -81,12 +99,15 @@ export function Processing(
           <div className="kv">
             <div><b>Файлы</b>{progress.files}</div>
             <div><b>Сводки</b>{ready} из {progress.talks.length}</div>
+            {!!cards && <div><b>Только карточка</b>{cards}</div>}
           </div>
           <div className="row">
             <div className="progressbar" aria-hidden="true">
-              <span style={{ width: `${progress.talks.length ? (100 * ready) / progress.talks.length : 0}%` }} />
+              <span style={{ width: `${progress.talks.length ? (100 * (ready + cards)) / progress.talks.length : 0}%` }} />
             </div>
-            <small>Сводки готовы у {ready} из {progress.talks.length} докладов. Обновляется каждые 5 с.</small>
+            <small>
+              Сводки готовы у {ready} из {progress.talks.length} докладов{cards ? `, только карточка — у ${cards}` : ''}. Обновляется каждые 5 с.
+            </small>
           </div>
           <div className="table-wrap">
           <table>
@@ -95,6 +116,7 @@ export function Processing(
                 <th scope="col">Доклад</th>
                 <th scope="col">Статус</th>
                 <th scope="col">Обработка</th>
+                <th scope="col">Результат</th>
                 <th scope="col"><span hidden>Действие</span></th>
               </tr>
             </thead>
@@ -117,8 +139,16 @@ export function Processing(
                       ) : <span className="muted">—</span>}
                       {talk.error && <><br /><small>{talk.error}</small></>}
                     </td>
+                    <td>
+                      <select aria-label={`Результат: ${talk.title ?? 'доклад без названия'}`} value={talk.scope ?? 'auto'}
+                        disabled={talk.job === 'queued' || talk.job === 'running'}
+                        onChange={event => void changeScope(talk, event.target.value as Scope)}>
+                        {scopes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                      {talk.card_only && <><br /><span className="pill">только карточка</span></>}
+                    </td>
                     <td className="row">
-                      <button disabled={talk.summary_number === null} onClick={() => onOpen(talk)}>
+                      <button disabled={talk.summary_number === null || talk.card_only} onClick={() => onOpen(talk)}>
                         Открыть сводку
                       </button>
                       {talk.job === 'failed' && <button onClick={() => void retry(talk)}>Повторить</button>}

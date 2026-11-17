@@ -11,7 +11,12 @@ export type TalkProgress = {
   summary_number: number | null;
   bulk_reviewable?: boolean;
   summary_status: 'ready' | 'needs_attention' | 'stale' | null;
+  /** Выбор оператора: по интересу отделов, сводка или только карточка. */
+  scope?: Scope;
+  /** Итог обработки: докладу достаточно карточки, сводки нет. */
+  card_only?: boolean;
 };
+export type Scope = 'auto' | 'summary' | 'card';
 export type Progress = {
   processing_started: boolean;
   files: number;
