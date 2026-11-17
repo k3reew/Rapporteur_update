@@ -86,7 +86,7 @@ def check_summary(
     checks = {
         CheckName.CLAIM_LINKS: claim_link_problems(draft, claims),
         CheckName.SENTENCE_COUNT: sentence_count_problems(draft, claims, config),
-        CheckName.NUMBERS_IN_SOURCES: number_problems(draft, pack),
+        CheckName.NUMBERS_IN_SOURCES: number_problems(draft, claims, pack),
         CheckName.FORBIDDEN_PHRASES: forbidden_problems(draft, config.forbidden),
     }
     return [
@@ -138,18 +138,39 @@ def sentence_count_problems(
     return [f"в тексте {count} предложений, нужно {expected}"]
 
 
-def number_problems(draft: SummaryDraft, pack: TalkFragmentPack) -> list[str]:
-    """Каждое число сводки есть хотя бы в одном фрагменте доклада (форма записи не важна:
+def number_problems(
+    draft: SummaryDraft, claims: Sequence[Claim], pack: TalkFragmentPack
+) -> list[str]:
+    """Число есть в источниках привязанных утверждений (форма записи не важна:
     «1 000» и «1000», «94,5» и «94.5» совпадают)."""
-    available = {token for fragment in pack.fragments for token in _number_tokens(fragment.text)}
+    by_key = {claim.key: claim for claim in claims}
     missing: list[str] = []
     for line in [*draft.sentences, *draft.conclusions]:
+        if any(
+            key not in by_key or by_key[key].status is ClaimStatus.REJECTED
+            for key in line.claim_ids
+        ):
+            continue
+        labels = {
+            evidence.label
+            for key in line.claim_ids
+            if key in by_key
+            for evidence in by_key[key].evidence
+        }
+        available = {
+            token
+            for fragment in pack.fragments
+            if fragment.label in labels
+            for token in _number_tokens(fragment.text)
+        }
         missing.extend(
             token
             for token in _number_tokens(line.text)
             if token not in available and token not in missing
         )
-    return [f"числа {', '.join(missing)} нет в материалах доклада"] if missing else []
+    return (
+        [f"числа {', '.join(missing)} нет в привязанных источниках предложения"] if missing else []
+    )
 
 
 def _number_tokens(text: str) -> list[str]:

@@ -13,8 +13,6 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from rapporteur.llm.profiles import load_profile
-
 REGISTRY = "registry.ollama.ai"
 _CHUNK = 16 * 2**20
 
@@ -39,6 +37,8 @@ def export_model(name: str, source: Path, target: Path) -> int:
     relative = manifest_path(name)
     manifest_file = source / "manifests" / relative
     if not manifest_file.is_file():
+        manifest_file = source / "manifests-v2" / relative
+    if not manifest_file.is_file():
         raise BundleError(f"Модели {name} нет в {source}: скачайте её командой make pull")
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
     digests = [manifest["config"]["digest"], *(layer["digest"] for layer in manifest["layers"])]
@@ -59,7 +59,9 @@ def _copy_checked(source: Path, destination: Path, expected: str) -> int:
         raise BundleError(f"Нет блоба {source.name}: каталог моделей неполный")
     size = source.stat().st_size
     if destination.is_file() and destination.stat().st_size == size:
-        return size  # Уже скопирован прошлым запуском; SHA256SUMS проверит его на месте.
+        with destination.open("rb") as existing:
+            if hashlib.file_digest(existing, "sha256").hexdigest() == expected:
+                return size
     partial = destination.with_name(destination.name + ".partial")
     digest = hashlib.sha256()
     with source.open("rb") as reader, partial.open("wb") as writer:
@@ -80,7 +82,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     source, target, names = Path(args[0]), Path(args[1]), args[2:]
     try:
-        for name in names or [load_profile().model]:
+        if not names:
+            from rapporteur.llm.profiles import load_profile
+
+            names = [load_profile().model]
+        for name in names:
             size = export_model(name, source, target)
             print(f"{name}: {size / 2**30:.1f} ГБ")
     except BundleError as error:

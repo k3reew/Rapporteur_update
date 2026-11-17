@@ -22,3 +22,14 @@ __pycache__/
 /bundle
 
 /storage
+
+# Model weights are distributed in the offline bundle, never committed.
+/models/
+/frontend/node_modules/
+/frontend/dist/
+
+# Settings and logs for local hardware validation.
+/.local/
+
+# Local worktrees may use a symlink to existing read-only weights.
+/models

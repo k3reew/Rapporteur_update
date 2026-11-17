@@ -44,15 +44,16 @@ def ask_structured[T: BaseModel](
     max_repairs: int,
     seed: int | None,
     check: Callable[[T], list[str]] | None = None,
+    schema: dict[str, Any] | None = None,
 ) -> Structured[T]:
-    schema = output.model_json_schema()
+    schema = output.model_json_schema() if schema is None else schema
     generation = profile.generation
     history = list(messages)
-    _check_budget(history, schema, generation.max_tokens, generation.context_tokens)
 
     responses: list[ChatResponse] = []
     log: list[str] = []
     for attempt in range(1, max_repairs + 2):
+        _check_budget(history, schema, generation.max_tokens, generation.context_tokens)
         response = client.chat(
             ChatRequest(
                 model=profile.model,
@@ -98,7 +99,7 @@ def _check_budget(
         raise StageError(
             FailureCode.CONTEXT_OVERFLOW,
             f"Материалы доклада — около {estimate} токенов, с резервом на ответ {max_tokens} "
-            f"не помещаются в контекст {context_tokens}; деление на части ещё не реализовано",
+            f"не помещаются в контекст {context_tokens}; уменьшите размер запроса",
         )
 
 

@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-15",
+  "sourceCommit": "f07a0d07e08c413b30c383bab37a4920ed861c00",
+  "file": "output/pdf/rapporteur-guide.pdf",
+  "sha256": "42db3695ff758ea600cac841e377b4bdb305c6906c0facb5757d15440c1b5225",
+  "bytes": 449832,
+  "pages": 92,
+  "embeddedFonts": [
+    "/AAAAAA+DejaVuSans",
+    "/AAAAAA+DejaVuSans-Bold",
+    "/AAAAAA+DejaVuSansMono",
+    "/AAAAAA+DejaVuSerif",
+    "/AAAAAA+DejaVuSerif-Bold"
+  ],
+  "links": 97,
+  "unresolvedDestinations": [],
+  "vectorFigures": 5,
+  "rasterImages": 0,
+  "outOfPageCharacters": 0,
+  "textExtraction": "passed",
+  "visualReview": "passed",
+  "renderedPages": 92,
+  "reviewedFigurePages": [
+    11,
+    13,
+    19,
+    29,
+    30
+  ],
+  "reviewedDetailPages": [
+    3,
+    7,
+    11,
+    13,
+    19,
+    29,
+    30,
+    41,
+    67
+  ],
+  "outlineChapterCheck": "passed"
+}

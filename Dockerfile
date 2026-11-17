@@ -17,11 +17,20 @@ RUN tsc -p tsconfig.json --noEmit && vite build
 FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159 AS base
 # LibreOffice рендерит pptx в PDF и справку DOCX в PDF; Carlito и Caladea метрически
 # совместимы с Calibri и Cambria. ffprobe читает длительность записей.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      ffmpeg libreoffice-impress-nogui libreoffice-writer-nogui fonts-dejavu-core \
+RUN --mount=type=bind,source=scripts/fetch-debs.py,target=/tmp/fetch-debs.py \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
+ && python /tmp/fetch-debs.py \
+      tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng ffmpeg \
+      libreoffice-impress-nogui libreoffice-writer-nogui fonts-dejavu-core \
       fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-download --no-install-recommends \
+      tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng ffmpeg \
+      libreoffice-impress-nogui libreoffice-writer-nogui fonts-dejavu-core \
+      fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea
 # Во время работы ничего не скачивается из интернета (spec §2).
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_CACHE_DIR=/tmp/uv-cache \
@@ -30,7 +39,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     HOME=/tmp \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1
-RUN pip install --no-cache-dir uv==0.9.5
+RUN pip install --no-cache-dir uv==0.13.7
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
@@ -39,6 +48,32 @@ COPY pyproject.toml uv.lock ./
 FROM base AS dev
 COPY src ./src
 RUN uv sync --frozen && chmod -R a+rwX /opt/venv
+
+FROM base AS asr
+COPY src ./src
+RUN --mount=type=bind,source=scripts/fetch-cuda-wheels.py,target=/tmp/fetch-cuda-wheels.py \
+    --mount=type=cache,target=/tmp/cuda-wheels,sharing=locked \
+    uv venv /opt/venv \
+ && PYTHONPATH=/app/src python /tmp/fetch-cuda-wheels.py \
+ && uv sync --frozen --no-dev --extra asr \
+ && uv cache clean \
+ && chmod -R a+rX /opt/venv
+# Exercise the faster-whisper/PyAV boundary without loading model weights.
+RUN python - <<'PYTHON'
+import io
+import wave
+from faster_whisper.audio import decode_audio
+
+buffer = io.BytesIO()
+with wave.open(buffer, "wb") as audio:
+    audio.setparams((1, 2, 16000, 1600, "NONE", "not compressed"))
+    audio.writeframes(bytes(3200))
+buffer.seek(0)
+assert len(decode_audio(buffer)) == 1600
+PYTHON
+ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib
+USER 1000:1000
+CMD ["uvicorn", "rapporteur.asr_service:app", "--host", "0.0.0.0", "--port", "18764"]
 
 FROM base AS app
 RUN uv sync --frozen --no-dev --no-install-project

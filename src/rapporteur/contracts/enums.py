@@ -44,6 +44,8 @@ class FileKind(StrEnum):
     VIDEO = "video"
     NOTES = "notes"
     PROGRAM = "program"
+    DOCUMENT = "document"
+    IMAGE = "image"
 
 
 class SegmentKind(StrEnum):
@@ -58,10 +60,12 @@ class FragmentKind(StrEnum):
     NOTE = "note"
     PROGRAM = "program"
     SLIDE_DESCRIPTION = "slide_description"
+    DOCUMENT = "document"
 
 
 class TextOrigin(StrEnum):
     EXTRACTED = "extracted"
+    OCR = "ocr"
     ASR = "asr"
     VLM = "vlm"
     TERM_FIX = "term_fix"

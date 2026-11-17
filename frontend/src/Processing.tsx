@@ -1,35 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { request, statusTone } from './Materials';
+import { request } from './api';
+import { useResource } from './useResource';
+import { statusTone, talkStatuses } from './status';
 
-type Job = 'queued' | 'running' | 'done' | 'failed';
-export type TalkProgress = {
-  id: string;
-  section: string;
-  order: number;
-  title: string | null;
-  status: string;
-  job: Job | null;
-  step: 'parse' | 'facts' | 'verify' | 'summary' | null;
-  error: string | null;
-  summary_number: number | null;
-  summary_status: 'ready' | 'needs_attention' | 'stale' | null;
-};
-export type Progress = {
-  processing_started: boolean;
-  files: number;
-  talks: TalkProgress[];
-};
+import type { Progress, TalkProgress } from './talkTypes';
 
-export const talkStatuses: Record<string, string> = {
-  draft: 'Черновик',
-  matched: 'Материалы привязаны',
-  insufficient_data: 'Недостаточно материалов',
-  processed: 'Сводка готова, не проверена',
-  reviewed: 'Проверен',
-  stale: 'Требуется обновление',
-  not_held: 'Не состоялся',
-};
 const steps: Record<string, string> = {
   parse: 'разбор материалов',
   facts: 'факты и цитаты',
@@ -51,47 +27,44 @@ function jobLabel(talk: TalkProgress) {
 export function Processing(
   { conferenceId, onOpen }: { conferenceId: string; onOpen: (talk: TalkProgress) => void },
 ) {
-  const [progress, setProgress] = useState<Progress>();
+  const { data: progress, error: loadError, refresh } = useResource<Progress>(`/api/v1/conferences/${conferenceId}/progress`, POLL_MS);
   const [error, setError] = useState('');
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      try {
-        const response = await request(`/api/v1/conferences/${conferenceId}/progress`, {
-          signal: controller.signal,
-        });
-        setProgress(await response.json());
-        setError('');
-      } catch (reason) {
-        if (!controller.signal.aborted) setError((reason as Error).message);
-      }
-    }
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => {
-      clearInterval(timer);
-      controller.abort();
-    };
-  }, [conferenceId, tick]);
-
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState('');
   async function retry(talk: TalkProgress) {
     try {
       await request(`/api/v1/talks/${talk.id}/retry`, { method: 'POST' });
-      setTick((value) => value + 1);
+      refresh();
     } catch (reason) {
       setError((reason as Error).message);
     }
   }
 
+  async function confirmAll() {
+    const items = (progress?.talks ?? []).filter(t => t.bulk_reviewable)
+      .map(t => ({ talk_id: t.id, version: t.summary_number }));
+    setBulkBusy(true); setError('');
+    try {
+      const response = await request(`/api/v1/conferences/${conferenceId}/summaries/review`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }),
+      });
+      const result: { confirmed: string[]; skipped: { talk_id: string; reason: string }[] } = await response.json();
+      setNotice(`Подтверждено: ${result.confirmed.length}. ${result.skipped.map(s => s.reason).join('; ')}`);
+      refresh();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBulkBusy(false); }
+  }
   const ready = progress?.talks.filter((talk) => talk.summary_number !== null).length ?? 0;
   return (
     <section className="card" aria-labelledby="processing-title">
-      <h2 id="processing-title">Обработка</h2>
-      {error && <p role="alert">{error}</p>}
+      <h2 id="processing-title">Проверка докладов</h2><p className="muted">Дождитесь обработки, проверьте сводки и подтвердите результаты.</p>
+      <button disabled={bulkBusy || !progress?.talks.some(t => t.bulk_reviewable)} onClick={() => void confirmAll()}>
+        Подтвердить все готовые ({progress?.talks.filter(t => t.bulk_reviewable).length ?? 0})
+      </button>
+      {notice && <p role="status">{notice}</p>}
+      {(error || loadError) && <p role="alert">{error || loadError}</p>}
       {progress && !progress.processing_started && (
-        <p className="notice">Обработка ещё не запущена: подтвердите привязки на вкладке «Материалы».</p>
+        <p className="notice">Обработка ещё не запущена: подтвердите доклады на предыдущем этапе.</p>
       )}
       {progress?.processing_started && !progress.talks.length && (
         <p className="notice">
@@ -101,7 +74,7 @@ export function Processing(
       )}
       {progress?.processing_started && !!progress.talks.length
         && progress.talks.every((talk) => talk.status === 'draft' || talk.status === 'insufficient_data') && (
-        <p className="notice">Ни к одному докладу не привязаны материалы: подтвердите привязки на вкладке «Материалы».</p>
+        <p className="notice">Ни к одному докладу не привязаны материалы: подтвердите доклады на предыдущем этапе.</p>
       )}
       {progress && (
         <>

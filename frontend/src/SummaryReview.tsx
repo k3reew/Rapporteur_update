@@ -1,7 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, useRef, type ReactNode } from 'react';
 
-import { request, statusTone } from './Materials';
-import { talkStatuses } from './Processing';
+import { Recommendations } from './Departments';
+import type { TalkProgress } from './talkTypes';
+import { request } from './api';
+import { statusTone } from './status';
+import { talkStatuses } from './status';
 
 type Line = { text: string; claim_ids: string[] };
 type Evidence = { label: string; quote: string; fragment_revision_id: string; span: [number, number] };
@@ -95,7 +98,10 @@ function place(fragment: Fragment) {
 }
 
 export function SummaryReview(
-  { talkId, title, onClose }: { talkId: string; title?: string; onClose: () => void },
+  { talkId, title, onClose, conferenceId, onNavigate }: {
+    talkId: string; title?: string; onClose: () => void; conferenceId?: string;
+    onNavigate?: (id: string) => void;
+  },
 ) {
   const url = `/api/v1/talks/${talkId}/summary`;
   const [view, setView] = useState<SummaryView>();
@@ -104,6 +110,50 @@ export function SummaryReview(
   const [busy, setBusy] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [talks, setTalks] = useState<TalkProgress[]>([]);
+  const [metadata, setMetadata] = useState<{ title: string | null; speakers: { name: string }[]; revision: number }>();
+  const [metaDraft, setMetaDraft] = useState<{ title: string; speakers: string }>();
+  const [pending, setPending] = useState<string>();
+  const allowNavigation = useRef(false);
+  useEffect(() => {
+    if (!conferenceId) return;
+    const controller = new AbortController();
+    void request(`/api/v1/conferences/${conferenceId}/progress`, { signal: controller.signal })
+      .then(async r => setTalks((await r.json()).talks))
+      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
+    void request(`/api/v1/talks/${talkId}`, { signal: controller.signal })
+      .then(async r => setMetadata(await r.json()))
+      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
+    return () => controller.abort();
+  }, [conferenceId, talkId]);
+  useEffect(() => {
+    function guard(e: BeforeUnloadEvent) { if (draft || metaDraft) e.preventDefault(); }
+    function routeGuard(e: Event) {
+      if (allowNavigation.current) { allowNavigation.current = false; return; }
+      if (draft || metaDraft) { e.preventDefault(); setPending('hash:' + (e as CustomEvent<string>).detail); }
+    }
+    window.addEventListener('beforeunload', guard);
+    window.addEventListener('rapporteur-navigate', routeGuard);
+    return () => { window.removeEventListener('beforeunload', guard); window.removeEventListener('rapporteur-navigate', routeGuard); };
+  }, [draft, metaDraft]);
+  function navigate(id: string) {
+    if (draft || metaDraft) { setPending(id); return; }
+    if (id === 'close') onClose(); else onNavigate?.(id);
+  }
+  function leave(id: string) {
+    allowNavigation.current = true;
+    if (id.startsWith('hash:')) window.location.hash = id.slice(5);
+    else if (id === 'close') onClose(); else onNavigate?.(id);
+  }
+  async function saveMetadata() {
+    if (!metaDraft || !metadata) return;
+    await request(`/api/v1/talks/${talkId}`, { method: 'PUT', headers: json,
+      body: JSON.stringify({ title: metaDraft.title.trim() || null,
+        speakers: metaDraft.speakers.split(';').filter(s => s.trim()).map(name => metadata.speakers.find(s => s.name === name.trim()) ?? { name: name.trim() }),
+        revision: metadata.revision }),
+    });
+    setMetadata(await (await request(`/api/v1/talks/${talkId}`)).json()); setMetaDraft(undefined);
+  }
 
   async function read(response: Response) {
     setView(await response.json());
@@ -127,8 +177,10 @@ export function SummaryReview(
       await read(await call());
       setDraft(undefined);
       setStatus(done);
+      return true;
     } catch (reason) {
       setError((reason as Error).message);
+      return false;
     } finally {
       setBusy('');
     }
@@ -137,7 +189,7 @@ export function SummaryReview(
   if (!view) {
     return (
       <section aria-label="Проверка сводки">
-        <p><button className="link" onClick={onClose}><span aria-hidden="true">← </span>К списку докладов</button></p>
+        <p><button className="link" onClick={() => navigate('close')}><span aria-hidden="true">← </span>К списку докладов</button></p>
         {error ? <p role="alert">{error}</p> : <p className="muted"><span className="spinner" aria-hidden="true" />Загрузка сводки…</p>}
       </section>
     );
@@ -158,7 +210,7 @@ export function SummaryReview(
     });
   }
 
-  function save() {
+  async function save() {
     if (!draft) return;
     const edited = summary.claims
       .filter((item) => draft.claims[item.key].trim() && draft.claims[item.key] !== item.text)
@@ -166,7 +218,7 @@ export function SummaryReview(
     const lines = (items: Line[]) => items
       .map((line) => ({ ...line, text: line.text.trim() }))
       .filter((line) => line.text);
-    void act('Сохранение…', 'Правка сохранена, создана новая версия.', () => request(url, {
+    return await act('Сохранение…', 'Правка сохранена, создана новая версия.', () => request(url, {
       method: 'PUT',
       headers: json,
       body: JSON.stringify({
@@ -220,12 +272,43 @@ export function SummaryReview(
     );
   }
 
+  const position = talks.findIndex(t => t.id === talkId);
+  const available = talks.filter(t => t.summary_number !== null);
+  const currentIndex = available.findIndex(t => t.id === talkId);
+  const next = available.slice(currentIndex + 1).find(t => t.status !== 'reviewed');
   const lines = (kind: 'sentences' | 'conclusions') => summary[kind];
   return (
     <section aria-labelledby="summary-title" aria-busy={!!busy}>
-      <p><button className="link" onClick={onClose}><span aria-hidden="true">← </span>К списку докладов</button></p>
-      <div className="card">
-        <h2 id="summary-title">{title ?? view.talk_title ?? 'Доклад без названия'}</h2>
+      <p><button className="link" onClick={() => navigate('close')}><span aria-hidden="true">← </span>К списку докладов</button></p>
+      {onNavigate && <nav className="row" aria-label="Доклады">
+        <button disabled={currentIndex <= 0 || !!busy} onClick={() => navigate(available[currentIndex - 1].id)}>Предыдущий</button>
+        <span>Доклад {position + 1} из {talks.length}</span>
+        <button disabled={currentIndex + 1 >= available.length || !!busy} onClick={() => navigate(available[currentIndex + 1].id)}>Следующий</button>
+      </nav>}
+      {pending && <div role="dialog" aria-label="Несохранённые правки" className="card">
+        <p>Есть несохранённые правки.</p>
+        <button onClick={() => void (async () => {
+          try {
+            await saveMetadata();
+            if (draft && !await save()) return;
+            leave(pending);
+          } catch (e) { setError((e as Error).message); }
+        })()}>Сохранить и перейти</button>
+        <button onClick={() => { leave(pending); }}>Отменить правки и перейти</button>
+        <button onClick={() => setPending(undefined)}>Остаться</button>
+      </div>}
+      <div className="card summary-header">
+        <h2 id="summary-title">{metadata?.title ?? title ?? view.talk_title ?? 'Доклад без названия'}</h2>
+      {metadata && <div className="talk-metadata">
+        {metaDraft ? <>
+          <label className="field">Тема<input value={metaDraft.title} onChange={e => setMetaDraft({ ...metaDraft, title: e.target.value })} /></label>
+          <label className="field">Авторы через точку с запятой<input value={metaDraft.speakers} onChange={e => setMetaDraft({ ...metaDraft, speakers: e.target.value })} /></label>
+          <button onClick={() => void saveMetadata().catch(e => setError((e as Error).message))}>Сохранить тему и авторов</button>
+          <button onClick={() => setMetaDraft(undefined)}>Отменить</button>
+        </> : <><p>{metadata.speakers.map(s => s.name).join('; ') || 'Автор не установлен'}</p>
+          <button className="link" onClick={() => setMetaDraft({ title: metadata.title ?? '', speakers: metadata.speakers.map(s => s.name).join('; ') })}>Править тему и авторов</button></>}
+      </div>}
+
         <div className="kv">
           <div><b>Доклад</b><span className={`pill ${statusTone[talkStatus] ?? ''}`}>{talkStatuses[talkStatus] ?? talkStatus}</span></div>
           <div><b>Версия сводки</b>{summary.version}</div>
@@ -285,7 +368,7 @@ export function SummaryReview(
               <>
                 <button
                   className="primary"
-                  disabled={!!busy || talkStatus === 'reviewed' || !summary.sentences.length}
+                  disabled={!!busy || !!metaDraft || talkStatus === 'reviewed' || !summary.sentences.length}
                   onClick={() => void act('Подтверждение…', 'Сводка проверена.', () => request(`${url}/review`, {
                     method: 'POST',
                     headers: json,
@@ -294,6 +377,13 @@ export function SummaryReview(
                 >
                   Подтвердить проверку
                 </button>
+                {onNavigate && <button disabled={!!busy || !!metaDraft || talkStatus === 'reviewed' || !summary.sentences.length}
+                  onClick={() => void (async () => {
+                    const ok = await act('Подтверждение…', 'Сводка проверена.', () => request(`${url}/review`, {
+                      method: 'POST', headers: json, body: JSON.stringify({ version: summary.version }),
+                    }));
+                    if (ok && next) onNavigate(next.id);
+                  })()}>Подтвердить и следующий</button>}
                 <button disabled={!!busy} onClick={startEdit}>Править</button>
                 <button
                   disabled={!!busy}
@@ -319,9 +409,11 @@ export function SummaryReview(
                     {item.label}{fragment && ` · ${place(fragment)}`}
                   </figcaption>
                   {fragment && <blockquote>{highlight(fragment.text, item.span)}</blockquote>}
-                  {fragment?.locator.kind === 'page' && fragment.kind.startsWith('slide') && (
+                  {fragment?.locator.kind === 'time' && <audio controls preload="none"
+                    src={`/api/v1/files/${fragment.source_file_id}/content#t=${fragment.locator.start_ms / 1000},${fragment.locator.end_ms / 1000}`} />}
+                  {fragment?.locator.kind === 'page' && (
                     <img
-                      src={`/api/v1/files/${fragment.source_file_id}/slides/${fragment.locator.page_no}`}
+                      src={`/api/v1/files/${fragment.source_file_id}/${fragment.kind.startsWith('slide') ? 'slides' : 'pages'}/${fragment.locator.page_no}`}
                       alt={`Слайд ${fragment.locator.page_no}`}
                       loading="lazy"
                     />
@@ -345,6 +437,7 @@ export function SummaryReview(
           </div>
         )}
       </div>
+      {conferenceId && <Recommendations talkId={talkId} />}
     </section>
   );
 }

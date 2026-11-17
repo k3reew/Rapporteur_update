@@ -106,20 +106,22 @@ test('сохраняет привязку и после запуска пере�
     ],
   };
   const saved = { ...review, files: [{ ...review.files[0], binding: { confirmed: true, talk_id: 'second' } }] };
-  let materials = 0;
+  let currentReview: typeof review | typeof saved = review;
   const fetch = api({
     '/api/v1/conferences/conference': () => Response.json(conference),
-    '/api/v1/conferences/conference/materials': () => Response.json(materials++ ? saved : review),
-    '/api/v1/conferences/conference/materials/bindings': () => Response.json(saved),
+    '/api/v1/conferences/conference/preparation': () => Response.json({ version: 0, job: null, error: null, talks: [] }),
+    '/api/v1/conferences/conference/materials': () => Response.json(currentReview),
+    '/api/v1/conferences/conference/materials/bindings': () => { currentReview = saved; return Response.json(saved); },
     '/api/v1/conferences/conference/processing': () => Response.json(
       { ...progress, processing_started: true }, { status: 202 },
     ),
     '/api/v1/conferences/conference/progress': () => Response.json({ ...progress, processing_started: true }),
   });
   vi.stubGlobal('fetch', fetch);
-  window.location.hash = '#/c/conference/materials';
+  window.location.hash = '#/c/conference/talks';
   render(<App />);
 
+  fireEvent.click(await screen.findByText('Привязки материалов'));
   const select = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Доклад для Доклад.pdf' });
   expect(select.value).toBe('first');
   expect(screen.getByText('Проверьте и подтвердите привязки: пока они не подтверждены, шаги сводки ждут.')).toBeDefined();
@@ -133,7 +135,28 @@ test('сохраняет привязку и после запуска пере�
   });
 
   fireEvent.click(screen.getByRole('button', { name: 'Запустить обработку' }));
-  await waitFor(() => expect(window.location.hash).toBe('#/c/conference/processing'));
-  await screen.findByRole('heading', { name: 'Обработка' });
+  await waitFor(() => expect(window.location.hash).toBe('#/c/conference/review'));
+  await screen.findByRole('heading', { name: 'Проверка докладов' });
   expect(fetch).toHaveBeenCalledWith('/api/v1/conferences/conference/processing', { method: 'POST' });
+});
+
+test('активный этап не выдаёт разрешение потерять дальнейшие правки', async () => {
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/preparation')) return Response.json({ version: 1, job: 'done', error: null,
+      talks: [{ title: 'Тема', speakers: [], links: [], reason: '', talk_id: null }] });
+    if (url.endsWith('/materials')) return Response.json({ files: [], talks: [], sections: [] });
+    if (url.endsWith('/reports')) return Response.json([]);
+    if (url.endsWith('/progress')) return Response.json({ talks: [] });
+    return Response.json(conference);
+  }));
+  window.location.hash = '#/c/conference/talks';
+  render(<App />);
+  fireEvent.change(await screen.findByLabelText('Тема доклада 1'), { target: { value: 'Моя тема' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Доклады' }));
+  expect(confirm).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Тема доклада 1'), { target: { value: 'Ещё правка' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Справка' }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+  await screen.findByRole('heading', { name: 'Справка' });
 });

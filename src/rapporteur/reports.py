@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from rapporteur import db
+from rapporteur import db, departments
 from rapporteur.contracts import ReportSelection, ReportVersion, Summary
 from rapporteur.contracts.enums import TalkStatus
 from rapporteur.contracts.reports import ReportFile
@@ -43,7 +43,10 @@ def _sources(conn: sqlite3.Connection, conference_id: str) -> ReportSources:
     sections = conn.execute(
         "SELECT * FROM sections WHERE conference_id = ?", (conference_id,)
     ).fetchall()
+    recommendations, warnings = departments.report_snapshot(conn, conference_id)
     return ReportSources(
+        department_recommendations=recommendations,
+        recommendation_warnings=warnings,
         conference=conference,
         sections=[db.section(row) for row in sections],
         talks=[db.talk(row) for row in db.conference_talks(conn, conference_id)],
@@ -73,7 +76,7 @@ def _check(sources: ReportSources, selection: ReportSelection, unreviewed_confir
 def build(
     database: db.Database, storage: Storage, conference_id: str, data: ReportBuild
 ) -> ReportVersionView:
-    with database.tx() as conn:
+    with database.read() as conn:
         sources = _sources(conn, conference_id)
     ordered = [talk.id for talk in sources.ordered_talks()]
     talk_ids = ordered if data.talk_ids is None else data.talk_ids

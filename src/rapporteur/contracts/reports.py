@@ -67,6 +67,7 @@ class ReportInput(ContractModel):
     skipped: list[SkippedTalk]
     template_version: NonEmptyStr
     unreviewed_confirmed: bool
+    department_recommendations: list[dict[str, object]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

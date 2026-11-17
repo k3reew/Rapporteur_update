@@ -1,0 +1,32 @@
+{
+  "documents": [
+    "README.md",
+    "docs/_meta/coverage.md",
+    "docs/acceptance.md",
+    "docs/adr/index.md",
+    "docs/api.md",
+    "docs/architecture.md",
+    "docs/configuration.md",
+    "docs/data-model.md",
+    "docs/development.md",
+    "docs/facts.md",
+    "docs/frontend.md",
+    "docs/glossary.md",
+    "docs/index.md",
+    "docs/offline.md",
+    "docs/ollama.md",
+    "docs/processing.md",
+    "docs/product.md",
+    "docs/recommendations-report.md",
+    "docs/research.md",
+    "docs/testing.md",
+    "docs/traceability.md",
+    "docs/workflow.md"
+  ],
+  "issues": [],
+  "valid": true,
+  "navigationErrors": [],
+  "coverageErrors": [],
+  "adrErrors": [],
+  "planvaultErrors": []
+}

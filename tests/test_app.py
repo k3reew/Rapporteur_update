@@ -25,7 +25,7 @@ from rapporteur.processing import Processor
 from rapporteur.storage import blob_key
 
 from .conftest import SlideSpec, make_pptx
-from .fictional_talk import NOTE, SLIDES, facts_answer, summary_answer
+from .fictional_talk import NOTE, SLIDES, facts_answer, summary_answer, supported_summary_answer
 
 
 class Fixture:
@@ -237,7 +237,9 @@ def processed_talk(app: Fixture) -> tuple[str, str]:
     (talk,) = started.json()["talks"]
     assert talk["job"] == "queued"
 
-    app.scripted.responses.extend([facts_answer(), summary_answer()])
+    app.scripted.responses.extend(
+        [facts_answer(), facts_answer(), summary_answer(), supported_summary_answer()]
+    )
     assert app.processor.run_once()
     assert not app.processor.run_once()
     return base, talk["id"]
@@ -291,7 +293,12 @@ def test_rebinding_makes_summary_stale_and_requeues(app: Fixture) -> None:
     assert talk["job"] == "queued"
 
 
-def test_talk_without_text_fails_with_a_clear_message(app: Fixture) -> None:
+def test_talk_without_text_fails_with_a_clear_message(
+    app: Fixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rapporteur.preparation import Prepared
+
+    monkeypatch.setattr("rapporteur.preparation.extract", lambda *args: Prepared(fragments=[]))
     base = app.conference()
     assert app.upload(base, "01_Иванов/запись.wav", recording()).status_code == 201
     app.confirm_suggestions(base)
@@ -301,7 +308,7 @@ def test_talk_without_text_fails_with_a_clear_message(app: Fixture) -> None:
 
     (talk,) = app.client.get(f"{base}/progress").json()["talks"]
     assert talk["job"] == "failed"
-    assert talk["error"].startswith("no_sources:") and "Ф2" in talk["error"]
+    assert talk["error"].startswith("no_sources:")
     assert app.client.get(f"/api/v1/talks/{talk['id']}/summary").status_code == 404
     assert app.client.get("/api/v1/system").json()["queue"] == {"failed": 1}
 

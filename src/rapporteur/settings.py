@@ -14,3 +14,4 @@ DATA_DIR = Path(os.environ.get("RAPPORTEUR_DATA_DIR", "/data"))
 # Собранный фронтенд; без него приложение отдаёт только API.
 STATIC_DIR = os.environ.get("RAPPORTEUR_STATIC_DIR")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
+ASR_URL = os.environ.get("ASR_URL", "http://asr:18764")

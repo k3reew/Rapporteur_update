@@ -137,3 +137,16 @@ def summary_answer(
 
 def facts_answer(**changes: Any) -> str:
     return json.dumps({**FACTS, **changes}, ensure_ascii=False)
+
+
+def supported_summary_answer() -> str:
+    """Ответ смысловой проверки известной вымышленной сводки."""
+    return json.dumps(
+        {
+            "decisions": [
+                {"line": key, "supported": True, "reason": "Поддерживается исходным фрагментом"}
+                for key in ["s1", "s2", "s3", "s4", "c1"]
+            ]
+        },
+        ensure_ascii=False,
+    )

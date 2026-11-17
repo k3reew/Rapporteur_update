@@ -55,6 +55,21 @@ test('предупреждает о датах и собирает справк�
   expect(api).toHaveBeenLastCalledWith('/api/v1/conferences/conference/reports', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ unreviewed_confirmed: true }),
+    body: JSON.stringify({ unreviewed_confirmed: true, talk_ids: ['talk'] }),
   });
+});
+
+test('собирает только выбранные доклады', async () => {
+  const api = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/progress')) return Response.json({ ...progress, talks: [...progress.talks, { ...progress.talks[0], id: 'two', title: 'Второй' }] });
+    if (url.endsWith('/reports')) return Response.json(init?.method === 'POST' ? version : []);
+    return Response.json(conference);
+  });
+  vi.stubGlobal('fetch', api);
+  render(<ReportPanel conferenceId="conference" />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: /Второй/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Собрать справку' }));
+  await screen.findByText('Собрана версия 1.');
+  const body = api.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body;
+  expect(JSON.parse(body as string).talk_ids).toEqual(['talk']);
 });

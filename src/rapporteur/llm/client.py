@@ -19,6 +19,7 @@ Role = Literal["system", "user", "assistant"]
 class Message:
     role: Role
     content: str
+    images: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,10 @@ class OllamaClient:
     def chat(self, request: ChatRequest) -> ChatResponse:
         body: dict[str, Any] = {
             "model": request.model,
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": [
+                {"role": m.role, "content": m.content, **({"images": m.images} if m.images else {})}
+                for m in request.messages
+            ],
             "stream": False,
             "think": request.think,
             "options": {

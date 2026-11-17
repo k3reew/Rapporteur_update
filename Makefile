@@ -14,6 +14,8 @@ NPM_BEFORE := 2026-10-20
 OLLAMA_PINNED = $(shell $(COMPOSE) config --images ollama)
 OLLAMA_TAG = $(firstword $(subst @, ,$(OLLAMA_PINNED)))
 BUNDLE := bundle
+MODEL ?= qwen3.5:27b
+ASR_MODELS_DIR ?= $(or $(shell sed -n 's/^ASR_MODELS_DIR=//p' .env 2>/dev/null),./models/asr)
 # Ollama другого проекта: OLLAMA_NETWORK в .env или окружении включает app-shared без своей
 # Ollama (docs/ollama.md). Иначе — приложение и своя Ollama.
 OLLAMA_NETWORK ?= $(shell sed -n 's/^OLLAMA_NETWORK=//p' .env 2>/dev/null)
@@ -22,24 +24,24 @@ RAPPORTEUR_STORAGE ?= $(or $(shell sed -n 's/^RAPPORTEUR_STORAGE=//p' .env 2>/de
 # Все режимы: down, ps и logs видят и app, и app-shared.
 ALL := $(COMPOSE) --profile shared-ollama
 ifneq ($(strip $(OLLAMA_NETWORK)),)
-RUN := $(ALL) up app-shared
+RUN := $(ALL) up app-shared asr
 else
 RUN := $(COMPOSE) up
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: help up start down ps logs config check lint test format pull lock bundle install
+.PHONY: help up start down ps logs config check lint test format pull lock bundle install prepare doctor
 
 help:
 	@grep -E '^## ' Makefile | sed 's/^## //'
 
-## make up      — собрать и запустить приложение и Ollama, http://127.0.0.1:8000
-up:
+## make up      — собрать и запустить приложение и Ollama, http://127.0.0.1:18763
+up: doctor
 	mkdir -p $(RAPPORTEUR_STORAGE)
 	$(RUN) --build --detach --wait --wait-timeout 180
 
 ## make start   — запустить без сборки и скачивания образов (машина без интернета)
-start:
+start: doctor
 	mkdir -p $(RAPPORTEUR_STORAGE)
 	$(RUN) --detach --wait --wait-timeout 180 --no-build --pull never
 
@@ -83,30 +85,50 @@ pull:
 lock:
 	docker run --rm --user $(HOST_UID):$(HOST_GID) -e HOME=/tmp -e UV_CACHE_DIR=/tmp/uv-cache \
 	  -v $(CURDIR):/app -w /app $(PYTHON_IMAGE) \
-	  sh -c 'pip install --quiet --no-cache-dir --user uv==0.9.5 && /tmp/.local/bin/uv lock'
+	  sh -c 'pip install --quiet --no-cache-dir --user uv==0.13.7 && /tmp/.local/bin/uv lock'
 	docker run --rm --user $(HOST_UID):$(HOST_GID) -e HOME=/tmp \
 	  -v $(CURDIR)/frontend:/app -w /app $(NODE_IMAGE) \
 	  npm install --package-lock-only --ignore-scripts --no-audit --no-fund --before=$(NPM_BEFORE)
 
 ## make bundle [MODEL="qwen3.5:9b …"] — комплект для машины без интернета в bundle/
-## Без MODEL берётся модель профиля по умолчанию из profiles.yaml (docs/offline.md).
+## По умолчанию в комплект включается серверная qwen3.5:27b (docs/offline.md).
 bundle:
-	$(COMPOSE) build app
+	$(COMPOSE) build app asr
 	docker pull $(OLLAMA_PINNED)
 	docker tag $(OLLAMA_PINNED) $(OLLAMA_TAG)
 	mkdir -p $(BUNDLE)/models
 	$(COMPOSE) run --rm export-model $(MODEL)
-	docker save --output $(BUNDLE)/images.tar rapporteur:local $(OLLAMA_TAG)
+	mkdir -p $(BUNDLE)/models/asr
+	cp -a $(ASR_MODELS_DIR)/. $(BUNDLE)/models/asr/
+	bash -o pipefail -c 'docker save rapporteur:local rapporteur-asr:local $(OLLAMA_TAG) | gzip -1 > $(BUNDLE)/images.tar.gz.partial'
+	mv $(BUNDLE)/images.tar.gz.partial $(BUNDLE)/images.tar.gz
 	cp compose.yaml Makefile $(BUNDLE)/
+	mkdir -p $(BUNDLE)/scripts
+	cp scripts/doctor.sh $(BUNDLE)/scripts/
 	cp docs/offline.md $(BUNDLE)/README.md
-	sed 's|^OLLAMA_MODELS_DIR=.*|OLLAMA_MODELS_DIR=./models|' .env.example > $(BUNDLE)/.env.example
+	sed 's|(offline.md\#|(README.md\#|g' docs/workflow.md > $(BUNDLE)/WORKFLOW.md
+	cp docs/acceptance.md $(BUNDLE)/ACCEPTANCE.md
+	cp docs/benchmarks/2026-11-14-redesign.md $(BUNDLE)/VALIDATION.md
+	sed 's|^OLLAMA_MODELS_DIR=.*|OLLAMA_MODELS_DIR=./models|; s|^ASR_MODELS_DIR=.*|ASR_MODELS_DIR=./models/asr|' .env.example > $(BUNDLE)/.env.example
 	printf '\n# Образ Ollama из комплекта: тег вместо digest (docs/offline.md).\nOLLAMA_IMAGE=%s\n' \
 	  "$(OLLAMA_TAG)" >> $(BUNDLE)/.env.example
-	cd $(BUNDLE) && find images.tar models -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+	cd $(BUNDLE) && find images.tar.gz models compose.yaml Makefile .env.example README.md WORKFLOW.md ACCEPTANCE.md VALIDATION.md scripts -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 	@du -sh $(BUNDLE)
 
 ## make install — в каталоге комплекта: проверить контрольные суммы и загрузить образы
 install:
 	sha256sum --check --quiet SHA256SUMS
-	docker load --input images.tar
+	docker load --input images.tar.gz
 	@test -f .env || { cp .env.example .env; echo "Создан .env: проверьте WEB_BIND_ADDRESS и WEB_PORT"; }
+
+## make prepare — скачать обе модели и собрать образы на машине с интернетом
+prepare:
+	mkdir -p $(ASR_MODELS_DIR)
+	@mkdir -p $$(sed -n 's/^OLLAMA_MODELS_DIR=//p' .env)
+	$(COMPOSE) build app asr
+	$(MAKE) pull MODEL=$(MODEL)
+	$(COMPOSE) run --rm download-asr
+
+## make doctor — проверить настройки, порт, GPU и наличие моделей без изменения сервера
+doctor:
+	@bash scripts/doctor.sh

@@ -1,4 +1,4 @@
-"""Шаги В и Г spec §6.7 без критика (критик — Ф4).
+"""Шаги В и Г spec §6.7 со смысловым критиком для промптов v2.
 
 Модель пишет текст только из утверждений, прошедших сверку. Код проверяет ссылки на
 утверждения, число предложений, числа и запрещённые слова; при нарушениях сводка пишется
@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt
 
 from rapporteur.contracts import (
     Claim,
+    Evidence,
     FactsArtifact,
     ModelProfile,
     Summary,
@@ -37,9 +38,11 @@ from rapporteur.summarize.checks import (
     sentence_range,
     usable_claims,
 )
+from rapporteur.summarize.grounding import review_summary
+from rapporteur.summarize.pack import context_fragments
 
 # Версия шага входит в ключ кэша.
-VERSION = "1.1.0"
+VERSION = "1.4.0"
 STEP = "summary"
 
 _SUMMARY_NAMESPACE = uuid.UUID("9a4e2c71-3b5d-4f8e-a6c0-7d1b2e3f4a5c")
@@ -69,6 +72,7 @@ class ClaimLine:
     key: str
     kind: str
     text: str
+    evidence: list[Evidence]
 
 
 @dataclass(frozen=True)
@@ -100,7 +104,10 @@ def write_summary(
     profile = config.profile
     prompt = load_prompt(STEP, profile.prompt_version, PROMPTS_DIR)
     low, high = sentence_range(config.checks, claims)
-    lines = [ClaimLine(claim.key, _KIND[claim.type], claim.text) for claim in usable]
+    lines = [
+        ClaimLine(claim.key, _KIND[claim.type], claim.text, claim.evidence) for claim in usable
+    ]
+    evidence = [item for claim in usable for item in claim.evidence]
     messages = [
         Message("system", prompt.render("system", min_sentences=low, max_sentences=high)),
         Message(
@@ -110,11 +117,12 @@ def write_summary(
                 title=title,
                 claims=lines,
                 has_conclusions=any(claim.type is ClaimType.CONCLUSION for claim in usable),
+                fragments=context_fragments(pack, evidence),
             ),
         ),
     ]
     checks: list[CheckResult] = []
-    best: tuple[int, SummaryDraft] | None = None
+    best: tuple[tuple[bool, bool, int], SummaryDraft] | None = None
     for attempt in range(1, config.max_attempts + 1):
         result = ask_structured(
             client,
@@ -128,12 +136,23 @@ def write_summary(
         )
         draft = _punctuated(result.value)
         current = check_summary(draft, claims, pack, config.checks, attempt)
+        if profile.prompt_version == "v2" and all(check.passed for check in current):
+            current.append(
+                review_summary(
+                    client, profile, draft, claims, pack, attempt=attempt, seed=config.seed
+                )
+            )
         checks.extend(current)
         failed = [check for check in current if not check.passed]
         if not failed:
             return Written(SummaryStatus.READY, draft.sentences, draft.conclusions, checks, attempt)
-        if best is None or len(failed) <= best[0]:
-            best = (len(failed), draft)
+        rank = (
+            any(check.check is CheckName.CLAIM_LINKS and not check.passed for check in current),
+            any(check.check is CheckName.SENTENCE_COUNT and not check.passed for check in current),
+            len(failed),
+        )
+        if best is None or rank <= best[0]:
+            best = (rank, draft)
         problems = [check.details or check.check.value for check in failed]
         messages = [*result.messages, Message("user", prompt.render("repair", problems=problems))]
 

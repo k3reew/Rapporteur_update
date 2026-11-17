@@ -13,7 +13,16 @@ x-ollama: &ollama
   # docker load может не сохранить digest, а целостность проверяет SHA256SUMS (docs/offline.md).
   image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429}
   user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-  gpus: all
+  deploy:
+    resources:
+      limits:
+        cpus: "${LLM_CPUS:-8}"
+        memory: ${LLM_MEMORY:-64g}
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ["${LLM_GPU_ID:-0}"]
+            capabilities: [gpu]
   environment:
     HOME: /tmp
     OLLAMA_HOST: 0.0.0.0:11434
@@ -33,13 +42,17 @@ x-app: &app
   # Файлы в storage/ принадлежат пользователю, который запускает make.
   user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
   ports:
-    - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8000}:8000"
+    - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-18763}:8000"
   # Хранилище на хосте: база SQLite, оригиналы, кэш шагов, слайды, справки. Каталог создаёт
   # make; бэкап — копия каталога при остановленном приложении.
   volumes:
     - type: bind
       source: ${RAPPORTEUR_STORAGE:-./storage}
       target: /data
+    - ${OLLAMA_MODELS_DIR:-./models/ollama}:/models/ollama:ro
+    - ${ASR_MODELS_DIR:-./models/asr}:/models/asr:ro
+  mem_limit: ${APP_MEMORY:-16g}
+  cpus: ${APP_CPUS:-8}
   healthcheck:
     test:
       - CMD
@@ -56,8 +69,14 @@ services:
     <<: *app
     environment:
       OLLAMA_URL: http://ollama:11434
+      ASR_URL: http://asr:18764
+      RAPPORTEUR_PROFILE: ${RAPPORTEUR_PROFILE:-server}
+      OLLAMA_MODELS_PATH: /models/ollama
+      ASR_MODEL_DIR: /models/asr
     networks: [internal, edge]
     depends_on:
+      asr:
+        condition: service_healthy
       ollama:
         condition: service_healthy
 
@@ -68,7 +87,44 @@ services:
     profiles: [shared-ollama]
     environment:
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
-    networks: [edge, shared]
+      ASR_URL: http://asr:18764
+      RAPPORTEUR_PROFILE: ${RAPPORTEUR_PROFILE:-server}
+      OLLAMA_MODELS_PATH: /models/ollama
+      ASR_MODEL_DIR: /models/asr
+    networks: [edge, shared, internal]
+
+  asr:
+    build:
+      context: .
+      target: asr
+    image: rapporteur-asr:local
+    restart: unless-stopped
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    networks: [internal]
+    environment:
+      ASR_MODEL_DIR: /models/asr
+      ASR_REVISION: ${ASR_REVISION:-large-v3}
+      ASR_DEVICE: ${ASR_DEVICE:-cuda}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-}
+      OMP_NUM_THREADS: ${ASR_THREADS:-4}
+    volumes:
+      - ${RAPPORTEUR_STORAGE:-./storage}:/data
+      - ${ASR_MODELS_DIR:-./models/asr}:/models/asr:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "${ASR_CPUS:-8}"
+          memory: ${ASR_MEMORY:-16g}
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${ASR_GPU_ID:-1}"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18764/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   # Модели лежат во внешнем каталоге OLLAMA_MODELS_DIR (blobs/ и manifests/) и подключаются
   # только на чтение (ADR-010). Ollama при старте переносит манифесты в manifests-v2, поэтому
@@ -109,6 +165,7 @@ services:
   # Каталог должен быть доступен на запись пользователю HOST_UID.
   pull:
     <<: *ollama
+    deploy: {}
     profiles: [tools]
     networks: [egress]
     volumes:
@@ -130,6 +187,18 @@ services:
         read_only: true
       - ./bundle/models:/out
     entrypoint: [python, -m, rapporteur.bundle, /models, /out]
+
+  download-asr:
+    image: rapporteur:local
+    profiles: [tools]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    networks: [egress]
+    environment:
+      HF_HUB_OFFLINE: "0"
+      HF_HOME: /tmp/hf
+    volumes:
+      - ${ASR_MODELS_DIR:-./models/asr}:/models/asr
+    entrypoint: [python, -m, rapporteur.offline_models]
 
   # Проверки Python: make check. Исходники с хоста, сети нет.
   dev:

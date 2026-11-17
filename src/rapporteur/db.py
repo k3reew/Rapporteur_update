@@ -110,6 +110,49 @@ class Database:
         with self.connect() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        if conn.execute("PRAGMA user_version").fetchone()[0] >= 1:
+            return
+        # Backup before the first upgrade; SQLite backup also includes committed WAL data.
+        with sqlite3.connect(str(self.path) + ".before-v1.bak") as backup:
+            conn.backup(backup)
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("ALTER TABLE talks ADD COLUMN input_revision INTEGER NOT NULL DEFAULT 0")
+            conn.execute("""CREATE TABLE material_links (
+                id TEXT PRIMARY KEY,
+                file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                talk_id TEXT NOT NULL REFERENCES talks(id) ON DELETE CASCADE,
+                start_ms INTEGER, end_ms INTEGER, page_start INTEGER, page_end INTEGER
+            )""")
+            conn.execute("CREATE INDEX links_talk ON material_links(talk_id)")
+            conn.execute("""CREATE TABLE preparations (
+                conference_id TEXT PRIMARY KEY REFERENCES conferences(id) ON DELETE CASCADE,
+                version INTEGER NOT NULL DEFAULT 1,
+                job TEXT NOT NULL, error TEXT, proposal TEXT NOT NULL DEFAULT '[]'
+            )""")
+            conn.execute("""CREATE TABLE departments (
+                id TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL,
+                original_name TEXT NOT NULL, sha256 TEXT NOT NULL,
+                pages TEXT NOT NULL, created_at TEXT NOT NULL,
+                PRIMARY KEY(id, version)
+            )""")
+            conn.execute("""CREATE TABLE recommendations (
+                talk_id TEXT PRIMARY KEY REFERENCES talks(id) ON DELETE CASCADE,
+                summary_version INTEGER NOT NULL, department_revisions TEXT NOT NULL,
+                version INTEGER NOT NULL, items TEXT NOT NULL, reviewed INTEGER NOT NULL DEFAULT 0
+            )""")
+            conn.execute("""CREATE TABLE recommendation_jobs (
+                talk_id TEXT PRIMARY KEY REFERENCES talks(id) ON DELETE CASCADE,
+                job TEXT NOT NULL, error TEXT
+            )""")
+            conn.execute("PRAGMA user_version = 1")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
 
     def connect(self) -> sqlite3.Connection:
         # Соединение живёт в одном запросе, но FastAPI может открыть и закрыть его в разных
@@ -118,6 +161,17 @@ class Database:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    @contextmanager
+    def read(self) -> Iterator[sqlite3.Connection]:
+        """Consistent read snapshot without reserving SQLite's writer lock."""
+        conn = self.connect()
+        try:
+            conn.execute("PRAGMA query_only = ON")
+            conn.execute("BEGIN")
+            yield conn
+        finally:
+            conn.close()
 
     @contextmanager
     def tx(self) -> Iterator[sqlite3.Connection]:
