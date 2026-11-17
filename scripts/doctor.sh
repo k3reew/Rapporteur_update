@@ -10,11 +10,22 @@ value() { local found; found=$(sed -n "s/^$1=//p" .env | tail -n 1); printf '%s'
 port=$(value WEB_PORT 18763)
 bind=$(value WEB_BIND_ADDRESS 127.0.0.1)
 llm=$(value LLM_GPU_ID 0)
-asr=$(value ASR_GPU_ID 1)
-llm_uuid=$(nvidia-smi --id="$llm" --query-gpu=uuid --format=csv,noheader)
-asr_uuid=$(nvidia-smi --id="$asr" --query-gpu=uuid --format=csv,noheader)
-[[ "$llm_uuid" != "$asr_uuid" ]] || { echo 'LLM_GPU_ID и ASR_GPU_ID должны указывать разные GPU'; exit 1; }
-nvidia-smi --id="$llm,$asr" --query-gpu=uuid,name,memory.free --format=csv
+# off, cpu или gpu; на GPU распознавание работает только на отдельной карте.
+asr_mode=$(bash scripts/asr-mode.sh)
+if [[ "$asr_mode" == gpu ]]; then
+  asr=$(value ASR_GPU_ID 1)
+  llm_uuid=$(nvidia-smi --id="$llm" --query-gpu=uuid --format=csv,noheader) || { echo "Нет GPU LLM_GPU_ID=$llm"; exit 1; }
+  asr_uuid=$(nvidia-smi --id="$asr" --query-gpu=uuid --format=csv,noheader) || { echo "Нет GPU ASR_GPU_ID=$asr; при одной GPU задайте ASR_MODE=cpu или off"; exit 1; }
+  [[ "$llm_uuid" != "$asr_uuid" ]] || { echo 'LLM_GPU_ID и ASR_GPU_ID должны указывать разные GPU; при одной GPU задайте ASR_MODE=cpu или off'; exit 1; }
+  nvidia-smi --id="$llm,$asr" --query-gpu=uuid,name,memory.free --format=csv
+else
+  nvidia-smi --id="$llm" --query-gpu=uuid,name,memory.free --format=csv
+fi
+case "$asr_mode" in
+  gpu) echo "Распознавание речи: GPU $asr" ;;
+  cpu) echo 'Распознавание речи: процессор' ;;
+  off) echo 'Распознавание речи выключено (ASR_MODE): записи не расшифровываются' ;;
+esac
 models=$(value OLLAMA_MODELS_DIR ./models/ollama)
 speech=$(value ASR_MODELS_DIR ./models/asr)
 profile=$(value RAPPORTEUR_PROFILE server)
@@ -23,7 +34,9 @@ if [[ "$profile" == server && ! -f "$models/manifests/registry.ollama.ai/library
 fi
 [[ -d "$models/blobs" ]] || { echo "Нет весов Ollama в $models: выполните make prepare на машине с интернетом"; exit 1; }
 [[ -d "$models/manifests" || -d "$models/manifests-v2" ]] || { echo 'Нет манифестов Ollama'; exit 1; }
-[[ -f "$speech/model.bin" && -f "$speech/tokenizer.json" && -f "$speech/config.json" && -f "$speech/preprocessor_config.json" ]] || { echo "Неполные веса ASR в $speech"; exit 1; }
+if [[ "$asr_mode" != off ]]; then
+  [[ -f "$speech/model.bin" && -f "$speech/tokenizer.json" && -f "$speech/config.json" && -f "$speech/preprocessor_config.json" ]] || { echo "Неполные веса ASR в $speech: выполните make prepare или задайте ASR_MODE=off"; exit 1; }
+fi
 if command -v ss >/dev/null && ss -H -ltn | awk '{print $4}' | grep -qE ":${port}$"; then
   if ! docker compose ps --status running --format '{{.Service}}' | grep -qE '^app(-shared)?$'; then
     echo "Порт $bind:$port занят: измените WEB_PORT в .env"; exit 1

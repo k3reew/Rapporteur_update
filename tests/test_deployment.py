@@ -21,6 +21,23 @@ def test_compose_has_only_one_public_port_and_independent_devices() -> None:
     assert services["pull"]["deploy"] == {}
 
 
+def test_asr_is_optional_and_cpu_variant_leaves_gpu_to_ollama() -> None:
+    compose = yaml.safe_load(Path("compose.yaml").read_text())
+    services = compose["services"]
+    gpu, cpu = services["asr"], services["asr-cpu"]
+    # ASR не запускается без своего профиля; приложение без него стартует.
+    assert gpu["profiles"] == ["asr-gpu"] and cpu["profiles"] == ["asr-cpu"]
+    for app in (services["app"], services["app-shared"]):
+        assert app["depends_on"]["asr"]["required"] is False
+        assert app["depends_on"]["asr-cpu"]["required"] is False
+        assert app["environment"]["ASR_ENABLED"] == "${ASR_ENABLED:-0}"
+    assert gpu["environment"]["ASR_DEVICE"] == "cuda"
+    assert cpu["environment"]["ASR_DEVICE"] == "cpu"
+    assert "reservations" not in cpu["deploy"]["resources"]
+    assert cpu["networks"]["internal"]["aliases"] == ["asr"]
+    assert not cpu.get("ports")
+
+
 def test_server_profile_uses_actual_manifest_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

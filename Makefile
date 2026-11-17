@@ -21,12 +21,19 @@ ASR_MODELS_DIR ?= $(or $(shell sed -n 's/^ASR_MODELS_DIR=//p' .env 2>/dev/null),
 OLLAMA_NETWORK ?= $(shell sed -n 's/^OLLAMA_NETWORK=//p' .env 2>/dev/null)
 # Хранилище приложения на хосте (RAPPORTEUR_STORAGE в .env), по умолчанию storage/.
 RAPPORTEUR_STORAGE ?= $(or $(shell sed -n 's/^RAPPORTEUR_STORAGE=//p' .env 2>/dev/null),./storage)
-# Все режимы: down, ps и logs видят и app, и app-shared.
-ALL := $(COMPOSE) --profile shared-ollama
+# Распознавание речи: off, cpu или gpu по ASR_MODE (scripts/asr-mode.sh). Режим вычисляется
+# один раз и только в командах, которые его используют: auto опрашивает nvidia-smi.
+ASR_RESOLVED = $(eval ASR_RESOLVED := $$(shell bash scripts/asr-mode.sh))$(ASR_RESOLVED)
+ASR_SERVICE = $(if $(filter gpu,$(ASR_RESOLVED)),asr,$(if $(filter cpu,$(ASR_RESOLVED)),asr-cpu))
+ASR_FLAGS = $(if $(ASR_SERVICE),--profile asr-$(ASR_RESOLVED))
+# Приложение узнаёт из ASR_ENABLED, запущен ли ASR: без него записи пропускаются.
+ASR_ENABLED = $(if $(ASR_SERVICE),1,0)
+# Все режимы: down, ps и logs видят app, app-shared и оба варианта ASR.
+ALL := $(COMPOSE) --profile shared-ollama --profile asr-gpu --profile asr-cpu
 ifneq ($(strip $(OLLAMA_NETWORK)),)
-RUN := $(ALL) up app-shared asr
+RUN = ASR_ENABLED=$(ASR_ENABLED) $(COMPOSE) --profile shared-ollama $(ASR_FLAGS) up app-shared $(ASR_SERVICE)
 else
-RUN := $(COMPOSE) up
+RUN = ASR_ENABLED=$(ASR_ENABLED) $(COMPOSE) $(ASR_FLAGS) up
 endif
 
 .DEFAULT_GOAL := help
@@ -35,7 +42,7 @@ endif
 help:
 	@grep -E '^## ' Makefile | sed 's/^## //'
 
-## make up      — собрать и запустить приложение и Ollama, http://127.0.0.1:18763
+## make up      — собрать и запустить приложение, Ollama и ASR по ASR_MODE, http://127.0.0.1:18763
 up: doctor
 	mkdir -p $(RAPPORTEUR_STORAGE)
 	$(RUN) --build --detach --wait --wait-timeout 180
@@ -53,7 +60,7 @@ down:
 ps:
 	$(ALL) ps
 
-## make logs    — журнал приложения и Ollama
+## make logs    — журнал приложения, Ollama и ASR
 logs:
 	$(ALL) logs --follow
 
@@ -104,7 +111,7 @@ bundle:
 	mv $(BUNDLE)/images.tar.gz.partial $(BUNDLE)/images.tar.gz
 	cp compose.yaml Makefile $(BUNDLE)/
 	mkdir -p $(BUNDLE)/scripts
-	cp scripts/doctor.sh $(BUNDLE)/scripts/
+	cp scripts/doctor.sh scripts/asr-mode.sh $(BUNDLE)/scripts/
 	cp docs/offline.md $(BUNDLE)/README.md
 	sed 's|(offline.md\#|(README.md\#|g' docs/workflow.md > $(BUNDLE)/WORKFLOW.md
 	cp docs/acceptance.md $(BUNDLE)/ACCEPTANCE.md
