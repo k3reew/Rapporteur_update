@@ -128,7 +128,7 @@ def extract_facts(
                     sources: TalkFragmentPack = sources,
                     first: FactsArtifact = pair[0],
                 ) -> FactsArtifact:
-                    if profile.prompt_version == "v2":
+                    if profile.prompt_version in ("v2", "v3"):
                         if not sources.fragments:
                             return first
                         return _review_facts(client, sources, config, content)
@@ -172,7 +172,7 @@ def extract_facts(
         check=lambda facts: _facts_problems(facts, pack),
         schema=_facts_schema(pack),
     )
-    if profile.prompt_version == "v2":
+    if profile.prompt_version in ("v2", "v3"):
         reviewed = _review_facts(client, pack, config, result.value.model_dump_json())
         return reviewed.model_copy(update={"attempts": result.attempts + reviewed.attempts})
     return FactsArtifact(

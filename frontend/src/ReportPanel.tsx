@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { ConferenceItem } from './conferenceTypes';
+import { useResource } from './useResource';
 import { request } from './api';
 import { useUnsavedChanges } from './useUnsavedChanges';
 import type { TalkProgress, Progress } from './talkTypes';
@@ -13,11 +14,17 @@ type ReportVersion = {
   variables: { talks_count: number };
   warnings: string[];
 };
+type ReportJob = { id: string; status: 'queued' | 'running' | 'done' | 'failed'; step: string; error: string | null; report_version_id: string | null };
+const jobSteps: Record<string, string> = { queued: 'В очереди', running: 'Подготовка', docx: 'Документ DOCX', md: 'Текст Markdown', pdf: 'Документ PDF', done: 'Готово', failed: 'Ошибка' };
 const json = { 'Content-Type': 'application/json' };
 const formats: Record<string, string> = { docx: 'DOCX', md: 'Markdown', pdf: 'PDF' };
 
 export function ReportPanel({ conferenceId }: { conferenceId: string }) {
   const base = `/api/v1/conferences/${conferenceId}`;
+  const { data: jobs = [], error: jobsError, refresh: refreshJobs } = useResource<ReportJob[]>(`${base}/report-jobs`, 2000);
+  const pending = jobs.some(job => job.status === 'queued' || job.status === 'running');
+  const submission = useRef({ body: '', key: '', jobId: '' });
+  const completed = jobs.filter(job => job.status === 'done').map(job => job.report_version_id).join(',');
   const [conference, setConference] = useState<ConferenceItem>();
   const [dates, setDates] = useState({ start: '', end: '', place: '' });
   const [talks, setTalks] = useState<TalkProgress[]>([]);
@@ -26,7 +33,6 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState('');
   const [status, setStatus] = useState('');
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState('');
 
   const datesDirty = !!conference && (dates.start !== (conference.start_date ?? '') || dates.end !== (conference.end_date ?? '') || dates.place !== (conference.place ?? ''));
@@ -43,7 +49,7 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
       const progress: Progress = await (await request(`${base}/progress`, { signal })).json();
       if (signal.aborted) return;
       setTalks(progress.talks);
-      setSelected(progress.talks.map(talk => talk.id));
+      setSelected(progress.talks.filter(talk => talk.screening?.eligible && talk.summary_number).map(talk => talk.id));
       const history = await (await request(`${base}/reports`, { signal })).json();
       if (!signal.aborted) setVersions(history);
     }
@@ -53,11 +59,19 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
     return () => controller.abort();
   }, [base]);
 
+  useEffect(() => {
+    if (!completed) return;
+    const controller = new AbortController();
+    void request(`${base}/reports`, { signal: controller.signal }).then(response => response.json()).then((history: ReportVersion[]) => {
+      if (!controller.signal.aborted) setVersions(history);
+    }).catch((reason: Error) => { if (!controller.signal.aborted) setError(reason.message); });
+    return () => controller.abort();
+  }, [base, completed]);
+
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label);
     setError('');
     setStatus('');
-    setWarnings([]);
     try {
       await action();
     } catch (reason) {
@@ -89,17 +103,24 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
   }
 
   function build() {
-    // DOCX по бланку и PDF через LibreOffice собираются за несколько секунд прямо в запросе.
-    void run('Справка собирается…', async () => {
-      const response = await request(`${base}/reports`, {
-        method: 'POST',
-        headers: json,
-        body: JSON.stringify({ unreviewed_confirmed: confirmed, talk_ids: selected }),
+    const body = JSON.stringify({ unreviewed_confirmed: confirmed, talk_ids: selected });
+    if (submission.current.body !== body || jobs.some(job => job.id === submission.current.jobId && job.status === 'done')) {
+      submission.current = { body, key: crypto.randomUUID(), jobId: '' };
+    }
+    void run('Постановка в очередь…', async () => {
+      const response = await request(`${base}/report-jobs`, { method: 'POST', headers: json,
+        body: JSON.stringify({ ...JSON.parse(body), idempotency_key: submission.current.key }),
       });
-      const version: ReportVersion = await response.json();
-      setVersions((previous) => [version, ...previous]);
-      setStatus(`Собрана версия ${version.number}.`);
-      setWarnings(version.warnings);
+      submission.current.jobId = ((await response.json()) as ReportJob).id;
+      setStatus('Сборка поставлена в очередь. Можно переходить к другим разделам.');
+      refreshJobs();
+    });
+  }
+
+  function retry(job: ReportJob) {
+    void run('Повтор сборки…', async () => {
+      await request(`/api/v1/report-jobs/${job.id}/retry`, { method: 'POST' });
+      refreshJobs();
     });
   }
 
@@ -108,8 +129,7 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
       <div className="card">
         <h2 id="report-title">Справка</h2>
         <p role="status">{busy && <span className="spinner" aria-hidden="true" />}{busy || status}</p>
-        {error && <p role="alert">{error}</p>}
-        {!!warnings.length && <ul className="muted">{warnings.map((item) => <li key={item}>{item}</li>)}</ul>}
+        {(error || jobsError) && <p role="alert">{error || jobsError}</p>}
         {conference && (
           <form onSubmit={(event) => { event.preventDefault(); saveDates(); }}>
             <fieldset>
@@ -141,18 +161,24 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
           Выберите доклады для справки. Доклады без готовой сводки в неё не войдут. Подтверждённые рекомендации отделам включаются вместе с основаниями.
         </p>
         <fieldset disabled={!!busy} className="report-selection"><legend>Доклады — выбрано {selected.length} из {talks.length}</legend>
-          {talks.map(talk => <label className="check" key={talk.id}><input type="checkbox" aria-label={talk.title ?? 'Без темы'} checked={selected.includes(talk.id)}
+          {talks.map(talk => <label className="check" key={talk.id}><input type="checkbox" aria-label={talk.title ?? 'Без темы'} disabled={!talk.screening?.eligible || !talk.summary_number} checked={selected.includes(talk.id)}
             onChange={event => setSelected(previous => event.target.checked ? [...previous, talk.id] : previous.filter(id => id !== talk.id))} />
             <span>{talk.title ?? 'Без темы'} <small>· {talk.status === 'reviewed' ? 'проверен' : talk.summary_status === 'stale' ? 'сводка устарела' : talk.summary_number ? 'ожидает проверки' : 'нет сводки'}</small></span></label>)}
         </fieldset>
         {datesDirty && <p className="notice">Сохраните сведения о конференции перед сборкой.</p>}
         <div className="row">
-          <button className="primary" disabled={!!busy || !selected.length || datesDirty} onClick={build}>Собрать справку</button>
+          <button className="primary" disabled={!!busy || pending || !selected.length || datesDirty} onClick={build}>Собрать справку</button>
           <label className="check">
             <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
             Собрать, даже если не все сводки проверены
           </label>
         </div>
+        {!!jobs.length && <section aria-label="Задания выпуска"><h3>Задания выпуска</h3>
+          {jobs.map(job => <details key={job.id} open={job.status === 'failed'}><summary>{job.status === 'done' ? 'Справка собрана' : job.status === 'failed' ? 'Сборка не завершена' : 'Справка собирается'} · {jobSteps[job.step] ?? job.step}</summary>
+            <p className="muted">Задание {job.id}</p>{job.error && <p role="alert">{job.error}</p>}
+            {job.status === 'failed' && <button disabled={!!busy} onClick={() => retry(job)}>Повторить сборку</button>}
+          </details>)}
+        </section>}
         <h3>Версии</h3>
         {versions.length > 0 ? (
           <ul className="versions">
@@ -169,6 +195,7 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
                     </a>
                   ))}
                 </span>
+                {!!version.warnings.length && <ul className="muted">{version.warnings.map(item => <li key={item}>{item}</li>)}</ul>}
               </li>
             ))}
           </ul>

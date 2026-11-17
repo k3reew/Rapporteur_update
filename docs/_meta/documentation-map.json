@@ -1,515 +1,117 @@
 {
-  "schemaVersion": 1,
-  "settings": {
-    "documentationLanguage": "ru",
-    "languageDecisionSource": "user",
-    "ignorePatterns": [
-      "docs/_archive/**",
-      "docs/_analysis/**",
-      "docs/superpowers/**",
-      ".local/**",
-      "bundle/**",
-      "models/**",
-      "storage/**",
-      "frontend/node_modules/**",
-      "output/**"
-    ]
-  },
-  "taxonomy": {
-    "sourceAreas": {
-      "backend": {
-        "candidatePaths": [
-          "src/rapporteur/**"
-        ],
-        "evidence": [
-          "pyproject.toml",
-          "src/rapporteur/app.py"
-        ],
-        "reason": "FastAPI, предметная обработка и хранение"
-      },
-      "frontend": {
-        "candidatePaths": [
-          "frontend/src/**"
-        ],
-        "evidence": [
-          "frontend/package.json",
-          "frontend/src/App.tsx"
-        ],
-        "reason": "React-интерфейс одного оператора"
-      },
-      "delivery": {
-        "candidatePaths": [
-          "compose.yaml",
-          "Dockerfile",
-          "Makefile",
-          "scripts/**"
-        ],
-        "evidence": [
-          "compose.yaml",
-          "Makefile"
-        ],
-        "reason": "Три runtime-сервиса и офлайн-поставка"
-      },
-      "contracts": {
-        "candidatePaths": [
-          "prompts/**",
-          "templates/**",
-          "profiles.yaml"
-        ],
-        "evidence": [
-          "profiles.yaml",
-          "prompts/README.md",
-          "templates/README.md"
-        ],
-        "reason": "Модельные задания, профили и бланк"
-      },
-      "verification": {
-        "candidatePaths": [
-          "tests/**",
-          "frontend/src/**/*.test.*"
-        ],
-        "evidence": [
-          "tests/test_upgrade.py"
-        ],
-        "reason": "Проверки совместимости и поведения"
-      }
-    },
-    "documentationTopics": [
-      {
-        "topic": "product",
-        "candidatePaths": [
-          "src/rapporteur/api/conferences.py",
-          "src/rapporteur/api/files.py",
-          "src/rapporteur/preparation.py",
-          "src/rapporteur/processing.py",
-          "src/rapporteur/summaries.py",
-          "src/rapporteur/departments.py",
-          "src/rapporteur/reports.py",
-          "frontend/src/App.tsx"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "architecture",
-        "candidatePaths": [
-          "src/rapporteur/app.py",
-          "src/rapporteur/api/dependencies.py",
-          "src/rapporteur/processing.py",
-          "src/rapporteur/db.py",
-          "compose.yaml",
-          "Dockerfile",
-          "docs/adr/ADR-014-simplification.md"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "processing",
-        "candidatePaths": [
-          "src/rapporteur/api/files.py",
-          "src/rapporteur/ingest/inventory.py",
-          "src/rapporteur/ingest/documents.py",
-          "src/rapporteur/ingest/slides.py",
-          "src/rapporteur/preparation.py",
-          "src/rapporteur/asr_service.py",
-          "tests/test_multimodal.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "facts",
-        "candidatePaths": [
-          "src/rapporteur/summarize/pack.py",
-          "src/rapporteur/summarize/facts.py",
-          "src/rapporteur/summarize/quotes.py",
-          "src/rapporteur/summarize/verify.py",
-          "src/rapporteur/summarize/summary.py",
-          "src/rapporteur/summarize/checks.py",
-          "src/rapporteur/llm/structured.py",
-          "src/rapporteur/contracts/claims.py",
-          "tests/fictional_talk.py",
-          "tests/test_verify.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "recommendations",
-        "candidatePaths": [
-          "src/rapporteur/departments.py",
-          "src/rapporteur/api/departments.py",
-          "src/rapporteur/reports.py",
-          "src/rapporteur/report/assemble.py",
-          "src/rapporteur/contracts/reports.py",
-          "src/rapporteur/report/build.py",
-          "src/rapporteur/report/export.py",
-          "templates/starter/variables.yaml",
-          "tests/test_report_stage.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "data",
-        "candidatePaths": [
-          "src/rapporteur/db.py",
-          "src/rapporteur/contracts/enums.py",
-          "src/rapporteur/contracts/ids.py",
-          "src/rapporteur/summarize/pack.py",
-          "src/rapporteur/storage.py",
-          "src/rapporteur/materials.py",
-          "src/rapporteur/summaries.py",
-          "src/rapporteur/departments.py",
-          "tests/test_upgrade.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "frontend",
-        "candidatePaths": [
-          "frontend/src/**",
-          "frontend/package*.json",
-          "frontend/vite.config.ts",
-          "frontend/tsconfig.json",
-          "frontend/eslint.config.js",
-          "frontend/index.html",
-          "DESIGN.md"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "configuration",
-        "candidatePaths": [
-          ".env.example",
-          "compose.yaml",
-          "profiles.yaml",
-          "src/rapporteur/settings.py",
-          "src/rapporteur/model_choice.py",
-          "src/rapporteur/llm/profiles.py",
-          "src/rapporteur/llm/client.py",
-          "src/rapporteur/asr_service.py",
-          "src/rapporteur/ingest/limits.py",
-          "prompts/README.md",
-          "templates/README.md",
-          "prompts/**",
-          "templates/**"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "glossary",
-        "candidatePaths": [
-          "src/rapporteur/contracts/fragments.py",
-          "src/rapporteur/contracts/claims.py",
-          "src/rapporteur/contracts/artifacts.py",
-          "src/rapporteur/contracts/enums.py",
-          "src/rapporteur/contracts/reports.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "workflow",
-        "candidatePaths": [
-          "frontend/src/Materials.tsx",
-          "frontend/src/Preparation.tsx",
-          "frontend/src/LegacyTalks.tsx",
-          "frontend/src/SummaryReview.tsx",
-          "frontend/src/Departments.tsx",
-          "frontend/src/ReportPanel.tsx",
-          "tests/fictional_talk.py",
-          "src/rapporteur/report/assemble.py",
-          "docs/examples/*.txt",
-          "tests/test_multimodal.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "offline",
-        "candidatePaths": [
-          "Makefile",
-          "compose.yaml",
-          "scripts/doctor.sh",
-          ".env.example",
-          "src/rapporteur/db.py",
-          "docs/benchmarks/2026-11-14-redesign.md"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "ollama",
-        "candidatePaths": [
-          "compose.yaml",
-          "Makefile",
-          "src/rapporteur/llm/profiles.py",
-          "src/rapporteur/model_choice.py",
-          "src/rapporteur/llm/client.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "api",
-        "candidatePaths": [
-          "src/rapporteur/api/**",
-          "src/rapporteur/app.py",
-          "src/rapporteur/asr_service.py",
-          "src/rapporteur/contracts/**",
-          "src/rapporteur/errors.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "development",
-        "candidatePaths": [
-          "pyproject.toml",
-          "uv.lock",
-          "frontend/package.json",
-          "Dockerfile",
-          "Makefile",
-          "frontend/vite.config.ts",
-          "tests/test_upgrade.py",
-          ".dockerignore",
-          ".gitignore",
-          "CODEOWNERS",
-          "frontend/.gitignore"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "testing",
-        "candidatePaths": [
-          "tests/**",
-          "frontend/src/**/*.test.*",
-          "Makefile",
-          "docs/benchmarks/2026-11-14-redesign.md"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "acceptance",
-        "candidatePaths": [
-          "docs/benchmarks/2026-11-14-redesign.md",
-          "tests/test_upgrade.py",
-          "scripts/doctor.sh",
-          "compose.yaml"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "research",
-        "candidatePaths": [
-          "src/rapporteur/preparation.py",
-          "src/rapporteur/summarize/verify.py",
-          "src/rapporteur/departments.py",
-          "docs/benchmarks/2026-11-14-redesign.md",
-          "tests/fictional_talk.py"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "readme",
-        "candidatePaths": [
-          "pyproject.toml",
-          "Makefile",
-          "compose.yaml",
-          "docs/benchmarks/2026-11-14-redesign.md"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      },
-      {
-        "topic": "traceability",
-        "candidatePaths": [
-          "src/rapporteur/**",
-          "frontend/src/**",
-          "tests/**",
-          "Makefile",
-          "compose.yaml",
-          "scripts/**"
-        ],
-        "sourceAreas": [
-          "backend",
-          "frontend",
-          "delivery",
-          "contracts",
-          "verification"
-        ],
-        "reason": "Самостоятельно сверенный раздел текущей реализации"
-      }
-    ]
-  },
   "documents": {
-    "product": {
-      "path": "docs/product.md",
-      "documentKind": "topic",
+    "acceptance": {
+      "documentKind": "runbook",
+      "path": "docs/acceptance.md",
+      "relatedDocuments": [
+        "offline",
+        "research",
+        "testing"
+      ],
       "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "responsibilities": "Ответственность компонентов",
-        "howItWorks": "Как это работает",
-        "activeFunctionality": "Доступные функции",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "escalation": "\u0414\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430 \u0438 \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u0437\u0430 \u043f\u043e\u043c\u043e\u0449\u044c\u044e",
+        "prerequisites": "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430",
+        "procedure": "\u041f\u043e\u0440\u044f\u0434\u043e\u043a \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "rollback": "\u041e\u0442\u043a\u0430\u0442",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438",
+        "symptoms": "\u0421\u0438\u043c\u043f\u0442\u043e\u043c\u044b \u0438 \u0437\u0430\u0434\u0430\u0447\u0438",
+        "verification": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0430"
+      },
+      "sourceHashes": {
+        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
+        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
+        "scripts/doctor.sh": "8bb48682f1779b3423544ff0322e24950a79b732ad2343cc4cff1a971fad4032",
+        "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9"
       },
       "sourcePatterns": [
-        "src/rapporteur/api/conferences.py",
-        "src/rapporteur/api/files.py",
-        "src/rapporteur/preparation.py",
-        "src/rapporteur/processing.py",
-        "src/rapporteur/summaries.py",
-        "src/rapporteur/departments.py",
-        "src/rapporteur/reports.py",
-        "frontend/src/App.tsx"
-      ],
+        "docs/benchmarks/2026-11-14-redesign.md",
+        "tests/test_upgrade.py",
+        "scripts/doctor.sh",
+        "compose.yaml"
+      ]
+    },
+    "api": {
+      "documentKind": "api-reference",
+      "path": "docs/api.md",
       "relatedDocuments": [
-        "workflow",
-        "architecture",
-        "glossary"
+        "data",
+        "facts",
+        "workflow"
       ],
+      "sections": {
+        "authentication": "\u0414\u043e\u0441\u0442\u0443\u043f \u043a API",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "endpoints": "\u041c\u0435\u0442\u043e\u0434\u044b \u0438 \u043f\u0443\u0442\u0438",
+        "errors": "\u041e\u0448\u0438\u0431\u043a\u0438",
+        "examples": "\u041f\u0440\u0438\u043c\u0435\u0440\u044b",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
       "sourceHashes": {
-        "frontend/src/App.tsx": "36834bd42d0773a7be881152a2678e472f7a7e125e0d67b82152db125b09a46e",
+        "src/rapporteur/api/__init__.py": "0474983a1fd4ea6a9c84050ef0f922d33f877852717c83d2468ae9bb4d62beb8",
         "src/rapporteur/api/conferences.py": "b1a55533c81e6e0243e32735db3265f34a7667c1de8e2f2f6e84bc34a69070a3",
-        "src/rapporteur/api/files.py": "70214033089bd5767b43abe877733e0b8e9c34ec6dfb5bd8b9a7d43467384914",
-        "src/rapporteur/departments.py": "43a6ac0790221fe9c8c81aa5d69a2a12e8f8f03d5258b8af705a393d8bcdcd84",
-        "src/rapporteur/preparation.py": "2c17273795e8f8dc04da3f6abcec48e7931fe6c5e7f8d1d5ddca849f3c02326a",
-        "src/rapporteur/processing.py": "a2b30432f1bd97029c2fdeec93fba5e75b5e96a58ede82b1e4061f5e46f3068c",
-        "src/rapporteur/reports.py": "467a5efd71bfe2a84903bbb36bc4cb49f7910e2079ab396e7c9af34d7c67f67c",
-        "src/rapporteur/summaries.py": "5a0d67b8cdc6537b1feb2a1286f14d2dddc8966c95b0e85147785b75e4d6d201"
-      }
+        "src/rapporteur/api/departments.py": "3b2736b089987f1d372e99f576c7cd2d1056c678aada7051a6f1397935f5a792",
+        "src/rapporteur/api/dependencies.py": "cc43d72ca058c9a876b1a1c8ed881927650b6ac80a33fd21e7a4e508f9270e66",
+        "src/rapporteur/api/files.py": "56f1ce0af042bdf3b640c9be342930f8538e489db9857d9275e398ff85f32723",
+        "src/rapporteur/api/reports.py": "973e24b507d17c3a54b4a2e61143630a182a92bfe5eaee538cc7522d8de668f4",
+        "src/rapporteur/api/summaries.py": "03acb9bc0fec6f6776fdf8fe48f5b2657c10558290825b89cb7745343f5fe580",
+        "src/rapporteur/api/system.py": "4f23ab0125ee070e8ea6e251e5d0c613c55de3583103f46614b96f9e90ae8fb1",
+        "src/rapporteur/api/talks.py": "1c30580407f32143c4fb7a325e5a4a0b800297de884928d7ec61ab3dc5149f37",
+        "src/rapporteur/api/workflow.py": "dbee119ae0935e8f319fbe324af1c92751574860f583f60bf51116e0bf338867",
+        "src/rapporteur/app.py": "d8a5107d13a1a9da1d9fd7f20f7e4de94e89e4f1bdb0ea0d6c043f4ebfb2acb1",
+        "src/rapporteur/asr_service.py": "e20263fda719ec802d1599fbd8a07dba8f22c5415ad21840c7827020ee9a4753",
+        "src/rapporteur/contracts/__init__.py": "9ee2eeb8dcdd4b66ddba7a7e161a0327f61de3bb280ddbecf0e192dc7ed2e642",
+        "src/rapporteur/contracts/artifacts.py": "1213bedfee19964cdb028bee379379192293ad34a6b71c657e3398f6523c5b03",
+        "src/rapporteur/contracts/base.py": "b0e8dd1c9b4f90bcd43229e952c1480590ec8915eb1960da393a4746e7f5165b",
+        "src/rapporteur/contracts/claims.py": "33639728043e6b067f4aa7e4ed755fa189ac1793361561c4afc81508856372f7",
+        "src/rapporteur/contracts/entities.py": "eb6d7aff2fea6086b5f8be7ff7538136def8def67095dcdab92c34df992774e0",
+        "src/rapporteur/contracts/enums.py": "d6c97ad8d9ff805419016421288e433c715b7bab042b7ca2faaf2ed49c3422c3",
+        "src/rapporteur/contracts/fragments.py": "a69d55b3c80d76a99dd7600de60c9d8568629a78b0828f589db1fa2e5914648d",
+        "src/rapporteur/contracts/ids.py": "ca23206eb63253e1de70d6b0eb7fbdee290d6d6add077799ec4b08b24e2f14f1",
+        "src/rapporteur/contracts/registry.py": "09d3910677370a0d3ac62313be73416891d3411814e1aa05559abbb469f94c92",
+        "src/rapporteur/contracts/reports.py": "3eebeac3c8f4dc7eb6e3279add83d7049f8445b79aa1f66ade7133f6ffd34427",
+        "src/rapporteur/errors.py": "587e9a0675fbaa3e2cf51d5651b99741cc7d7f15d4b2bbb784fc934080b68fad"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/api/**",
+        "src/rapporteur/app.py",
+        "src/rapporteur/asr_service.py",
+        "src/rapporteur/contracts/**",
+        "src/rapporteur/errors.py"
+      ]
     },
     "architecture": {
-      "path": "docs/architecture.md",
       "documentKind": "architecture",
+      "path": "docs/architecture.md",
+      "relatedDocuments": [
+        "data",
+        "processing",
+        "offline"
+      ],
       "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "components": "Компоненты",
-        "flows": "Основные потоки",
-        "boundaries": "Границы и доступ",
-        "decisions": "Архитектурные решения",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "boundaries": "\u0413\u0440\u0430\u043d\u0438\u0446\u044b \u0438 \u0434\u043e\u0441\u0442\u0443\u043f",
+        "components": "\u041a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u044b",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "decisions": "\u0410\u0440\u0445\u0438\u0442\u0435\u043a\u0442\u0443\u0440\u043d\u044b\u0435 \u0440\u0435\u0448\u0435\u043d\u0438\u044f",
+        "flows": "\u041e\u0441\u043d\u043e\u0432\u043d\u044b\u0435 \u043f\u043e\u0442\u043e\u043a\u0438",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "Dockerfile": "a706a9a8582071fdf21c2fff101d5106ec290b54bf58c2d91ef578037d873658",
+        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
+        "docs/adr/ADR-014-simplification.md": "61bdf3c7b41580f86b3c66983a0d0f82a29d81a279fc4cbf63c7d5c801ebf133",
+        "src/rapporteur/api/dependencies.py": "cc43d72ca058c9a876b1a1c8ed881927650b6ac80a33fd21e7a4e508f9270e66",
+        "src/rapporteur/app.py": "d8a5107d13a1a9da1d9fd7f20f7e4de94e89e4f1bdb0ea0d6c043f4ebfb2acb1",
+        "src/rapporteur/db.py": "80f71c816e5e01a8a3a826c565fec81923d65b8262b86281e24119f06491cab3",
+        "src/rapporteur/processing.py": "2b90e5667dae37c46e04149e72c7ff82827b5f0e70264351922de486d0f03548",
+        "src/rapporteur/report_jobs.py": "454d6a3ac6b1baede4703d234d03c3c631b5900fda0e657ce48d1a5389e1a08f",
+        "src/rapporteur/screening.py": "d6ae5d01d1c84824ac67e24b548d5908117d31b5ac22d4396b604eed8c2c642e"
       },
       "sourcePatterns": [
         "src/rapporteur/app.py",
@@ -518,257 +120,78 @@
         "src/rapporteur/db.py",
         "compose.yaml",
         "Dockerfile",
-        "docs/adr/ADR-014-simplification.md"
-      ],
-      "relatedDocuments": [
-        "data",
-        "processing",
-        "offline"
-      ],
-      "sourceHashes": {
-        "Dockerfile": "a706a9a8582071fdf21c2fff101d5106ec290b54bf58c2d91ef578037d873658",
-        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
-        "docs/adr/ADR-014-simplification.md": "61bdf3c7b41580f86b3c66983a0d0f82a29d81a279fc4cbf63c7d5c801ebf133",
-        "src/rapporteur/api/dependencies.py": "cc43d72ca058c9a876b1a1c8ed881927650b6ac80a33fd21e7a4e508f9270e66",
-        "src/rapporteur/app.py": "9623136481e478e17beb9cd1ea5ce39cc3145f0ef4ad9201e890f59cbb9fc915",
-        "src/rapporteur/db.py": "d4698967282c6199dbb0dd9e4f96a54315f33a9c3c9b46f3a6f0bc1c8492f3be",
-        "src/rapporteur/processing.py": "a2b30432f1bd97029c2fdeec93fba5e75b5e96a58ede82b1e4061f5e46f3068c"
-      }
+        "docs/adr/ADR-014-simplification.md",
+        "src/rapporteur/screening.py",
+        "src/rapporteur/report_jobs.py"
+      ]
     },
-    "processing": {
-      "path": "docs/processing.md",
-      "documentKind": "topic",
+    "benchmark.0.3.0": {
+      "documentKind": "reference",
+      "path": "docs/benchmarks/2026-11-17-release-0.3.0.md",
+      "relatedDocuments": [
+        "testing",
+        "acceptance",
+        "release.0.3.0"
+      ],
       "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "responsibilities": "Ответственность компонентов",
-        "howItWorks": "Как это работает",
-        "activeFunctionality": "Доступные функции",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "context": "\u0423\u0441\u043b\u043e\u0432\u0438\u044f",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "\u0420\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u044b",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "tests/test_report_jobs.py": "5d74bc0544ab066933609a1e345f71491ff8bcc8ca9e5a12a76203460a269c21",
+        "tests/test_screening.py": "9fb38422e61893970ec7088a53a1595973436a0cc5598e05bbea8a1cc8f17d4a",
+        "tests/test_structured_tasks.py": "1c80d138bc9225b9f9f3ee0b896dfa1511b2684fa6ff9d07f5fc42aa94fb96c8",
+        "tests/test_summary_v3.py": "65c05a2aecb3625e9843352cb020642e2746c5650308e6c6a2ba258d686c4763"
       },
       "sourcePatterns": [
-        "src/rapporteur/api/files.py",
-        "src/rapporteur/ingest/inventory.py",
-        "src/rapporteur/ingest/documents.py",
-        "src/rapporteur/ingest/slides.py",
-        "src/rapporteur/preparation.py",
-        "src/rapporteur/asr_service.py",
-        "tests/test_multimodal.py"
-      ],
-      "relatedDocuments": [
-        "facts",
-        "data",
-        "configuration"
-      ],
-      "sourceHashes": {
-        "src/rapporteur/api/files.py": "70214033089bd5767b43abe877733e0b8e9c34ec6dfb5bd8b9a7d43467384914",
-        "src/rapporteur/asr_service.py": "e20263fda719ec802d1599fbd8a07dba8f22c5415ad21840c7827020ee9a4753",
-        "src/rapporteur/ingest/documents.py": "0e6e4219e2e44f955dfa7421bc5fc85e7751090a97f9786c97fbd46e3d347cc1",
-        "src/rapporteur/ingest/inventory.py": "7f313cf5fb0e1660ba714ef215c5a8bcc8b4c26de0e7ce9ddd5db70a13e744f9",
-        "src/rapporteur/ingest/slides.py": "830dda9aa42e424f3a0cdb471cf314dd5aca5a5969ba3a7225e6bc16c3ace033",
-        "src/rapporteur/preparation.py": "2c17273795e8f8dc04da3f6abcec48e7931fe6c5e7f8d1d5ddca849f3c02326a",
-        "tests/test_multimodal.py": "5da83602d62561bcf4cef1d06ea09e1ee6fdeafba236e8929177f4447d85c4ff"
-      }
-    },
-    "facts": {
-      "path": "docs/facts.md",
-      "documentKind": "topic",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "responsibilities": "Ответственность компонентов",
-        "howItWorks": "Как это работает",
-        "activeFunctionality": "Доступные функции",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "src/rapporteur/summarize/pack.py",
-        "src/rapporteur/summarize/facts.py",
-        "src/rapporteur/summarize/quotes.py",
-        "src/rapporteur/summarize/verify.py",
-        "src/rapporteur/summarize/summary.py",
-        "src/rapporteur/summarize/checks.py",
-        "src/rapporteur/llm/structured.py",
-        "src/rapporteur/contracts/claims.py",
-        "tests/fictional_talk.py",
-        "tests/test_verify.py"
-      ],
-      "relatedDocuments": [
-        "processing",
-        "recommendations",
-        "research"
-      ],
-      "sourceHashes": {
-        "src/rapporteur/contracts/claims.py": "33639728043e6b067f4aa7e4ed755fa189ac1793361561c4afc81508856372f7",
-        "src/rapporteur/llm/structured.py": "77e29aa46864c17dc62a5db56f8ab0ffa20f353b2f2e5eb2c876bb9cc969936b",
-        "src/rapporteur/summarize/checks.py": "343b801ba4756c5a63f3f1abba70daea689b32dec7a39e290d0d29a926ddc74f",
-        "src/rapporteur/summarize/facts.py": "5c843fa2b079e8b1034ea3377a20d22aa6ec7ba37b80ec600e5220b8cc0c4536",
-        "src/rapporteur/summarize/pack.py": "ec1f37c0b24b8ad869d8c5a9b6dec21948176245f9ef6b8851f1574d10e179ee",
-        "src/rapporteur/summarize/quotes.py": "0c254e97557c3206d519328b35761e7d6c2d80efce346e933d12b30539fc5914",
-        "src/rapporteur/summarize/summary.py": "ebc70cabd8220481af67a4463bea9289a0ecd99d3221c5f8502f40df3e88f1a0",
-        "src/rapporteur/summarize/verify.py": "9b58621a39fe9ab1e05f5864190b174ac22640fd895f37824a25b525bc463a43",
-        "tests/fictional_talk.py": "48951bd7bbbc178e7b6a115ce7338e6ffbcc93195d434e231af7a8a0d0b5ad16",
-        "tests/test_verify.py": "fc8ac479e79d06b4e5589140ea2563ecf82460f1df637e72db838510e043b0a8"
-      }
-    },
-    "recommendations": {
-      "path": "docs/recommendations-report.md",
-      "documentKind": "topic",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "responsibilities": "Ответственность компонентов",
-        "howItWorks": "Как это работает",
-        "activeFunctionality": "Доступные функции",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "src/rapporteur/departments.py",
-        "src/rapporteur/api/departments.py",
-        "src/rapporteur/reports.py",
-        "src/rapporteur/report/assemble.py",
-        "src/rapporteur/contracts/reports.py",
-        "src/rapporteur/report/build.py",
-        "src/rapporteur/report/export.py",
-        "templates/starter/variables.yaml",
-        "tests/test_report_stage.py"
-      ],
-      "relatedDocuments": [
-        "workflow",
-        "data",
-        "api"
-      ],
-      "sourceHashes": {
-        "src/rapporteur/api/departments.py": "3b2736b089987f1d372e99f576c7cd2d1056c678aada7051a6f1397935f5a792",
-        "src/rapporteur/contracts/reports.py": "3eebeac3c8f4dc7eb6e3279add83d7049f8445b79aa1f66ade7133f6ffd34427",
-        "src/rapporteur/departments.py": "43a6ac0790221fe9c8c81aa5d69a2a12e8f8f03d5258b8af705a393d8bcdcd84",
-        "src/rapporteur/report/assemble.py": "3bf5588de4d64aa59cb81a5f8ad67f6c73b035e3e7d952b71387ef59d08989c1",
-        "src/rapporteur/report/build.py": "7149b9135fbf2c8f04fa1a26d4858f65076bff18ceea3be73ac2cf584ff14cb2",
-        "src/rapporteur/report/export.py": "26eaaca0c67f41e582deb93949b798e7f3cca907e58188dfcea1be0e70023d62",
-        "src/rapporteur/reports.py": "467a5efd71bfe2a84903bbb36bc4cb49f7910e2079ab396e7c9af34d7c67f67c",
-        "templates/starter/variables.yaml": "968ec8418b59106b5122e289aec63845c865230e3aafd73c7562f6768bc0b295",
-        "tests/test_report_stage.py": "5e6c5d22cda11d0773a02feb759f8b49384e961a15ca71ea3c93b546509ccbd0"
-      }
-    },
-    "data": {
-      "path": "docs/data-model.md",
-      "documentKind": "data-model",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "entities": "Сущности",
-        "relationships": "Связи и состояния",
-        "storage": "Хранение",
-        "migrations": "Миграции",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "src/rapporteur/db.py",
-        "src/rapporteur/contracts/enums.py",
-        "src/rapporteur/contracts/ids.py",
-        "src/rapporteur/summarize/pack.py",
-        "src/rapporteur/storage.py",
-        "src/rapporteur/materials.py",
-        "src/rapporteur/summaries.py",
-        "src/rapporteur/departments.py",
-        "tests/test_upgrade.py"
-      ],
-      "relatedDocuments": [
-        "architecture",
-        "api",
-        "recommendations"
-      ],
-      "sourceHashes": {
-        "src/rapporteur/contracts/enums.py": "2c1e8423ee81b280f2c04aae64e8fe6a0f4ed64dd039a87ac999133e1b471c40",
-        "src/rapporteur/contracts/ids.py": "ca23206eb63253e1de70d6b0eb7fbdee290d6d6add077799ec4b08b24e2f14f1",
-        "src/rapporteur/db.py": "d4698967282c6199dbb0dd9e4f96a54315f33a9c3c9b46f3a6f0bc1c8492f3be",
-        "src/rapporteur/departments.py": "43a6ac0790221fe9c8c81aa5d69a2a12e8f8f03d5258b8af705a393d8bcdcd84",
-        "src/rapporteur/materials.py": "f2330f2e2d2fadeb21441ca0bf6ef520490add71689d6bdb2332834763494659",
-        "src/rapporteur/storage.py": "aa9b53bba8719aa64f1def335894d95c49f2b8c5dc98fe12135aa94488527eac",
-        "src/rapporteur/summaries.py": "5a0d67b8cdc6537b1feb2a1286f14d2dddc8966c95b0e85147785b75e4d6d201",
-        "src/rapporteur/summarize/pack.py": "ec1f37c0b24b8ad869d8c5a9b6dec21948176245f9ef6b8851f1574d10e179ee",
-        "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9"
-      }
-    },
-    "frontend": {
-      "path": "docs/frontend.md",
-      "documentKind": "topic",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "responsibilities": "Ответственность компонентов",
-        "howItWorks": "Как это работает",
-        "activeFunctionality": "Доступные функции",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "frontend/src/**",
-        "frontend/package*.json",
-        "frontend/vite.config.ts",
-        "frontend/tsconfig.json",
-        "frontend/eslint.config.js",
-        "frontend/index.html",
-        "DESIGN.md"
-      ],
-      "relatedDocuments": [
-        "workflow",
-        "api",
-        "legacy.DESIGN"
-      ],
-      "sourceHashes": {
-        "DESIGN.md": "85847d83d0ba7f71d29edbfc6083352804b66cdecaffbed00023da914be6857b",
-        "frontend/eslint.config.js": "3b723f5adc0255c053dc46d9cb07c430856174cb4b9ebc4966af235aa7c5d763",
-        "frontend/index.html": "4b96662cf96c3ea8b08359610c67e63c18840e84722dfa9822db324c4cd8ba18",
-        "frontend/package-lock.json": "1a2ae584670975f2ecbe79ebf6cb8127912ccd20092016cc9c569da5eb535bf6",
-        "frontend/package.json": "615c458228d32f42bb8bb5bc761db8cc98245203a4ab685044ff38066d4af9e7",
-        "frontend/src/App.test.tsx": "651aee5506d1858da758a3277f0363b0bba60e98ef7d0f90166efa382d30642c",
-        "frontend/src/App.tsx": "36834bd42d0773a7be881152a2678e472f7a7e125e0d67b82152db125b09a46e",
-        "frontend/src/Departments.test.tsx": "46795ea2b07ae06d63d502e79ca8eb0ef2b698e1c031c29feafef862c733ecaf",
-        "frontend/src/Departments.tsx": "920faa5b574a40ff9e05240e98c91289383edad24212f7343c046b5132bb4cab",
-        "frontend/src/Home.tsx": "b963ccdd6d95f3dc0b856abbfcf454442a818808ea615fd8ee907f99991ed56a",
-        "frontend/src/LegacyTalks.tsx": "4bcd23d1c2b67fd0794ce0e549169e6cf472c6bdbbaf5e50ef759a278603c92e",
-        "frontend/src/Materials.tsx": "49f8243336c560fff69048cb512999ef818d7168b18588a139c4a6dd70aa1812",
-        "frontend/src/Preparation.tsx": "ae06070fd7ea0a611e76bd3702b5e2a73cbb410ba2ffcefb621765d9cc6d3f97",
-        "frontend/src/Processing.tsx": "35573326f2c3b943d00465e49aa761be5d20989bfe000a0793aab56aaae42f85",
-        "frontend/src/ReportPanel.test.tsx": "134bab15ada2603d689b361f3e47ce583af0d7318506a56f87e937a352aafe5f",
-        "frontend/src/ReportPanel.tsx": "69d73ea98201807c415a8319580f4db396f46d874f43adfa767388a7ecb7b40b",
-        "frontend/src/Settings.test.tsx": "6b82dbf91c7a952432d5c24360bcf422f6c903e1084a069162f98a0efbf63a83",
-        "frontend/src/Settings.tsx": "fe49dbb197c54fd45e4e5b33c53e4f645d52edabb0a6fd58a7d3017282a71d47",
-        "frontend/src/SummaryReview.test.tsx": "28e301c0be2cd9d952aa278be79108a72b38eeb0056ad8b595a59c74fbe04c1a",
-        "frontend/src/SummaryReview.tsx": "cbdd4c5d64ba37558145044ddcd623ba56faa39ad8e861ef57f1b9def614cda1",
-        "frontend/src/Workflow.test.tsx": "2fb0b2835d253ffd831a0360016c999a7eba852121df20c4428ea23d346147df",
-        "frontend/src/WorkflowPages.test.tsx": "21e8b341fa057a2ba98258787bafdb50c6fcdb022614462ce7c058c06d7bcc53",
-        "frontend/src/api.ts": "821385c992fbf8f34b014a50ed88369b476a2104ade2648ddef97d89fdcf4d23",
-        "frontend/src/conferenceTypes.ts": "c243efc72823f913d8f77759238ad5b48c43e21e49133d3ca2b94419b8bb7e04",
-        "frontend/src/main.tsx": "bab89240a1dfb8990b4b8378d7ff9b896a718da3c93d973db003fd5e3fcb964d",
-        "frontend/src/materialLabels.ts": "234a83775b16a8b16b970af0e20f8fd001d78043788808e64b3fb3266fe98872",
-        "frontend/src/materialTypes.ts": "0806aee5977a0c2a66ff62d2b8122430599a1d6957e4280c22be02e22d61eb7d",
-        "frontend/src/status.ts": "8ac9fe02d76e4069ad2ad57f54b0333368db47fb126d81d2cb950e64778ecfa2",
-        "frontend/src/styles.css": "b50897aa32e7f3b2eccfb529c66c8b0996c1b93e16d51299ea1529eac9551eac",
-        "frontend/src/talkTypes.ts": "2e2c2912f92c736a91efbfbcd806510986aa28780b7290dd56e6979bbf847a32",
-        "frontend/src/theme.ts": "9dc10157ea3bc9866a5fb31d33c165ffb854740988609f6cf776ec87632e11de",
-        "frontend/src/useResource.test.tsx": "1ae1149ead8bee466b1620cf0b40401d6174fcf084c4fb738ce90ff45fd91169",
-        "frontend/src/useResource.ts": "63cbcaea4a9feb5475454830b061313a7288bd180f4bde1a800c571e68af2629",
-        "frontend/src/useUnsavedChanges.test.tsx": "e6383cbaddc03d3000a94941108138b46ef74b19f56363138e9b37b822454513",
-        "frontend/src/useUnsavedChanges.ts": "0d6b4534f25cf2a6872bf0988dc61cc49271adbda371a10a180dc22ac6bc01ca",
-        "frontend/tsconfig.json": "2e90bae91c030b5b0dc1c962ea7cb411508d5ea1b8c6e515f93561c44e02cab0",
-        "frontend/vite.config.ts": "6a8e540228b1abd579e289981bb25b84c1cf1c7eae0fd3290364b835dd10949e"
-      }
+        "tests/test_screening.py",
+        "tests/test_report_jobs.py",
+        "tests/test_structured_tasks.py",
+        "tests/test_summary_v3.py"
+      ]
     },
     "configuration": {
-      "path": "docs/configuration.md",
       "documentKind": "reference",
+      "path": "docs/configuration.md",
+      "relatedDocuments": [
+        "ollama",
+        "offline",
+        "facts"
+      ],
       "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "reference": "Справочные сведения",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u044b\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        ".env.example": "7c682a05e8223c06d245f78613cb60f91216a08c8b5ffdedbc2c46007c4305cd",
+        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
+        "profiles.yaml": "6ed8eb4b145df6bf5bccf690cb9829f2134dfa298e95fb46c3ede23d2fee2096",
+        "prompts/README.md": "09217f1de3dd42cb9f0eb862de42dc0d1add21222ba380642dd9e8608087d1ba",
+        "prompts/critic/v2.md": "8a2f8491024bbae71b8c2684012dfdc8ad0bfb8e62846db64964c90f9707c379",
+        "prompts/critic/v3.md": "fe78dc7d839ff687513c0754ef8ea27c852555fb31894593dd49d3efe19570fc",
+        "prompts/facts-review/v2.md": "95e0985fb9731d954dbc2498878a2449e5b07f8c64bc6c294e0a52faec36d9d8",
+        "prompts/facts-review/v3.md": "57339dffed2c42221f4e3f3b8270439db3ad9196b170bc09d771358f65b8b8b7",
+        "prompts/facts/v1.md": "5b6b687a9873637bcac0ae1f28e0351302b9e3666b26d55e6d7e3b206b86b378",
+        "prompts/facts/v2.md": "663f1c909b4d3931599c61a3efd399ebcbf38656dbcfd5de46e197e4f79e19c0",
+        "prompts/facts/v3.md": "7f47ca39f1217a97d515a72910189540b4239d44c13811456a058415a219bc28",
+        "prompts/summary/v1.md": "b6de599de9f86226dcd93ee44b3dfce41de3a144bc91999453f89c13cc63c913",
+        "prompts/summary/v2.md": "87daf61e47faad962c97dfa87ed44a8ff4db765cb5069859b98d1f4d8f3ba340",
+        "prompts/summary/v3.md": "606fc6dc6847df655f527b3deecb8747a7e3177656adc7dea28fd72a495b840d",
+        "src/rapporteur/asr_service.py": "e20263fda719ec802d1599fbd8a07dba8f22c5415ad21840c7827020ee9a4753",
+        "src/rapporteur/ingest/limits.py": "d2bcafe7ec92601484f68ad189ffa66a9fda9f2cc781fb70cc91228069ce1e3b",
+        "src/rapporteur/llm/client.py": "58b9390b6496c39c24e08504882e5611cca8d8f5efd235abb304a168d3eb3102",
+        "src/rapporteur/llm/profiles.py": "779b0d21efd7d829ba667fad7753c9a992082120cb5c762b5ec971a1c5de0257",
+        "src/rapporteur/model_choice.py": "ba0b117880da63525f2986ce64dad8b5f8ffeefd377391d87f85cb7c3ffc5457",
+        "src/rapporteur/settings.py": "04c92fe44addefcf7de30d64eb9670f4b6eba08da8066de0b452182686dcf7e1",
+        "templates/README.md": "fdb2c5636621a2323fb71a33ec67819ea00f1121f40c3b83fd5a8fc125346f22",
+        "templates/starter/report.docx": "4c5f65ed3393c1458a4a0909ead1570075044629c4cb9a9566bf42a752aa76d9",
+        "templates/starter/variables.yaml": "968ec8418b59106b5122e289aec63845c865230e3aafd73c7562f6768bc0b295"
       },
       "sourcePatterns": [
         ".env.example",
@@ -784,233 +207,100 @@
         "templates/README.md",
         "prompts/**",
         "templates/**"
-      ],
-      "relatedDocuments": [
-        "ollama",
-        "offline",
-        "facts"
-      ],
-      "sourceHashes": {
-        ".env.example": "7c682a05e8223c06d245f78613cb60f91216a08c8b5ffdedbc2c46007c4305cd",
-        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
-        "profiles.yaml": "73fe37a6493eb66f11402eb438b3de9f1bb2286cb2d655c88eb6ac1fcda0d3ce",
-        "prompts/README.md": "4e3a6d2d4da4f3b7aa0d19a3337c3de863d2de81bd6fb430fa3ab655eb21c186",
-        "prompts/critic/v2.md": "8a2f8491024bbae71b8c2684012dfdc8ad0bfb8e62846db64964c90f9707c379",
-        "prompts/facts-review/v2.md": "95e0985fb9731d954dbc2498878a2449e5b07f8c64bc6c294e0a52faec36d9d8",
-        "prompts/facts/v1.md": "5b6b687a9873637bcac0ae1f28e0351302b9e3666b26d55e6d7e3b206b86b378",
-        "prompts/facts/v2.md": "663f1c909b4d3931599c61a3efd399ebcbf38656dbcfd5de46e197e4f79e19c0",
-        "prompts/summary/v1.md": "b6de599de9f86226dcd93ee44b3dfce41de3a144bc91999453f89c13cc63c913",
-        "prompts/summary/v2.md": "87daf61e47faad962c97dfa87ed44a8ff4db765cb5069859b98d1f4d8f3ba340",
-        "src/rapporteur/asr_service.py": "e20263fda719ec802d1599fbd8a07dba8f22c5415ad21840c7827020ee9a4753",
-        "src/rapporteur/ingest/limits.py": "d2bcafe7ec92601484f68ad189ffa66a9fda9f2cc781fb70cc91228069ce1e3b",
-        "src/rapporteur/llm/client.py": "58b9390b6496c39c24e08504882e5611cca8d8f5efd235abb304a168d3eb3102",
-        "src/rapporteur/llm/profiles.py": "779b0d21efd7d829ba667fad7753c9a992082120cb5c762b5ec971a1c5de0257",
-        "src/rapporteur/model_choice.py": "ba0b117880da63525f2986ce64dad8b5f8ffeefd377391d87f85cb7c3ffc5457",
-        "src/rapporteur/settings.py": "04c92fe44addefcf7de30d64eb9670f4b6eba08da8066de0b452182686dcf7e1",
-        "templates/README.md": "fdb2c5636621a2323fb71a33ec67819ea00f1121f40c3b83fd5a8fc125346f22",
-        "templates/starter/report.docx": "4c5f65ed3393c1458a4a0909ead1570075044629c4cb9a9566bf42a752aa76d9",
-        "templates/starter/variables.yaml": "968ec8418b59106b5122e289aec63845c865230e3aafd73c7562f6768bc0b295"
-      }
+      ]
     },
-    "glossary": {
-      "path": "docs/glossary.md",
-      "documentKind": "reference",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "reference": "Справочные сведения",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "src/rapporteur/contracts/fragments.py",
-        "src/rapporteur/contracts/claims.py",
-        "src/rapporteur/contracts/artifacts.py",
-        "src/rapporteur/contracts/enums.py",
-        "src/rapporteur/contracts/reports.py"
-      ],
+    "coverage": {
+      "documentKind": "kind-index",
+      "path": "docs/_meta/coverage.md",
       "relatedDocuments": [
-        "product",
-        "data",
-        "facts"
+        "decisions.index"
       ],
-      "sourceHashes": {
-        "src/rapporteur/contracts/artifacts.py": "1213bedfee19964cdb028bee379379192293ad34a6b71c657e3398f6523c5b03",
-        "src/rapporteur/contracts/claims.py": "33639728043e6b067f4aa7e4ed755fa189ac1793361561c4afc81508856372f7",
-        "src/rapporteur/contracts/enums.py": "2c1e8423ee81b280f2c04aae64e8fe6a0f4ed64dd039a87ac999133e1b471c40",
-        "src/rapporteur/contracts/fragments.py": "a69d55b3c80d76a99dd7600de60c9d8568629a78b0828f589db1fa2e5914648d",
-        "src/rapporteur/contracts/reports.py": "3eebeac3c8f4dc7eb6e3279add83d7049f8445b79aa1f66ade7133f6ffd34427"
-      }
+      "sections": {
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b"
+      },
+      "sourceHashes": {},
+      "sourcePatterns": []
     },
-    "workflow": {
-      "path": "docs/workflow.md",
-      "documentKind": "topic",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "responsibilities": "Ответственность компонентов",
-        "howItWorks": "Как это работает",
-        "activeFunctionality": "Доступные функции",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "frontend/src/Materials.tsx",
-        "frontend/src/Preparation.tsx",
-        "frontend/src/LegacyTalks.tsx",
-        "frontend/src/SummaryReview.tsx",
-        "frontend/src/Departments.tsx",
-        "frontend/src/ReportPanel.tsx",
-        "tests/fictional_talk.py",
-        "src/rapporteur/report/assemble.py",
-        "docs/examples/*.txt",
-        "tests/test_multimodal.py"
-      ],
+    "data": {
+      "documentKind": "data-model",
+      "path": "docs/data-model.md",
       "relatedDocuments": [
-        "product",
-        "facts",
+        "architecture",
+        "api",
         "recommendations"
       ],
-      "sourceHashes": {
-        "docs/examples/department.txt": "658ff7639927c84426a93ef1f66c48575332eaa9d89308f14e502b18f5b1dd9f",
-        "docs/examples/talk.txt": "e518ab0ed5c03aa352da3bb651c52aab0cf32545f1d766860d30c85ac97b4a9e",
-        "frontend/src/Departments.tsx": "920faa5b574a40ff9e05240e98c91289383edad24212f7343c046b5132bb4cab",
-        "frontend/src/LegacyTalks.tsx": "4bcd23d1c2b67fd0794ce0e549169e6cf472c6bdbbaf5e50ef759a278603c92e",
-        "frontend/src/Materials.tsx": "49f8243336c560fff69048cb512999ef818d7168b18588a139c4a6dd70aa1812",
-        "frontend/src/Preparation.tsx": "ae06070fd7ea0a611e76bd3702b5e2a73cbb410ba2ffcefb621765d9cc6d3f97",
-        "frontend/src/ReportPanel.tsx": "69d73ea98201807c415a8319580f4db396f46d874f43adfa767388a7ecb7b40b",
-        "frontend/src/SummaryReview.tsx": "cbdd4c5d64ba37558145044ddcd623ba56faa39ad8e861ef57f1b9def614cda1",
-        "src/rapporteur/report/assemble.py": "3bf5588de4d64aa59cb81a5f8ad67f6c73b035e3e7d952b71387ef59d08989c1",
-        "tests/fictional_talk.py": "48951bd7bbbc178e7b6a115ce7338e6ffbcc93195d434e231af7a8a0d0b5ad16",
-        "tests/test_multimodal.py": "5da83602d62561bcf4cef1d06ea09e1ee6fdeafba236e8929177f4447d85c4ff"
-      }
-    },
-    "offline": {
-      "path": "docs/offline.md",
-      "documentKind": "runbook",
       "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "symptoms": "Симптомы и задачи",
-        "prerequisites": "Подготовка",
-        "procedure": "Порядок действий",
-        "verification": "Проверка результата",
-        "rollback": "Откат",
-        "escalation": "Диагностика и обращение за помощью",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "entities": "\u0421\u0443\u0449\u043d\u043e\u0441\u0442\u0438",
+        "migrations": "\u041c\u0438\u0433\u0440\u0430\u0446\u0438\u0438",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "relationships": "\u0421\u0432\u044f\u0437\u0438 \u0438 \u0441\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u044f",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438",
+        "storage": "\u0425\u0440\u0430\u043d\u0435\u043d\u0438\u0435"
       },
-      "sourcePatterns": [
-        "Makefile",
-        "compose.yaml",
-        "scripts/doctor.sh",
-        ".env.example",
-        "src/rapporteur/db.py",
-        "docs/benchmarks/2026-11-14-redesign.md"
-      ],
-      "relatedDocuments": [
-        "configuration",
-        "ollama",
-        "acceptance"
-      ],
       "sourceHashes": {
-        ".env.example": "7c682a05e8223c06d245f78613cb60f91216a08c8b5ffdedbc2c46007c4305cd",
-        "Makefile": "d2a11f311eb5eff1eb4656cdafd5b295314eaddcb789771fe2ef569713f6209a",
-        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
-        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
-        "scripts/doctor.sh": "8bb48682f1779b3423544ff0322e24950a79b732ad2343cc4cff1a971fad4032",
-        "src/rapporteur/db.py": "d4698967282c6199dbb0dd9e4f96a54315f33a9c3c9b46f3a6f0bc1c8492f3be"
-      }
-    },
-    "ollama": {
-      "path": "docs/ollama.md",
-      "documentKind": "reference",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "reference": "Справочные сведения",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "compose.yaml",
-        "Makefile",
-        "src/rapporteur/llm/profiles.py",
-        "src/rapporteur/model_choice.py",
-        "src/rapporteur/llm/client.py"
-      ],
-      "relatedDocuments": [
-        "configuration",
-        "offline"
-      ],
-      "sourceHashes": {
-        "Makefile": "d2a11f311eb5eff1eb4656cdafd5b295314eaddcb789771fe2ef569713f6209a",
-        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
-        "src/rapporteur/llm/client.py": "58b9390b6496c39c24e08504882e5611cca8d8f5efd235abb304a168d3eb3102",
-        "src/rapporteur/llm/profiles.py": "779b0d21efd7d829ba667fad7753c9a992082120cb5c762b5ec971a1c5de0257",
-        "src/rapporteur/model_choice.py": "ba0b117880da63525f2986ce64dad8b5f8ffeefd377391d87f85cb7c3ffc5457"
-      }
-    },
-    "api": {
-      "path": "docs/api.md",
-      "documentKind": "api-reference",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "endpoints": "Методы и пути",
-        "authentication": "Доступ к API",
-        "errors": "Ошибки",
-        "examples": "Примеры",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "src/rapporteur/api/**",
-        "src/rapporteur/app.py",
-        "src/rapporteur/asr_service.py",
-        "src/rapporteur/contracts/**",
-        "src/rapporteur/errors.py"
-      ],
-      "relatedDocuments": [
-        "data",
-        "facts",
-        "workflow"
-      ],
-      "sourceHashes": {
-        "src/rapporteur/api/__init__.py": "0474983a1fd4ea6a9c84050ef0f922d33f877852717c83d2468ae9bb4d62beb8",
-        "src/rapporteur/api/conferences.py": "b1a55533c81e6e0243e32735db3265f34a7667c1de8e2f2f6e84bc34a69070a3",
-        "src/rapporteur/api/departments.py": "3b2736b089987f1d372e99f576c7cd2d1056c678aada7051a6f1397935f5a792",
-        "src/rapporteur/api/dependencies.py": "cc43d72ca058c9a876b1a1c8ed881927650b6ac80a33fd21e7a4e508f9270e66",
-        "src/rapporteur/api/files.py": "70214033089bd5767b43abe877733e0b8e9c34ec6dfb5bd8b9a7d43467384914",
-        "src/rapporteur/api/reports.py": "035c65580a16652f5129df20b55c1f36affff593690ece9b1330d382f931fe52",
-        "src/rapporteur/api/summaries.py": "03acb9bc0fec6f6776fdf8fe48f5b2657c10558290825b89cb7745343f5fe580",
-        "src/rapporteur/api/system.py": "4f23ab0125ee070e8ea6e251e5d0c613c55de3583103f46614b96f9e90ae8fb1",
-        "src/rapporteur/api/talks.py": "1c30580407f32143c4fb7a325e5a4a0b800297de884928d7ec61ab3dc5149f37",
-        "src/rapporteur/api/workflow.py": "2de71b6b14834fc6db5535d62ac0f0c5335cc7512bd66405a1e73ecbbfba4b51",
-        "src/rapporteur/app.py": "9623136481e478e17beb9cd1ea5ce39cc3145f0ef4ad9201e890f59cbb9fc915",
-        "src/rapporteur/asr_service.py": "e20263fda719ec802d1599fbd8a07dba8f22c5415ad21840c7827020ee9a4753",
-        "src/rapporteur/contracts/__init__.py": "9ee2eeb8dcdd4b66ddba7a7e161a0327f61de3bb280ddbecf0e192dc7ed2e642",
-        "src/rapporteur/contracts/artifacts.py": "1213bedfee19964cdb028bee379379192293ad34a6b71c657e3398f6523c5b03",
-        "src/rapporteur/contracts/base.py": "b0e8dd1c9b4f90bcd43229e952c1480590ec8915eb1960da393a4746e7f5165b",
-        "src/rapporteur/contracts/claims.py": "33639728043e6b067f4aa7e4ed755fa189ac1793361561c4afc81508856372f7",
-        "src/rapporteur/contracts/entities.py": "eb6d7aff2fea6086b5f8be7ff7538136def8def67095dcdab92c34df992774e0",
-        "src/rapporteur/contracts/enums.py": "2c1e8423ee81b280f2c04aae64e8fe6a0f4ed64dd039a87ac999133e1b471c40",
-        "src/rapporteur/contracts/fragments.py": "a69d55b3c80d76a99dd7600de60c9d8568629a78b0828f589db1fa2e5914648d",
+        "src/rapporteur/contracts/enums.py": "d6c97ad8d9ff805419016421288e433c715b7bab042b7ca2faaf2ed49c3422c3",
         "src/rapporteur/contracts/ids.py": "ca23206eb63253e1de70d6b0eb7fbdee290d6d6add077799ec4b08b24e2f14f1",
-        "src/rapporteur/contracts/registry.py": "09d3910677370a0d3ac62313be73416891d3411814e1aa05559abbb469f94c92",
-        "src/rapporteur/contracts/reports.py": "3eebeac3c8f4dc7eb6e3279add83d7049f8445b79aa1f66ade7133f6ffd34427",
-        "src/rapporteur/errors.py": "6764161a9f45d6b4a0161f396de259a850797242db531cbbe67bbe12ffb3cb48"
-      }
+        "src/rapporteur/db.py": "80f71c816e5e01a8a3a826c565fec81923d65b8262b86281e24119f06491cab3",
+        "src/rapporteur/departments.py": "691f5745cfb3c29b21662447e0da87f704404abe7d93f4b012040619a3cb71cf",
+        "src/rapporteur/materials.py": "f2330f2e2d2fadeb21441ca0bf6ef520490add71689d6bdb2332834763494659",
+        "src/rapporteur/storage.py": "aa9b53bba8719aa64f1def335894d95c49f2b8c5dc98fe12135aa94488527eac",
+        "src/rapporteur/summaries.py": "5a0d67b8cdc6537b1feb2a1286f14d2dddc8966c95b0e85147785b75e4d6d201",
+        "src/rapporteur/summarize/pack.py": "ec1f37c0b24b8ad869d8c5a9b6dec21948176245f9ef6b8851f1574d10e179ee",
+        "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/db.py",
+        "src/rapporteur/contracts/enums.py",
+        "src/rapporteur/contracts/ids.py",
+        "src/rapporteur/summarize/pack.py",
+        "src/rapporteur/storage.py",
+        "src/rapporteur/materials.py",
+        "src/rapporteur/summaries.py",
+        "src/rapporteur/departments.py",
+        "tests/test_upgrade.py"
+      ]
+    },
+    "decisions.index": {
+      "documentKind": "kind-index",
+      "path": "docs/adr/index.md",
+      "relatedDocuments": [],
+      "sections": {
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b"
+      },
+      "sourceHashes": {},
+      "sourcePatterns": []
     },
     "development": {
-      "path": "docs/development.md",
       "documentKind": "reference",
+      "path": "docs/development.md",
+      "relatedDocuments": [
+        "documentation.index",
+        "workflow",
+        "acceptance"
+      ],
       "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "reference": "Справочные сведения",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u044b\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        ".dockerignore": "52d5892c8dfdb7416585200d8c2abd5eedec5f08501bffe1c6ee85bc0e6ae1b5",
+        ".gitignore": "e7a78bd5400bf2d8b68b82ea2474eea216f84ec1428d0149098cf3dda3ed5e89",
+        "CODEOWNERS": "97eb3f334f22838abe99717568bb14abb9aff2146336aeadad5bda1fbce0a089",
+        "Dockerfile": "a706a9a8582071fdf21c2fff101d5106ec290b54bf58c2d91ef578037d873658",
+        "Makefile": "42eb7b26b5ca7d0f666538fcdabb71f50eb74f8d6cf08768f6c4ca73e6b870f1",
+        "frontend/.gitignore": "790e3169bc19b046fe55ba1da6d13b976c28363c8c00462a2195fe5faf260910",
+        "frontend/package.json": "615c458228d32f42bb8bb5bc761db8cc98245203a4ab685044ff38066d4af9e7",
+        "frontend/vite.config.ts": "6a8e540228b1abd579e289981bb25b84c1cf1c7eae0fd3290364b835dd10949e",
+        "pyproject.toml": "ba3b77a5db69779dfa79c2b374b78c2af14569e8c23a1d04af88b7728ec54b26",
+        "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9",
+        "uv.lock": "b4977c1a72056070b4de1a704764a44b2502c3e5ddcfc3c933e24affbdd06dff"
       },
       "sourcePatterns": [
         "pyproject.toml",
@@ -1024,60 +314,759 @@
         ".gitignore",
         "CODEOWNERS",
         "frontend/.gitignore"
-      ],
-      "relatedDocuments": [
-        "documentation.index",
-        "workflow",
-        "acceptance"
-      ],
-      "sourceHashes": {
-        ".dockerignore": "52d5892c8dfdb7416585200d8c2abd5eedec5f08501bffe1c6ee85bc0e6ae1b5",
-        ".gitignore": "e7a78bd5400bf2d8b68b82ea2474eea216f84ec1428d0149098cf3dda3ed5e89",
-        "CODEOWNERS": "97eb3f334f22838abe99717568bb14abb9aff2146336aeadad5bda1fbce0a089",
-        "Dockerfile": "a706a9a8582071fdf21c2fff101d5106ec290b54bf58c2d91ef578037d873658",
-        "Makefile": "d2a11f311eb5eff1eb4656cdafd5b295314eaddcb789771fe2ef569713f6209a",
-        "frontend/.gitignore": "790e3169bc19b046fe55ba1da6d13b976c28363c8c00462a2195fe5faf260910",
-        "frontend/package.json": "615c458228d32f42bb8bb5bc761db8cc98245203a4ab685044ff38066d4af9e7",
-        "frontend/vite.config.ts": "6a8e540228b1abd579e289981bb25b84c1cf1c7eae0fd3290364b835dd10949e",
-        "pyproject.toml": "7a76b2ab0a6efac1fb65daf19bdcd414592f0378cc7432abab46f8a97af9c56b",
-        "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9",
-        "uv.lock": "8111399ec536efb13feb231a3342b7ece9f4cf66932aa01481d9e397a8a84b7b"
-      }
+      ]
     },
-    "testing": {
-      "path": "docs/testing.md",
-      "documentKind": "test-strategy",
+    "documentation.index": {
+      "documentKind": "documentation-index",
+      "path": "docs/index.md",
+      "relatedDocuments": [],
       "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "levels": "Уровни проверок",
-        "environments": "Среды проверки",
-        "coverageGaps": "Пробелы в проверках",
-        "gates": "Критерии проверки",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "areas": "\u0420\u0430\u0437\u0434\u0435\u043b\u044b \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u0438",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "flows": "\u041e\u0441\u043d\u043e\u0432\u043d\u044b\u0435 \u043f\u043e\u0442\u043e\u043a\u0438",
+        "gettingStarted": "\u0421 \u0447\u0435\u0433\u043e \u043d\u0430\u0447\u0430\u0442\u044c",
+        "indexStatus": "\u0410\u043a\u0442\u0443\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u0438"
+      },
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "facts": {
+      "documentKind": "topic",
+      "path": "docs/facts.md",
+      "relatedDocuments": [
+        "processing",
+        "recommendations",
+        "research"
+      ],
+      "sections": {
+        "activeFunctionality": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "howItWorks": "\u041a\u0430\u043a \u044d\u0442\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "responsibilities": "\u041e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u0441\u0442\u044c \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043e\u0432",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "prompts/critic/v3.md": "fe78dc7d839ff687513c0754ef8ea27c852555fb31894593dd49d3efe19570fc",
+        "prompts/facts-review/v3.md": "57339dffed2c42221f4e3f3b8270439db3ad9196b170bc09d771358f65b8b8b7",
+        "prompts/facts/v3.md": "7f47ca39f1217a97d515a72910189540b4239d44c13811456a058415a219bc28",
+        "prompts/summary/v3.md": "606fc6dc6847df655f527b3deecb8747a7e3177656adc7dea28fd72a495b840d",
+        "src/rapporteur/contracts/claims.py": "33639728043e6b067f4aa7e4ed755fa189ac1793361561c4afc81508856372f7",
+        "src/rapporteur/llm/structured.py": "77e29aa46864c17dc62a5db56f8ab0ffa20f353b2f2e5eb2c876bb9cc969936b",
+        "src/rapporteur/summarize/checks.py": "343b801ba4756c5a63f3f1abba70daea689b32dec7a39e290d0d29a926ddc74f",
+        "src/rapporteur/summarize/facts.py": "f6abe5a3de5e11d8b08f207eed4c6db7c517778e4e2fd493106d2ef25ee74872",
+        "src/rapporteur/summarize/grounding.py": "d2e4ce266f39377cf3fa2cfb3356f773af2ce42d9ed2b5a9a6f54e8f8a51b835",
+        "src/rapporteur/summarize/pack.py": "ec1f37c0b24b8ad869d8c5a9b6dec21948176245f9ef6b8851f1574d10e179ee",
+        "src/rapporteur/summarize/quotes.py": "0c254e97557c3206d519328b35761e7d6c2d80efce346e933d12b30539fc5914",
+        "src/rapporteur/summarize/summary.py": "eac5e4042e8b65511281ee858e9e2407e8fce2947516a3eba96dc6f588f581ec",
+        "src/rapporteur/summarize/verify.py": "9b58621a39fe9ab1e05f5864190b174ac22640fd895f37824a25b525bc463a43",
+        "tests/fictional_talk.py": "48951bd7bbbc178e7b6a115ce7338e6ffbcc93195d434e231af7a8a0d0b5ad16",
+        "tests/test_summary_v3.py": "65c05a2aecb3625e9843352cb020642e2746c5650308e6c6a2ba258d686c4763",
+        "tests/test_verify.py": "fc8ac479e79d06b4e5589140ea2563ecf82460f1df637e72db838510e043b0a8"
       },
       "sourcePatterns": [
-        "tests/**",
-        "frontend/src/**/*.test.*",
-        "Makefile",
-        "docs/benchmarks/2026-11-14-redesign.md"
+        "src/rapporteur/summarize/pack.py",
+        "src/rapporteur/summarize/facts.py",
+        "src/rapporteur/summarize/quotes.py",
+        "src/rapporteur/summarize/verify.py",
+        "src/rapporteur/summarize/summary.py",
+        "src/rapporteur/summarize/checks.py",
+        "src/rapporteur/llm/structured.py",
+        "src/rapporteur/contracts/claims.py",
+        "tests/fictional_talk.py",
+        "tests/test_verify.py",
+        "src/rapporteur/summarize/grounding.py",
+        "tests/test_summary_v3.py",
+        "prompts/**/v3.md"
+      ]
+    },
+    "frontend": {
+      "documentKind": "topic",
+      "path": "docs/frontend.md",
+      "relatedDocuments": [
+        "workflow",
+        "api",
+        "legacy.DESIGN"
       ],
+      "sections": {
+        "activeFunctionality": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "howItWorks": "\u041a\u0430\u043a \u044d\u0442\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "responsibilities": "\u041e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u0441\u0442\u044c \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043e\u0432",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "DESIGN.md": "85847d83d0ba7f71d29edbfc6083352804b66cdecaffbed00023da914be6857b",
+        "frontend/eslint.config.js": "3b723f5adc0255c053dc46d9cb07c430856174cb4b9ebc4966af235aa7c5d763",
+        "frontend/index.html": "4b96662cf96c3ea8b08359610c67e63c18840e84722dfa9822db324c4cd8ba18",
+        "frontend/package-lock.json": "1a2ae584670975f2ecbe79ebf6cb8127912ccd20092016cc9c569da5eb535bf6",
+        "frontend/package.json": "615c458228d32f42bb8bb5bc761db8cc98245203a4ab685044ff38066d4af9e7",
+        "frontend/src/App.test.tsx": "3bf7154c0c8c4cb5640dfb9b91488d1673ff2fdc5d78e609bf13e105b027e801",
+        "frontend/src/App.tsx": "36834bd42d0773a7be881152a2678e472f7a7e125e0d67b82152db125b09a46e",
+        "frontend/src/Departments.test.tsx": "46795ea2b07ae06d63d502e79ca8eb0ef2b698e1c031c29feafef862c733ecaf",
+        "frontend/src/Departments.tsx": "920faa5b574a40ff9e05240e98c91289383edad24212f7343c046b5132bb4cab",
+        "frontend/src/Home.tsx": "b963ccdd6d95f3dc0b856abbfcf454442a818808ea615fd8ee907f99991ed56a",
+        "frontend/src/Interest.test.tsx": "4ec9fafc6abd29ae8737ff1d622349dca0906b33f857d8a90f906080c45b409d",
+        "frontend/src/Interest.tsx": "52163cc1bc79aa53e97173ae3e910daefcafca27cea33320ba4f69e938fb37e4",
+        "frontend/src/LegacyTalks.tsx": "4bcd23d1c2b67fd0794ce0e549169e6cf472c6bdbbaf5e50ef759a278603c92e",
+        "frontend/src/Materials.tsx": "93c10aeed785261f8ec3276029f47eaa6f185c11c7359ea2e22b7d1ead236361",
+        "frontend/src/Preparation.tsx": "33076f66b7d6c88c6bfc3ce9a55e8d5a8732657977f6ab844223f56890baff6f",
+        "frontend/src/Processing.tsx": "1a2275b61611f35c0e21c6eb8561d4b96f0267271538bd4bc51b2fff91caba44",
+        "frontend/src/ReportPanel.test.tsx": "fb61f94e391fea88ce254589a0fec8a0374e7e60a96d30be4e2fbabc31aca466",
+        "frontend/src/ReportPanel.tsx": "23efc2b3b837a84fb0d864ed9fe6123768b76fa6f71a71ad3573d91ee0814102",
+        "frontend/src/Settings.test.tsx": "6b82dbf91c7a952432d5c24360bcf422f6c903e1084a069162f98a0efbf63a83",
+        "frontend/src/Settings.tsx": "fe49dbb197c54fd45e4e5b33c53e4f645d52edabb0a6fd58a7d3017282a71d47",
+        "frontend/src/SummaryReview.test.tsx": "28e301c0be2cd9d952aa278be79108a72b38eeb0056ad8b595a59c74fbe04c1a",
+        "frontend/src/SummaryReview.tsx": "f81fa01de90df688d5ce1b813f20af2f50beb6a410f71dfcd48414ac355b8e90",
+        "frontend/src/Workflow.test.tsx": "2fb0b2835d253ffd831a0360016c999a7eba852121df20c4428ea23d346147df",
+        "frontend/src/WorkflowPages.test.tsx": "133d8229b39e0277d22c5de42108726e40218bb1044f7d6658b66b03c490a61d",
+        "frontend/src/api.ts": "632828e04fe261fa103d0590935e1080dab53cae09fbc43964c6f08c2cce6ca8",
+        "frontend/src/conferenceTypes.ts": "c243efc72823f913d8f77759238ad5b48c43e21e49133d3ca2b94419b8bb7e04",
+        "frontend/src/main.tsx": "bab89240a1dfb8990b4b8378d7ff9b896a718da3c93d973db003fd5e3fcb964d",
+        "frontend/src/materialLabels.ts": "234a83775b16a8b16b970af0e20f8fd001d78043788808e64b3fb3266fe98872",
+        "frontend/src/materialTypes.ts": "0806aee5977a0c2a66ff62d2b8122430599a1d6957e4280c22be02e22d61eb7d",
+        "frontend/src/status.ts": "8ac9fe02d76e4069ad2ad57f54b0333368db47fb126d81d2cb950e64778ecfa2",
+        "frontend/src/styles.css": "f5055981bee3bc521ce69c180a7891e197cdd2cfb2b02cd00c29993fb9f00a65",
+        "frontend/src/talkTypes.ts": "9577180522b68359f6aed3ed5e56bf63dec018897838896f4f4a430680d3e606",
+        "frontend/src/theme.ts": "9dc10157ea3bc9866a5fb31d33c165ffb854740988609f6cf776ec87632e11de",
+        "frontend/src/useResource.test.tsx": "1ae1149ead8bee466b1620cf0b40401d6174fcf084c4fb738ce90ff45fd91169",
+        "frontend/src/useResource.ts": "63cbcaea4a9feb5475454830b061313a7288bd180f4bde1a800c571e68af2629",
+        "frontend/src/useUnsavedChanges.test.tsx": "e6383cbaddc03d3000a94941108138b46ef74b19f56363138e9b37b822454513",
+        "frontend/src/useUnsavedChanges.ts": "0d6b4534f25cf2a6872bf0988dc61cc49271adbda371a10a180dc22ac6bc01ca",
+        "frontend/tsconfig.json": "2e90bae91c030b5b0dc1c962ea7cb411508d5ea1b8c6e515f93561c44e02cab0",
+        "frontend/vite.config.ts": "6a8e540228b1abd579e289981bb25b84c1cf1c7eae0fd3290364b835dd10949e"
+      },
+      "sourcePatterns": [
+        "frontend/src/**",
+        "frontend/package*.json",
+        "frontend/vite.config.ts",
+        "frontend/tsconfig.json",
+        "frontend/eslint.config.js",
+        "frontend/index.html",
+        "DESIGN.md"
+      ]
+    },
+    "glossary": {
+      "documentKind": "reference",
+      "path": "docs/glossary.md",
+      "relatedDocuments": [
+        "product",
+        "data",
+        "facts"
+      ],
+      "sections": {
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u044b\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "src/rapporteur/contracts/artifacts.py": "1213bedfee19964cdb028bee379379192293ad34a6b71c657e3398f6523c5b03",
+        "src/rapporteur/contracts/claims.py": "33639728043e6b067f4aa7e4ed755fa189ac1793361561c4afc81508856372f7",
+        "src/rapporteur/contracts/enums.py": "d6c97ad8d9ff805419016421288e433c715b7bab042b7ca2faaf2ed49c3422c3",
+        "src/rapporteur/contracts/fragments.py": "a69d55b3c80d76a99dd7600de60c9d8568629a78b0828f589db1fa2e5914648d",
+        "src/rapporteur/contracts/reports.py": "3eebeac3c8f4dc7eb6e3279add83d7049f8445b79aa1f66ade7133f6ffd34427"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/contracts/fragments.py",
+        "src/rapporteur/contracts/claims.py",
+        "src/rapporteur/contracts/artifacts.py",
+        "src/rapporteur/contracts/enums.py",
+        "src/rapporteur/contracts/reports.py"
+      ]
+    },
+    "legacy.DESIGN": {
+      "metadata": {
+        "historical": false
+      },
+      "path": "DESIGN.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.PRODUCT": {
+      "metadata": {
+        "historical": false
+      },
+      "path": "PRODUCT.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-001-stack": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-001-stack.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-002-gpu-mode-and-models": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-002-gpu-mode-and-models.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-003-evidence-contract": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-003-evidence-contract.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-004-postgres-queue": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-004-postgres-queue.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-005-file-storage-and-cache": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-005-file-storage-and-cache.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-006-conference-and-report": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-006-conference-and-report.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-007-team-boundary": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-007-team-boundary.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-008-contract-amendments": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-008-contract-amendments.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-009-stage-graph": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-009-stage-graph.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-010-inference-server": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-010-inference-server.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-011-simplified-mvp": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-011-simplified-mvp.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-012-domain-api": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-012-domain-api.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-013-summaries-in-platform": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-013-summaries-in-platform.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.ADR-014-simplification": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/ADR-014-simplification.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.adr.README": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/adr/README.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.backlog": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/backlog.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.benchmarks.2026-11-14-redesign": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/benchmarks/2026-11-14-redesign.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.benchmarks.2026-11-17-pipeline": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/benchmarks/2026-11-17-pipeline.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.benchmarks.implementation-validation": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/benchmarks/implementation-validation.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.benchmarks.llm-chain-local": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/benchmarks/llm-chain-local.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.benchmarks.ollama-facts-schema-local": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/benchmarks/ollama-facts-schema-local.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.benchmarks.p1-05-bindings": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/benchmarks/p1-05-bindings.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.git": {
+      "metadata": {
+        "historical": false
+      },
+      "path": "docs/git.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.licenses": {
+      "metadata": {
+        "historical": false
+      },
+      "path": "docs/licenses.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.spec": {
+      "metadata": {
+        "historical": true
+      },
+      "path": "docs/spec.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.docs.superpowers.plans.2026-11-14-workflow-redesign": {
+      "metadata": {
+        "historical": false
+      },
+      "path": "docs/superpowers/plans/2026-11-14-workflow-redesign.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.prompts.README": {
+      "metadata": {
+        "historical": false
+      },
+      "path": "prompts/README.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "legacy.templates.README": {
+      "metadata": {
+        "historical": false
+      },
+      "path": "templates/README.md",
+      "relatedDocuments": [],
+      "sourceHashes": {},
+      "sourcePatterns": []
+    },
+    "offline": {
+      "documentKind": "runbook",
+      "path": "docs/offline.md",
+      "relatedDocuments": [
+        "configuration",
+        "ollama",
+        "acceptance"
+      ],
+      "sections": {
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "escalation": "\u0414\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430 \u0438 \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u0437\u0430 \u043f\u043e\u043c\u043e\u0449\u044c\u044e",
+        "prerequisites": "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430",
+        "procedure": "\u041f\u043e\u0440\u044f\u0434\u043e\u043a \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "rollback": "\u041e\u0442\u043a\u0430\u0442",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438",
+        "symptoms": "\u0421\u0438\u043c\u043f\u0442\u043e\u043c\u044b \u0438 \u0437\u0430\u0434\u0430\u0447\u0438",
+        "verification": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0430"
+      },
+      "sourceHashes": {
+        ".env.example": "7c682a05e8223c06d245f78613cb60f91216a08c8b5ffdedbc2c46007c4305cd",
+        "Makefile": "42eb7b26b5ca7d0f666538fcdabb71f50eb74f8d6cf08768f6c4ca73e6b870f1",
+        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
+        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
+        "scripts/doctor.sh": "8bb48682f1779b3423544ff0322e24950a79b732ad2343cc4cff1a971fad4032",
+        "src/rapporteur/db.py": "80f71c816e5e01a8a3a826c565fec81923d65b8262b86281e24119f06491cab3"
+      },
+      "sourcePatterns": [
+        "Makefile",
+        "compose.yaml",
+        "scripts/doctor.sh",
+        ".env.example",
+        "src/rapporteur/db.py",
+        "docs/benchmarks/2026-11-14-redesign.md"
+      ]
+    },
+    "ollama": {
+      "documentKind": "reference",
+      "path": "docs/ollama.md",
+      "relatedDocuments": [
+        "configuration",
+        "offline"
+      ],
+      "sections": {
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u044b\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "Makefile": "42eb7b26b5ca7d0f666538fcdabb71f50eb74f8d6cf08768f6c4ca73e6b870f1",
+        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
+        "src/rapporteur/llm/client.py": "58b9390b6496c39c24e08504882e5611cca8d8f5efd235abb304a168d3eb3102",
+        "src/rapporteur/llm/profiles.py": "779b0d21efd7d829ba667fad7753c9a992082120cb5c762b5ec971a1c5de0257",
+        "src/rapporteur/model_choice.py": "ba0b117880da63525f2986ce64dad8b5f8ffeefd377391d87f85cb7c3ffc5457"
+      },
+      "sourcePatterns": [
+        "compose.yaml",
+        "Makefile",
+        "src/rapporteur/llm/profiles.py",
+        "src/rapporteur/model_choice.py",
+        "src/rapporteur/llm/client.py"
+      ]
+    },
+    "processing": {
+      "documentKind": "topic",
+      "path": "docs/processing.md",
+      "relatedDocuments": [
+        "facts",
+        "data",
+        "configuration"
+      ],
+      "sections": {
+        "activeFunctionality": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "howItWorks": "\u041a\u0430\u043a \u044d\u0442\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "responsibilities": "\u041e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u0441\u0442\u044c \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043e\u0432",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "src/rapporteur/api/files.py": "56f1ce0af042bdf3b640c9be342930f8538e489db9857d9275e398ff85f32723",
+        "src/rapporteur/asr_service.py": "e20263fda719ec802d1599fbd8a07dba8f22c5415ad21840c7827020ee9a4753",
+        "src/rapporteur/ingest/documents.py": "0e6e4219e2e44f955dfa7421bc5fc85e7751090a97f9786c97fbd46e3d347cc1",
+        "src/rapporteur/ingest/inventory.py": "7f313cf5fb0e1660ba714ef215c5a8bcc8b4c26de0e7ce9ddd5db70a13e744f9",
+        "src/rapporteur/ingest/slides.py": "830dda9aa42e424f3a0cdb471cf314dd5aca5a5969ba3a7225e6bc16c3ace033",
+        "src/rapporteur/llm/tasks.py": "10076c7f91fb81286b371e4d2de7eefdefc025d5ec4ac28c9165343613f912b8",
+        "src/rapporteur/preparation.py": "56282827087f0903cdcf5c6b99387965aa2ef7731310dedd18808b3c88825f55",
+        "tests/test_multimodal.py": "fca6d89329b2f4b8cffdaf516d0ae917dae438f2bfdd9e514a8b235a8850cb40",
+        "tests/test_structured_tasks.py": "1c80d138bc9225b9f9f3ee0b896dfa1511b2684fa6ff9d07f5fc42aa94fb96c8"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/api/files.py",
+        "src/rapporteur/ingest/inventory.py",
+        "src/rapporteur/ingest/documents.py",
+        "src/rapporteur/ingest/slides.py",
+        "src/rapporteur/preparation.py",
+        "src/rapporteur/asr_service.py",
+        "tests/test_multimodal.py",
+        "src/rapporteur/llm/tasks.py",
+        "tests/test_structured_tasks.py"
+      ]
+    },
+    "product": {
+      "documentKind": "topic",
+      "path": "docs/product.md",
+      "relatedDocuments": [
+        "workflow",
+        "architecture",
+        "glossary"
+      ],
+      "sections": {
+        "activeFunctionality": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "howItWorks": "\u041a\u0430\u043a \u044d\u0442\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "responsibilities": "\u041e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u0441\u0442\u044c \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043e\u0432",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "frontend/src/App.tsx": "36834bd42d0773a7be881152a2678e472f7a7e125e0d67b82152db125b09a46e",
+        "src/rapporteur/api/conferences.py": "b1a55533c81e6e0243e32735db3265f34a7667c1de8e2f2f6e84bc34a69070a3",
+        "src/rapporteur/api/files.py": "56f1ce0af042bdf3b640c9be342930f8538e489db9857d9275e398ff85f32723",
+        "src/rapporteur/departments.py": "691f5745cfb3c29b21662447e0da87f704404abe7d93f4b012040619a3cb71cf",
+        "src/rapporteur/preparation.py": "56282827087f0903cdcf5c6b99387965aa2ef7731310dedd18808b3c88825f55",
+        "src/rapporteur/processing.py": "2b90e5667dae37c46e04149e72c7ff82827b5f0e70264351922de486d0f03548",
+        "src/rapporteur/reports.py": "fcd24dec64d313b61d1eb687bfdeb50ef97e8d339ceadbfb164e59dea99de91e",
+        "src/rapporteur/summaries.py": "5a0d67b8cdc6537b1feb2a1286f14d2dddc8966c95b0e85147785b75e4d6d201"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/api/conferences.py",
+        "src/rapporteur/api/files.py",
+        "src/rapporteur/preparation.py",
+        "src/rapporteur/processing.py",
+        "src/rapporteur/summaries.py",
+        "src/rapporteur/departments.py",
+        "src/rapporteur/reports.py",
+        "frontend/src/App.tsx"
+      ]
+    },
+    "readme": {
+      "documentKind": "project-readme",
+      "path": "README.md",
+      "relatedDocuments": [
+        "documentation.index",
+        "development"
+      ],
+      "sections": {
+        "activeFunctionality": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438",
+        "architecture": "\u0423\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f",
+        "configuration": "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "documentation": "\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u044f",
+        "license": "\u041b\u0438\u0446\u0435\u043d\u0437\u0438\u0438",
+        "plannedWork": "\u041f\u043b\u0430\u043d\u0438\u0440\u0443\u0435\u043c\u044b\u0435 \u0440\u0430\u0431\u043e\u0442\u044b",
+        "quickStart": "\u0411\u044b\u0441\u0442\u0440\u044b\u0439 \u0437\u0430\u043f\u0443\u0441\u043a",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438",
+        "status": "\u0421\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u0430",
+        "structure": "\u0421\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0430 \u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440\u0438\u044f",
+        "technologies": "\u0422\u0435\u0445\u043d\u043e\u043b\u043e\u0433\u0438\u0438",
+        "tests": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0438"
+      },
+      "sourceHashes": {
+        "Makefile": "42eb7b26b5ca7d0f666538fcdabb71f50eb74f8d6cf08768f6c4ca73e6b870f1",
+        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
+        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
+        "pyproject.toml": "ba3b77a5db69779dfa79c2b374b78c2af14569e8c23a1d04af88b7728ec54b26"
+      },
+      "sourcePatterns": [
+        "pyproject.toml",
+        "Makefile",
+        "compose.yaml",
+        "docs/benchmarks/2026-11-14-redesign.md"
+      ]
+    },
+    "recommendations": {
+      "documentKind": "topic",
+      "path": "docs/recommendations-report.md",
+      "relatedDocuments": [
+        "workflow",
+        "data",
+        "api"
+      ],
+      "sections": {
+        "activeFunctionality": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "howItWorks": "\u041a\u0430\u043a \u044d\u0442\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "responsibilities": "\u041e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u0441\u0442\u044c \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043e\u0432",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "src/rapporteur/api/departments.py": "3b2736b089987f1d372e99f576c7cd2d1056c678aada7051a6f1397935f5a792",
+        "src/rapporteur/contracts/reports.py": "3eebeac3c8f4dc7eb6e3279add83d7049f8445b79aa1f66ade7133f6ffd34427",
+        "src/rapporteur/departments.py": "691f5745cfb3c29b21662447e0da87f704404abe7d93f4b012040619a3cb71cf",
+        "src/rapporteur/report/assemble.py": "cd4f33d6a25f951d670ce09a9e37a4a7242d79cda93c85208b5d9a4c96e180e0",
+        "src/rapporteur/report/build.py": "7149b9135fbf2c8f04fa1a26d4858f65076bff18ceea3be73ac2cf584ff14cb2",
+        "src/rapporteur/report/export.py": "50320919ed244629aa5dac970fad405faa5d75964469d091c45b93b08c6906ef",
+        "src/rapporteur/report_jobs.py": "454d6a3ac6b1baede4703d234d03c3c631b5900fda0e657ce48d1a5389e1a08f",
+        "src/rapporteur/reports.py": "fcd24dec64d313b61d1eb687bfdeb50ef97e8d339ceadbfb164e59dea99de91e",
+        "src/rapporteur/screening.py": "d6ae5d01d1c84824ac67e24b548d5908117d31b5ac22d4396b604eed8c2c642e",
+        "templates/starter/variables.yaml": "968ec8418b59106b5122e289aec63845c865230e3aafd73c7562f6768bc0b295",
+        "tests/test_report_jobs.py": "5d74bc0544ab066933609a1e345f71491ff8bcc8ca9e5a12a76203460a269c21",
+        "tests/test_report_stage.py": "5e6c5d22cda11d0773a02feb759f8b49384e961a15ca71ea3c93b546509ccbd0",
+        "tests/test_screening.py": "9fb38422e61893970ec7088a53a1595973436a0cc5598e05bbea8a1cc8f17d4a"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/departments.py",
+        "src/rapporteur/api/departments.py",
+        "src/rapporteur/reports.py",
+        "src/rapporteur/report/assemble.py",
+        "src/rapporteur/contracts/reports.py",
+        "src/rapporteur/report/build.py",
+        "src/rapporteur/report/export.py",
+        "templates/starter/variables.yaml",
+        "tests/test_report_stage.py",
+        "src/rapporteur/screening.py",
+        "src/rapporteur/report_jobs.py",
+        "tests/test_screening.py",
+        "tests/test_report_jobs.py"
+      ]
+    },
+    "release.0.3.0": {
+      "documentKind": "reference",
+      "path": "docs/release-0.3.0.md",
+      "relatedDocuments": [
+        "api",
+        "workflow",
+        "offline",
+        "testing"
+      ],
+      "sections": {
+        "context": "\u041f\u0443\u0442\u044c \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "API",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "profiles.yaml": "6ed8eb4b145df6bf5bccf690cb9829f2134dfa298e95fb46c3ede23d2fee2096",
+        "src/rapporteur/llm/tasks.py": "10076c7f91fb81286b371e4d2de7eefdefc025d5ec4ac28c9165343613f912b8",
+        "src/rapporteur/preparation.py": "56282827087f0903cdcf5c6b99387965aa2ef7731310dedd18808b3c88825f55",
+        "src/rapporteur/report_jobs.py": "454d6a3ac6b1baede4703d234d03c3c631b5900fda0e657ce48d1a5389e1a08f",
+        "src/rapporteur/screening.py": "d6ae5d01d1c84824ac67e24b548d5908117d31b5ac22d4396b604eed8c2c642e"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/screening.py",
+        "src/rapporteur/report_jobs.py",
+        "src/rapporteur/llm/tasks.py",
+        "src/rapporteur/preparation.py",
+        "profiles.yaml"
+      ]
+    },
+    "research": {
+      "documentKind": "reference",
+      "path": "docs/research.md",
+      "relatedDocuments": [
+        "facts",
+        "testing",
+        "acceptance"
+      ],
+      "sections": {
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u044b\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
+      "sourceHashes": {
+        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
+        "src/rapporteur/departments.py": "691f5745cfb3c29b21662447e0da87f704404abe7d93f4b012040619a3cb71cf",
+        "src/rapporteur/preparation.py": "56282827087f0903cdcf5c6b99387965aa2ef7731310dedd18808b3c88825f55",
+        "src/rapporteur/summarize/verify.py": "9b58621a39fe9ab1e05f5864190b174ac22640fd895f37824a25b525bc463a43",
+        "tests/fictional_talk.py": "48951bd7bbbc178e7b6a115ce7338e6ffbcc93195d434e231af7a8a0d0b5ad16"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/preparation.py",
+        "src/rapporteur/summarize/verify.py",
+        "src/rapporteur/departments.py",
+        "docs/benchmarks/2026-11-14-redesign.md",
+        "tests/fictional_talk.py"
+      ]
+    },
+    "testing": {
+      "documentKind": "test-strategy",
+      "path": "docs/testing.md",
       "relatedDocuments": [
         "acceptance",
         "research",
         "development"
       ],
+      "sections": {
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "coverageGaps": "\u041f\u0440\u043e\u0431\u0435\u043b\u044b \u0432 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430\u0445",
+        "environments": "\u0421\u0440\u0435\u0434\u044b \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438",
+        "gates": "\u041a\u0440\u0438\u0442\u0435\u0440\u0438\u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438",
+        "levels": "\u0423\u0440\u043e\u0432\u043d\u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u043e\u043a",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
       "sourceHashes": {
-        "Makefile": "d2a11f311eb5eff1eb4656cdafd5b295314eaddcb789771fe2ef569713f6209a",
+        "Makefile": "42eb7b26b5ca7d0f666538fcdabb71f50eb74f8d6cf08768f6c4ca73e6b870f1",
         "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
-        "frontend/src/App.test.tsx": "651aee5506d1858da758a3277f0363b0bba60e98ef7d0f90166efa382d30642c",
+        "frontend/src/App.test.tsx": "3bf7154c0c8c4cb5640dfb9b91488d1673ff2fdc5d78e609bf13e105b027e801",
         "frontend/src/Departments.test.tsx": "46795ea2b07ae06d63d502e79ca8eb0ef2b698e1c031c29feafef862c733ecaf",
-        "frontend/src/ReportPanel.test.tsx": "134bab15ada2603d689b361f3e47ce583af0d7318506a56f87e937a352aafe5f",
+        "frontend/src/Interest.test.tsx": "4ec9fafc6abd29ae8737ff1d622349dca0906b33f857d8a90f906080c45b409d",
+        "frontend/src/ReportPanel.test.tsx": "fb61f94e391fea88ce254589a0fec8a0374e7e60a96d30be4e2fbabc31aca466",
         "frontend/src/Settings.test.tsx": "6b82dbf91c7a952432d5c24360bcf422f6c903e1084a069162f98a0efbf63a83",
         "frontend/src/SummaryReview.test.tsx": "28e301c0be2cd9d952aa278be79108a72b38eeb0056ad8b595a59c74fbe04c1a",
         "frontend/src/Workflow.test.tsx": "2fb0b2835d253ffd831a0360016c999a7eba852121df20c4428ea23d346147df",
-        "frontend/src/WorkflowPages.test.tsx": "21e8b341fa057a2ba98258787bafdb50c6fcdb022614462ce7c058c06d7bcc53",
+        "frontend/src/WorkflowPages.test.tsx": "133d8229b39e0277d22c5de42108726e40218bb1044f7d6658b66b03c490a61d",
         "frontend/src/useResource.test.tsx": "1ae1149ead8bee466b1620cf0b40401d6174fcf084c4fb738ce90ff45fd91169",
         "frontend/src/useUnsavedChanges.test.tsx": "e6383cbaddc03d3000a94941108138b46ef74b19f56363138e9b37b822454513",
         "tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -1088,202 +1077,83 @@
         "tests/fixtures/legacy-installation.tar.gz": "1fb2fcc74a3ec2359148364ba903767692652956476f22677f596e68068c02a3",
         "tests/fixtures/starter_expected.txt": "43987ed182daa2cceca4436cf42ca58d976d07c41243742fa53b95fadf07353d",
         "tests/fixtures/summary.json": "77e83b852f5cb49ee58d1128b612dde8540ea5b93ffd7fbbfa426ff9c1c2e8e1",
-        "tests/test_app.py": "f6872cbe51cc8fa0bcd4cdaab004281a6ce604b00930d44eb76e8f6eae79c3cb",
+        "tests/test_app.py": "f76239a3d18ac5d9420c550d74fb27335656295c43bf1f21a4dd77c934736a40",
         "tests/test_contracts.py": "55ac7ce90e7e32f002c5c83e7c9e8936851feb2c4b41d8aefc301d7c24e59f67",
-        "tests/test_deployment.py": "cf7b9601e73697f8409661a463bada85a300841b475d5d7ee985b69904844bd1",
-        "tests/test_grounded_summary.py": "e7736db1a9a33dcbdf9642f8ea117214f1ceadadab021d5ac6c58d2e7809662f",
+        "tests/test_deployment.py": "366b463df38495d5aff76f4b733d688dd6048a8985a5dd1ad539619cdc93d6e1",
+        "tests/test_grounded_summary.py": "1c1ca4e441d2bd077b1188c2b2f45abcf9f98fdb11edd8b89b237719babe8f29",
         "tests/test_llm.py": "643a936e2657d7b0b68a194684f139b774908d06158df3f2c530782d81ecb6f7",
-        "tests/test_model_choice.py": "f95c309b79b5b647ed8d0b69b459e62b7e80b86525b1e1d85d998b98dd220672",
-        "tests/test_multimodal.py": "5da83602d62561bcf4cef1d06ea09e1ee6fdeafba236e8929177f4447d85c4ff",
+        "tests/test_model_choice.py": "46f314ea7c5de4cb625fcbbb130ac4965644b9169260e1e9a9a2ef8b39b19031",
+        "tests/test_multimodal.py": "fca6d89329b2f4b8cffdaf516d0ae917dae438f2bfdd9e514a8b235a8850cb40",
         "tests/test_notes.py": "1efd0e20a4a0eeb350a490df69e541092bec5450bb69475e9d4dfdb65c800aec",
         "tests/test_pack.py": "a8f448167ec331c67298469fc81e54eba33c2426afd32b0b5a2ae3882f99f93e",
         "tests/test_read_transactions.py": "e77b55080d6075186f4c184c3c12b0a5ea59b035f437c720c3bea6a408549ac5",
         "tests/test_report_build.py": "ddd67b61b13d81ff22197eb6856841bd1c733c7914f1e7d613a3f1f77c21930b",
         "tests/test_report_grammar.py": "7639ed81002ec56b29f24f4116e828c6674ecb95f053aa4b8b02f44440d7d437",
+        "tests/test_report_jobs.py": "5d74bc0544ab066933609a1e345f71491ff8bcc8ca9e5a12a76203460a269c21",
         "tests/test_report_stage.py": "5e6c5d22cda11d0773a02feb759f8b49384e961a15ca71ea3c93b546509ccbd0",
         "tests/test_report_template.py": "aae59176929ba959886100b9e0c316c0549edb31d46f39fd65cf2d6f9c2fc1df",
+        "tests/test_screening.py": "9fb38422e61893970ec7088a53a1595973436a0cc5598e05bbea8a1cc8f17d4a",
         "tests/test_slides.py": "8a9723cc29b30e934577b490d9d2990c227c1fc29b59a284dda700b18abe5724",
+        "tests/test_structured_tasks.py": "1c80d138bc9225b9f9f3ee0b896dfa1511b2684fa6ff9d07f5fc42aa94fb96c8",
         "tests/test_summarize_steps.py": "a5dd1d0f7bc6685f03dbdd30f5462330f03105cb3587262df956801de5fdf12a",
+        "tests/test_summary_v3.py": "65c05a2aecb3625e9843352cb020642e2746c5650308e6c6a2ba258d686c4763",
         "tests/test_text_and_titles.py": "d8f5b9a078966f3753117c0b33898d1253b6522a33e31d1190b61ca8a3aa9a28",
         "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9",
-        "tests/test_verify.py": "fc8ac479e79d06b4e5589140ea2563ecf82460f1df637e72db838510e043b0a8"
-      }
-    },
-    "acceptance": {
-      "path": "docs/acceptance.md",
-      "documentKind": "runbook",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "symptoms": "Симптомы и задачи",
-        "prerequisites": "Подготовка",
-        "procedure": "Порядок действий",
-        "verification": "Проверка результата",
-        "rollback": "Откат",
-        "escalation": "Диагностика и обращение за помощью",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
+        "tests/test_verify.py": "fc8ac479e79d06b4e5589140ea2563ecf82460f1df637e72db838510e043b0a8",
+        "tests/workflow_support.py": "fba4753928192d993a274088b4d1ff67dd2c8f9566b42687d843fec9154e2058"
       },
       "sourcePatterns": [
-        "docs/benchmarks/2026-11-14-redesign.md",
-        "tests/test_upgrade.py",
-        "scripts/doctor.sh",
-        "compose.yaml"
-      ],
-      "relatedDocuments": [
-        "offline",
-        "research",
-        "testing"
-      ],
-      "sourceHashes": {
-        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
-        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
-        "scripts/doctor.sh": "8bb48682f1779b3423544ff0322e24950a79b732ad2343cc4cff1a971fad4032",
-        "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9"
-      }
-    },
-    "research": {
-      "path": "docs/research.md",
-      "documentKind": "reference",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "reference": "Справочные сведения",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "src/rapporteur/preparation.py",
-        "src/rapporteur/summarize/verify.py",
-        "src/rapporteur/departments.py",
-        "docs/benchmarks/2026-11-14-redesign.md",
-        "tests/fictional_talk.py"
-      ],
-      "relatedDocuments": [
-        "facts",
-        "testing",
-        "acceptance"
-      ],
-      "sourceHashes": {
-        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
-        "src/rapporteur/departments.py": "43a6ac0790221fe9c8c81aa5d69a2a12e8f8f03d5258b8af705a393d8bcdcd84",
-        "src/rapporteur/preparation.py": "2c17273795e8f8dc04da3f6abcec48e7931fe6c5e7f8d1d5ddca849f3c02326a",
-        "src/rapporteur/summarize/verify.py": "9b58621a39fe9ab1e05f5864190b174ac22640fd895f37824a25b525bc463a43",
-        "tests/fictional_talk.py": "48951bd7bbbc178e7b6a115ce7338e6ffbcc93195d434e231af7a8a0d0b5ad16"
-      }
-    },
-    "decisions.index": {
-      "path": "docs/adr/index.md",
-      "documentKind": "kind-index",
-      "sections": {
-        "coverage": "Содержание документа",
-        "relatedDocumentation": "Связанные документы"
-      },
-      "sourcePatterns": [],
-      "relatedDocuments": [],
-      "sourceHashes": {}
-    },
-    "readme": {
-      "path": "README.md",
-      "documentKind": "project-readme",
-      "sections": {
-        "coverage": "Содержание документа",
-        "status": "Состояние проекта",
-        "quickStart": "Быстрый запуск",
-        "activeFunctionality": "Доступные функции",
-        "architecture": "Устройство приложения",
-        "technologies": "Технологии",
-        "structure": "Структура репозитория",
-        "configuration": "Настройка",
-        "tests": "Проверки",
-        "plannedWork": "Планируемые работы",
-        "documentation": "Документация",
-        "license": "Лицензии",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "pyproject.toml",
+        "tests/**",
+        "frontend/src/**/*.test.*",
         "Makefile",
-        "compose.yaml",
         "docs/benchmarks/2026-11-14-redesign.md"
-      ],
-      "relatedDocuments": [
-        "documentation.index",
-        "development"
-      ],
-      "sourceHashes": {
-        "Makefile": "d2a11f311eb5eff1eb4656cdafd5b295314eaddcb789771fe2ef569713f6209a",
-        "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
-        "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
-        "pyproject.toml": "7a76b2ab0a6efac1fb65daf19bdcd414592f0378cc7432abab46f8a97af9c56b"
-      }
-    },
-    "documentation.index": {
-      "path": "docs/index.md",
-      "documentKind": "documentation-index",
-      "sections": {
-        "coverage": "Содержание документа",
-        "gettingStarted": "С чего начать",
-        "areas": "Разделы документации",
-        "flows": "Основные потоки",
-        "indexStatus": "Актуальность документации"
-      },
-      "sourcePatterns": [],
-      "relatedDocuments": [],
-      "sourceHashes": {}
+      ]
     },
     "traceability": {
-      "path": "docs/traceability.md",
       "documentKind": "reference",
-      "sections": {
-        "coverage": "Содержание документа",
-        "context": "Контекст",
-        "reference": "Справочные сведения",
-        "relatedDocumentation": "Связанные документы",
-        "sources": "Источники"
-      },
-      "sourcePatterns": [
-        "src/rapporteur/**",
-        "frontend/src/**",
-        "tests/**",
-        "Makefile",
-        "compose.yaml",
-        "scripts/**"
-      ],
+      "path": "docs/traceability.md",
       "relatedDocuments": [
         "api",
         "workflow",
         "testing"
       ],
+      "sections": {
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "reference": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u044b\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
+      },
       "sourceHashes": {
-        "Makefile": "d2a11f311eb5eff1eb4656cdafd5b295314eaddcb789771fe2ef569713f6209a",
+        "Makefile": "42eb7b26b5ca7d0f666538fcdabb71f50eb74f8d6cf08768f6c4ca73e6b870f1",
         "compose.yaml": "e5cbd331df1c670f0ee0064d9e4096f043f9b15d3f5cd6dc4bb9e47545f6bd2c",
-        "frontend/src/App.test.tsx": "651aee5506d1858da758a3277f0363b0bba60e98ef7d0f90166efa382d30642c",
+        "frontend/src/App.test.tsx": "3bf7154c0c8c4cb5640dfb9b91488d1673ff2fdc5d78e609bf13e105b027e801",
         "frontend/src/App.tsx": "36834bd42d0773a7be881152a2678e472f7a7e125e0d67b82152db125b09a46e",
         "frontend/src/Departments.test.tsx": "46795ea2b07ae06d63d502e79ca8eb0ef2b698e1c031c29feafef862c733ecaf",
         "frontend/src/Departments.tsx": "920faa5b574a40ff9e05240e98c91289383edad24212f7343c046b5132bb4cab",
         "frontend/src/Home.tsx": "b963ccdd6d95f3dc0b856abbfcf454442a818808ea615fd8ee907f99991ed56a",
+        "frontend/src/Interest.test.tsx": "4ec9fafc6abd29ae8737ff1d622349dca0906b33f857d8a90f906080c45b409d",
+        "frontend/src/Interest.tsx": "52163cc1bc79aa53e97173ae3e910daefcafca27cea33320ba4f69e938fb37e4",
         "frontend/src/LegacyTalks.tsx": "4bcd23d1c2b67fd0794ce0e549169e6cf472c6bdbbaf5e50ef759a278603c92e",
-        "frontend/src/Materials.tsx": "49f8243336c560fff69048cb512999ef818d7168b18588a139c4a6dd70aa1812",
-        "frontend/src/Preparation.tsx": "ae06070fd7ea0a611e76bd3702b5e2a73cbb410ba2ffcefb621765d9cc6d3f97",
-        "frontend/src/Processing.tsx": "35573326f2c3b943d00465e49aa761be5d20989bfe000a0793aab56aaae42f85",
-        "frontend/src/ReportPanel.test.tsx": "134bab15ada2603d689b361f3e47ce583af0d7318506a56f87e937a352aafe5f",
-        "frontend/src/ReportPanel.tsx": "69d73ea98201807c415a8319580f4db396f46d874f43adfa767388a7ecb7b40b",
+        "frontend/src/Materials.tsx": "93c10aeed785261f8ec3276029f47eaa6f185c11c7359ea2e22b7d1ead236361",
+        "frontend/src/Preparation.tsx": "33076f66b7d6c88c6bfc3ce9a55e8d5a8732657977f6ab844223f56890baff6f",
+        "frontend/src/Processing.tsx": "1a2275b61611f35c0e21c6eb8561d4b96f0267271538bd4bc51b2fff91caba44",
+        "frontend/src/ReportPanel.test.tsx": "fb61f94e391fea88ce254589a0fec8a0374e7e60a96d30be4e2fbabc31aca466",
+        "frontend/src/ReportPanel.tsx": "23efc2b3b837a84fb0d864ed9fe6123768b76fa6f71a71ad3573d91ee0814102",
         "frontend/src/Settings.test.tsx": "6b82dbf91c7a952432d5c24360bcf422f6c903e1084a069162f98a0efbf63a83",
         "frontend/src/Settings.tsx": "fe49dbb197c54fd45e4e5b33c53e4f645d52edabb0a6fd58a7d3017282a71d47",
         "frontend/src/SummaryReview.test.tsx": "28e301c0be2cd9d952aa278be79108a72b38eeb0056ad8b595a59c74fbe04c1a",
-        "frontend/src/SummaryReview.tsx": "cbdd4c5d64ba37558145044ddcd623ba56faa39ad8e861ef57f1b9def614cda1",
+        "frontend/src/SummaryReview.tsx": "f81fa01de90df688d5ce1b813f20af2f50beb6a410f71dfcd48414ac355b8e90",
         "frontend/src/Workflow.test.tsx": "2fb0b2835d253ffd831a0360016c999a7eba852121df20c4428ea23d346147df",
-        "frontend/src/WorkflowPages.test.tsx": "21e8b341fa057a2ba98258787bafdb50c6fcdb022614462ce7c058c06d7bcc53",
-        "frontend/src/api.ts": "821385c992fbf8f34b014a50ed88369b476a2104ade2648ddef97d89fdcf4d23",
+        "frontend/src/WorkflowPages.test.tsx": "133d8229b39e0277d22c5de42108726e40218bb1044f7d6658b66b03c490a61d",
+        "frontend/src/api.ts": "632828e04fe261fa103d0590935e1080dab53cae09fbc43964c6f08c2cce6ca8",
         "frontend/src/conferenceTypes.ts": "c243efc72823f913d8f77759238ad5b48c43e21e49133d3ca2b94419b8bb7e04",
         "frontend/src/main.tsx": "bab89240a1dfb8990b4b8378d7ff9b896a718da3c93d973db003fd5e3fcb964d",
         "frontend/src/materialLabels.ts": "234a83775b16a8b16b970af0e20f8fd001d78043788808e64b3fb3266fe98872",
         "frontend/src/materialTypes.ts": "0806aee5977a0c2a66ff62d2b8122430599a1d6957e4280c22be02e22d61eb7d",
         "frontend/src/status.ts": "8ac9fe02d76e4069ad2ad57f54b0333368db47fb126d81d2cb950e64778ecfa2",
-        "frontend/src/styles.css": "b50897aa32e7f3b2eccfb529c66c8b0996c1b93e16d51299ea1529eac9551eac",
-        "frontend/src/talkTypes.ts": "2e2c2912f92c736a91efbfbcd806510986aa28780b7290dd56e6979bbf847a32",
+        "frontend/src/styles.css": "f5055981bee3bc521ce69c180a7891e197cdd2cfb2b02cd00c29993fb9f00a65",
+        "frontend/src/talkTypes.ts": "9577180522b68359f6aed3ed5e56bf63dec018897838896f4f4a430680d3e606",
         "frontend/src/theme.ts": "9dc10157ea3bc9866a5fb31d33c165ffb854740988609f6cf776ec87632e11de",
         "frontend/src/useResource.test.tsx": "1ae1149ead8bee466b1620cf0b40401d6174fcf084c4fb738ce90ff45fd91169",
         "frontend/src/useResource.ts": "63cbcaea4a9feb5475454830b061313a7288bd180f4bde1a800c571e68af2629",
@@ -1297,13 +1167,13 @@
         "src/rapporteur/api/conferences.py": "b1a55533c81e6e0243e32735db3265f34a7667c1de8e2f2f6e84bc34a69070a3",
         "src/rapporteur/api/departments.py": "3b2736b089987f1d372e99f576c7cd2d1056c678aada7051a6f1397935f5a792",
         "src/rapporteur/api/dependencies.py": "cc43d72ca058c9a876b1a1c8ed881927650b6ac80a33fd21e7a4e508f9270e66",
-        "src/rapporteur/api/files.py": "70214033089bd5767b43abe877733e0b8e9c34ec6dfb5bd8b9a7d43467384914",
-        "src/rapporteur/api/reports.py": "035c65580a16652f5129df20b55c1f36affff593690ece9b1330d382f931fe52",
+        "src/rapporteur/api/files.py": "56f1ce0af042bdf3b640c9be342930f8538e489db9857d9275e398ff85f32723",
+        "src/rapporteur/api/reports.py": "973e24b507d17c3a54b4a2e61143630a182a92bfe5eaee538cc7522d8de668f4",
         "src/rapporteur/api/summaries.py": "03acb9bc0fec6f6776fdf8fe48f5b2657c10558290825b89cb7745343f5fe580",
         "src/rapporteur/api/system.py": "4f23ab0125ee070e8ea6e251e5d0c613c55de3583103f46614b96f9e90ae8fb1",
         "src/rapporteur/api/talks.py": "1c30580407f32143c4fb7a325e5a4a0b800297de884928d7ec61ab3dc5149f37",
-        "src/rapporteur/api/workflow.py": "2de71b6b14834fc6db5535d62ac0f0c5335cc7512bd66405a1e73ecbbfba4b51",
-        "src/rapporteur/app.py": "9623136481e478e17beb9cd1ea5ce39cc3145f0ef4ad9201e890f59cbb9fc915",
+        "src/rapporteur/api/workflow.py": "dbee119ae0935e8f319fbe324af1c92751574860f583f60bf51116e0bf338867",
+        "src/rapporteur/app.py": "d8a5107d13a1a9da1d9fd7f20f7e4de94e89e4f1bdb0ea0d6c043f4ebfb2acb1",
         "src/rapporteur/asr_service.py": "e20263fda719ec802d1599fbd8a07dba8f22c5415ad21840c7827020ee9a4753",
         "src/rapporteur/bundle.py": "9692b641f3de9ce431eb006fe14d9929d0fc477baf2c06c00cd408bd3b0dc1d0",
         "src/rapporteur/contracts/__init__.py": "9ee2eeb8dcdd4b66ddba7a7e161a0327f61de3bb280ddbecf0e192dc7ed2e642",
@@ -1311,14 +1181,14 @@
         "src/rapporteur/contracts/base.py": "b0e8dd1c9b4f90bcd43229e952c1480590ec8915eb1960da393a4746e7f5165b",
         "src/rapporteur/contracts/claims.py": "33639728043e6b067f4aa7e4ed755fa189ac1793361561c4afc81508856372f7",
         "src/rapporteur/contracts/entities.py": "eb6d7aff2fea6086b5f8be7ff7538136def8def67095dcdab92c34df992774e0",
-        "src/rapporteur/contracts/enums.py": "2c1e8423ee81b280f2c04aae64e8fe6a0f4ed64dd039a87ac999133e1b471c40",
+        "src/rapporteur/contracts/enums.py": "d6c97ad8d9ff805419016421288e433c715b7bab042b7ca2faaf2ed49c3422c3",
         "src/rapporteur/contracts/fragments.py": "a69d55b3c80d76a99dd7600de60c9d8568629a78b0828f589db1fa2e5914648d",
         "src/rapporteur/contracts/ids.py": "ca23206eb63253e1de70d6b0eb7fbdee290d6d6add077799ec4b08b24e2f14f1",
         "src/rapporteur/contracts/registry.py": "09d3910677370a0d3ac62313be73416891d3411814e1aa05559abbb469f94c92",
         "src/rapporteur/contracts/reports.py": "3eebeac3c8f4dc7eb6e3279add83d7049f8445b79aa1f66ade7133f6ffd34427",
-        "src/rapporteur/db.py": "d4698967282c6199dbb0dd9e4f96a54315f33a9c3c9b46f3a6f0bc1c8492f3be",
-        "src/rapporteur/departments.py": "43a6ac0790221fe9c8c81aa5d69a2a12e8f8f03d5258b8af705a393d8bcdcd84",
-        "src/rapporteur/errors.py": "6764161a9f45d6b4a0161f396de259a850797242db531cbbe67bbe12ffb3cb48",
+        "src/rapporteur/db.py": "80f71c816e5e01a8a3a826c565fec81923d65b8262b86281e24119f06491cab3",
+        "src/rapporteur/departments.py": "691f5745cfb3c29b21662447e0da87f704404abe7d93f4b012040619a3cb71cf",
+        "src/rapporteur/errors.py": "587e9a0675fbaa3e2cf51d5651b99741cc7d7f15d4b2bbb784fc934080b68fad",
         "src/rapporteur/ingest/__init__.py": "4d95822a741353fa4c18471b35ccbc5250fe86ba428af6348fb9757e42be564e",
         "src/rapporteur/ingest/detect.py": "8dc05dbbb0b5e87f9e5c7a955f2d0bf73d21f1fd0493613214d1966f25ebba84",
         "src/rapporteur/ingest/dictionary.py": "4547f45c5d946b5c2eef0b7c39203795900f74291ae819e43f9357ceecff211d",
@@ -1336,31 +1206,33 @@
         "src/rapporteur/llm/profiles.py": "779b0d21efd7d829ba667fad7753c9a992082120cb5c762b5ec971a1c5de0257",
         "src/rapporteur/llm/prompts.py": "2c951c0b13817d9c6795f568f3eb5a1b96714072d634550c3acb0e0d563035ab",
         "src/rapporteur/llm/structured.py": "77e29aa46864c17dc62a5db56f8ab0ffa20f353b2f2e5eb2c876bb9cc969936b",
-        "src/rapporteur/llm/tasks.py": "32e883682d2cde899a66935caf68db9f12c63e58340f519b8bf48ce58e7038ed",
+        "src/rapporteur/llm/tasks.py": "10076c7f91fb81286b371e4d2de7eefdefc025d5ec4ac28c9165343613f912b8",
         "src/rapporteur/materials.py": "f2330f2e2d2fadeb21441ca0bf6ef520490add71689d6bdb2332834763494659",
         "src/rapporteur/model_choice.py": "ba0b117880da63525f2986ce64dad8b5f8ffeefd377391d87f85cb7c3ffc5457",
         "src/rapporteur/office.py": "30537ebd1fbdc464ac01123d627e6752f9b9c341c8380b63e41adab8ac5ccb13",
         "src/rapporteur/offline_models.py": "d4ec2b20efb7b6040e651128366f0c087d7b528e20b112ebd3404818be41a9c3",
-        "src/rapporteur/preparation.py": "2c17273795e8f8dc04da3f6abcec48e7931fe6c5e7f8d1d5ddca849f3c02326a",
-        "src/rapporteur/processing.py": "a2b30432f1bd97029c2fdeec93fba5e75b5e96a58ede82b1e4061f5e46f3068c",
+        "src/rapporteur/preparation.py": "56282827087f0903cdcf5c6b99387965aa2ef7731310dedd18808b3c88825f55",
+        "src/rapporteur/processing.py": "2b90e5667dae37c46e04149e72c7ff82827b5f0e70264351922de486d0f03548",
         "src/rapporteur/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "src/rapporteur/report/__init__.py": "9cb448bbc4cb6c616fc44429f8673136dc108101bbe608fcbd933c4a9179a9f1",
-        "src/rapporteur/report/assemble.py": "3bf5588de4d64aa59cb81a5f8ad67f6c73b035e3e7d952b71387ef59d08989c1",
+        "src/rapporteur/report/assemble.py": "cd4f33d6a25f951d670ce09a9e37a4a7242d79cda93c85208b5d9a4c96e180e0",
         "src/rapporteur/report/build.py": "7149b9135fbf2c8f04fa1a26d4858f65076bff18ceea3be73ac2cf584ff14cb2",
-        "src/rapporteur/report/export.py": "26eaaca0c67f41e582deb93949b798e7f3cca907e58188dfcea1be0e70023d62",
+        "src/rapporteur/report/export.py": "50320919ed244629aa5dac970fad405faa5d75964469d091c45b93b08c6906ef",
         "src/rapporteur/report/grammar.py": "99d922abc8603ae93f5d7d2baebdbdf5a1477f6e2ee8851887b1de8f3e33a77c",
         "src/rapporteur/report/template.py": "4df94c995dd3543bce2815785f11caadd6a84af18aa77400eaf570ae1addab81",
-        "src/rapporteur/reports.py": "467a5efd71bfe2a84903bbb36bc4cb49f7910e2079ab396e7c9af34d7c67f67c",
+        "src/rapporteur/report_jobs.py": "454d6a3ac6b1baede4703d234d03c3c631b5900fda0e657ce48d1a5389e1a08f",
+        "src/rapporteur/reports.py": "fcd24dec64d313b61d1eb687bfdeb50ef97e8d339ceadbfb164e59dea99de91e",
+        "src/rapporteur/screening.py": "d6ae5d01d1c84824ac67e24b548d5908117d31b5ac22d4396b604eed8c2c642e",
         "src/rapporteur/settings.py": "04c92fe44addefcf7de30d64eb9670f4b6eba08da8066de0b452182686dcf7e1",
         "src/rapporteur/storage.py": "aa9b53bba8719aa64f1def335894d95c49f2b8c5dc98fe12135aa94488527eac",
         "src/rapporteur/summaries.py": "5a0d67b8cdc6537b1feb2a1286f14d2dddc8966c95b0e85147785b75e4d6d201",
         "src/rapporteur/summarize/__init__.py": "7b3580e64b3eed5ec8c643530d7714044386c16d1a1ee258ac9a3213664f48e9",
         "src/rapporteur/summarize/checks.py": "343b801ba4756c5a63f3f1abba70daea689b32dec7a39e290d0d29a926ddc74f",
-        "src/rapporteur/summarize/facts.py": "5c843fa2b079e8b1034ea3377a20d22aa6ec7ba37b80ec600e5220b8cc0c4536",
-        "src/rapporteur/summarize/grounding.py": "f0e51979bebaa3b939184e8e1b08563838595573672b900c6f6a930d19c0652a",
+        "src/rapporteur/summarize/facts.py": "f6abe5a3de5e11d8b08f207eed4c6db7c517778e4e2fd493106d2ef25ee74872",
+        "src/rapporteur/summarize/grounding.py": "d2e4ce266f39377cf3fa2cfb3356f773af2ce42d9ed2b5a9a6f54e8f8a51b835",
         "src/rapporteur/summarize/pack.py": "ec1f37c0b24b8ad869d8c5a9b6dec21948176245f9ef6b8851f1574d10e179ee",
         "src/rapporteur/summarize/quotes.py": "0c254e97557c3206d519328b35761e7d6c2d80efce346e933d12b30539fc5914",
-        "src/rapporteur/summarize/summary.py": "ebc70cabd8220481af67a4463bea9289a0ecd99d3221c5f8502f40df3e88f1a0",
+        "src/rapporteur/summarize/summary.py": "eac5e4042e8b65511281ee858e9e2407e8fce2947516a3eba96dc6f588f581ec",
         "src/rapporteur/summarize/verify.py": "9b58621a39fe9ab1e05f5864190b174ac22640fd895f37824a25b525bc463a43",
         "src/rapporteur/text.py": "9fd47e1a4f4c430ce111facd0dec71bcdf17e379e74d7caa8d3db6cfa2a5af7f",
         "tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -1371,309 +1243,542 @@
         "tests/fixtures/legacy-installation.tar.gz": "1fb2fcc74a3ec2359148364ba903767692652956476f22677f596e68068c02a3",
         "tests/fixtures/starter_expected.txt": "43987ed182daa2cceca4436cf42ca58d976d07c41243742fa53b95fadf07353d",
         "tests/fixtures/summary.json": "77e83b852f5cb49ee58d1128b612dde8540ea5b93ffd7fbbfa426ff9c1c2e8e1",
-        "tests/test_app.py": "f6872cbe51cc8fa0bcd4cdaab004281a6ce604b00930d44eb76e8f6eae79c3cb",
+        "tests/test_app.py": "f76239a3d18ac5d9420c550d74fb27335656295c43bf1f21a4dd77c934736a40",
         "tests/test_contracts.py": "55ac7ce90e7e32f002c5c83e7c9e8936851feb2c4b41d8aefc301d7c24e59f67",
-        "tests/test_deployment.py": "cf7b9601e73697f8409661a463bada85a300841b475d5d7ee985b69904844bd1",
-        "tests/test_grounded_summary.py": "e7736db1a9a33dcbdf9642f8ea117214f1ceadadab021d5ac6c58d2e7809662f",
+        "tests/test_deployment.py": "366b463df38495d5aff76f4b733d688dd6048a8985a5dd1ad539619cdc93d6e1",
+        "tests/test_grounded_summary.py": "1c1ca4e441d2bd077b1188c2b2f45abcf9f98fdb11edd8b89b237719babe8f29",
         "tests/test_llm.py": "643a936e2657d7b0b68a194684f139b774908d06158df3f2c530782d81ecb6f7",
-        "tests/test_model_choice.py": "f95c309b79b5b647ed8d0b69b459e62b7e80b86525b1e1d85d998b98dd220672",
-        "tests/test_multimodal.py": "5da83602d62561bcf4cef1d06ea09e1ee6fdeafba236e8929177f4447d85c4ff",
+        "tests/test_model_choice.py": "46f314ea7c5de4cb625fcbbb130ac4965644b9169260e1e9a9a2ef8b39b19031",
+        "tests/test_multimodal.py": "fca6d89329b2f4b8cffdaf516d0ae917dae438f2bfdd9e514a8b235a8850cb40",
         "tests/test_notes.py": "1efd0e20a4a0eeb350a490df69e541092bec5450bb69475e9d4dfdb65c800aec",
         "tests/test_pack.py": "a8f448167ec331c67298469fc81e54eba33c2426afd32b0b5a2ae3882f99f93e",
         "tests/test_read_transactions.py": "e77b55080d6075186f4c184c3c12b0a5ea59b035f437c720c3bea6a408549ac5",
         "tests/test_report_build.py": "ddd67b61b13d81ff22197eb6856841bd1c733c7914f1e7d613a3f1f77c21930b",
         "tests/test_report_grammar.py": "7639ed81002ec56b29f24f4116e828c6674ecb95f053aa4b8b02f44440d7d437",
+        "tests/test_report_jobs.py": "5d74bc0544ab066933609a1e345f71491ff8bcc8ca9e5a12a76203460a269c21",
         "tests/test_report_stage.py": "5e6c5d22cda11d0773a02feb759f8b49384e961a15ca71ea3c93b546509ccbd0",
         "tests/test_report_template.py": "aae59176929ba959886100b9e0c316c0549edb31d46f39fd65cf2d6f9c2fc1df",
+        "tests/test_screening.py": "9fb38422e61893970ec7088a53a1595973436a0cc5598e05bbea8a1cc8f17d4a",
         "tests/test_slides.py": "8a9723cc29b30e934577b490d9d2990c227c1fc29b59a284dda700b18abe5724",
+        "tests/test_structured_tasks.py": "1c80d138bc9225b9f9f3ee0b896dfa1511b2684fa6ff9d07f5fc42aa94fb96c8",
         "tests/test_summarize_steps.py": "a5dd1d0f7bc6685f03dbdd30f5462330f03105cb3587262df956801de5fdf12a",
+        "tests/test_summary_v3.py": "65c05a2aecb3625e9843352cb020642e2746c5650308e6c6a2ba258d686c4763",
         "tests/test_text_and_titles.py": "d8f5b9a078966f3753117c0b33898d1253b6522a33e31d1190b61ca8a3aa9a28",
         "tests/test_upgrade.py": "7cfca3ce7f8f1a1f1b899ca3672e8254b2df8a7aae0f8dd8fe95feec126998d9",
-        "tests/test_verify.py": "fc8ac479e79d06b4e5589140ea2563ecf82460f1df637e72db838510e043b0a8"
-      }
-    },
-    "coverage": {
-      "path": "docs/_meta/coverage.md",
-      "documentKind": "kind-index",
-      "sections": {
-        "coverage": "Содержание документа",
-        "relatedDocumentation": "Связанные документы"
+        "tests/test_verify.py": "fc8ac479e79d06b4e5589140ea2563ecf82460f1df637e72db838510e043b0a8",
+        "tests/workflow_support.py": "fba4753928192d993a274088b4d1ff67dd2c8f9566b42687d843fec9154e2058"
       },
-      "sourcePatterns": [],
+      "sourcePatterns": [
+        "src/rapporteur/**",
+        "frontend/src/**",
+        "tests/**",
+        "Makefile",
+        "compose.yaml",
+        "scripts/**"
+      ]
+    },
+    "workflow": {
+      "documentKind": "topic",
+      "path": "docs/workflow.md",
       "relatedDocuments": [
-        "decisions.index"
+        "product",
+        "facts",
+        "recommendations"
       ],
-      "sourceHashes": {}
-    },
-    "legacy.docs.spec": {
-      "path": "docs/spec.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      "sections": {
+        "activeFunctionality": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0444\u0443\u043d\u043a\u0446\u0438\u0438",
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "howItWorks": "\u041a\u0430\u043a \u044d\u0442\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "responsibilities": "\u041e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u0441\u0442\u044c \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043e\u0432",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.licenses": {
-      "path": "docs/licenses.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": false
+      "sourceHashes": {
+        "docs/examples/department.txt": "658ff7639927c84426a93ef1f66c48575332eaa9d89308f14e502b18f5b1dd9f",
+        "docs/examples/talk.txt": "e518ab0ed5c03aa352da3bb651c52aab0cf32545f1d766860d30c85ac97b4a9e",
+        "frontend/src/Departments.tsx": "920faa5b574a40ff9e05240e98c91289383edad24212f7343c046b5132bb4cab",
+        "frontend/src/LegacyTalks.tsx": "4bcd23d1c2b67fd0794ce0e549169e6cf472c6bdbbaf5e50ef759a278603c92e",
+        "frontend/src/Materials.tsx": "93c10aeed785261f8ec3276029f47eaa6f185c11c7359ea2e22b7d1ead236361",
+        "frontend/src/Preparation.tsx": "33076f66b7d6c88c6bfc3ce9a55e8d5a8732657977f6ab844223f56890baff6f",
+        "frontend/src/ReportPanel.tsx": "23efc2b3b837a84fb0d864ed9fe6123768b76fa6f71a71ad3573d91ee0814102",
+        "frontend/src/SummaryReview.tsx": "f81fa01de90df688d5ce1b813f20af2f50beb6a410f71dfcd48414ac355b8e90",
+        "src/rapporteur/report/assemble.py": "cd4f33d6a25f951d670ce09a9e37a4a7242d79cda93c85208b5d9a4c96e180e0",
+        "tests/fictional_talk.py": "48951bd7bbbc178e7b6a115ce7338e6ffbcc93195d434e231af7a8a0d0b5ad16",
+        "tests/test_multimodal.py": "fca6d89329b2f4b8cffdaf516d0ae917dae438f2bfdd9e514a8b235a8850cb40"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.backlog": {
-      "path": "docs/backlog.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      "sourcePatterns": [
+        "frontend/src/Materials.tsx",
+        "frontend/src/Preparation.tsx",
+        "frontend/src/LegacyTalks.tsx",
+        "frontend/src/SummaryReview.tsx",
+        "frontend/src/Departments.tsx",
+        "frontend/src/ReportPanel.tsx",
+        "tests/fictional_talk.py",
+        "src/rapporteur/report/assemble.py",
+        "docs/examples/*.txt",
+        "tests/test_multimodal.py"
+      ]
+    }
+  },
+  "schemaVersion": 1,
+  "settings": {
+    "documentationLanguage": "ru",
+    "ignorePatterns": [
+      "docs/_archive/**",
+      "docs/_analysis/**",
+      "docs/superpowers/**",
+      ".local/**",
+      "bundle/**",
+      "models/**",
+      "storage/**",
+      "frontend/node_modules/**",
+      "output/**"
+    ],
+    "languageDecisionSource": "user"
+  },
+  "taxonomy": {
+    "documentationTopics": [
+      {
+        "candidatePaths": [
+          "src/rapporteur/api/conferences.py",
+          "src/rapporteur/api/files.py",
+          "src/rapporteur/preparation.py",
+          "src/rapporteur/processing.py",
+          "src/rapporteur/summaries.py",
+          "src/rapporteur/departments.py",
+          "src/rapporteur/reports.py",
+          "frontend/src/App.tsx"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "product"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.git": {
-      "path": "docs/git.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": false
+      {
+        "candidatePaths": [
+          "src/rapporteur/app.py",
+          "src/rapporteur/api/dependencies.py",
+          "src/rapporteur/processing.py",
+          "src/rapporteur/db.py",
+          "compose.yaml",
+          "Dockerfile",
+          "docs/adr/ADR-014-simplification.md"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "architecture"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.benchmarks.p1-05-bindings": {
-      "path": "docs/benchmarks/p1-05-bindings.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/api/files.py",
+          "src/rapporteur/ingest/inventory.py",
+          "src/rapporteur/ingest/documents.py",
+          "src/rapporteur/ingest/slides.py",
+          "src/rapporteur/preparation.py",
+          "src/rapporteur/asr_service.py",
+          "tests/test_multimodal.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "processing"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.benchmarks.2026-11-17-pipeline": {
-      "path": "docs/benchmarks/2026-11-17-pipeline.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/summarize/pack.py",
+          "src/rapporteur/summarize/facts.py",
+          "src/rapporteur/summarize/quotes.py",
+          "src/rapporteur/summarize/verify.py",
+          "src/rapporteur/summarize/summary.py",
+          "src/rapporteur/summarize/checks.py",
+          "src/rapporteur/llm/structured.py",
+          "src/rapporteur/contracts/claims.py",
+          "tests/fictional_talk.py",
+          "tests/test_verify.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "facts"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.benchmarks.ollama-facts-schema-local": {
-      "path": "docs/benchmarks/ollama-facts-schema-local.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/departments.py",
+          "src/rapporteur/api/departments.py",
+          "src/rapporteur/reports.py",
+          "src/rapporteur/report/assemble.py",
+          "src/rapporteur/contracts/reports.py",
+          "src/rapporteur/report/build.py",
+          "src/rapporteur/report/export.py",
+          "templates/starter/variables.yaml",
+          "tests/test_report_stage.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "recommendations"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.benchmarks.llm-chain-local": {
-      "path": "docs/benchmarks/llm-chain-local.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/db.py",
+          "src/rapporteur/contracts/enums.py",
+          "src/rapporteur/contracts/ids.py",
+          "src/rapporteur/summarize/pack.py",
+          "src/rapporteur/storage.py",
+          "src/rapporteur/materials.py",
+          "src/rapporteur/summaries.py",
+          "src/rapporteur/departments.py",
+          "tests/test_upgrade.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "data"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.benchmarks.2026-11-14-redesign": {
-      "path": "docs/benchmarks/2026-11-14-redesign.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "frontend/src/**",
+          "frontend/package*.json",
+          "frontend/vite.config.ts",
+          "frontend/tsconfig.json",
+          "frontend/eslint.config.js",
+          "frontend/index.html",
+          "DESIGN.md"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "frontend"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.benchmarks.implementation-validation": {
-      "path": "docs/benchmarks/implementation-validation.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          ".env.example",
+          "compose.yaml",
+          "profiles.yaml",
+          "src/rapporteur/settings.py",
+          "src/rapporteur/model_choice.py",
+          "src/rapporteur/llm/profiles.py",
+          "src/rapporteur/llm/client.py",
+          "src/rapporteur/asr_service.py",
+          "src/rapporteur/ingest/limits.py",
+          "prompts/README.md",
+          "templates/README.md",
+          "prompts/**",
+          "templates/**"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "configuration"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-014-simplification": {
-      "path": "docs/adr/ADR-014-simplification.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/contracts/fragments.py",
+          "src/rapporteur/contracts/claims.py",
+          "src/rapporteur/contracts/artifacts.py",
+          "src/rapporteur/contracts/enums.py",
+          "src/rapporteur/contracts/reports.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "glossary"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-005-file-storage-and-cache": {
-      "path": "docs/adr/ADR-005-file-storage-and-cache.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "frontend/src/Materials.tsx",
+          "frontend/src/Preparation.tsx",
+          "frontend/src/LegacyTalks.tsx",
+          "frontend/src/SummaryReview.tsx",
+          "frontend/src/Departments.tsx",
+          "frontend/src/ReportPanel.tsx",
+          "tests/fictional_talk.py",
+          "src/rapporteur/report/assemble.py",
+          "docs/examples/*.txt",
+          "tests/test_multimodal.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "workflow"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-002-gpu-mode-and-models": {
-      "path": "docs/adr/ADR-002-gpu-mode-and-models.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "Makefile",
+          "compose.yaml",
+          "scripts/doctor.sh",
+          ".env.example",
+          "src/rapporteur/db.py",
+          "docs/benchmarks/2026-11-14-redesign.md"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "offline"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-003-evidence-contract": {
-      "path": "docs/adr/ADR-003-evidence-contract.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "compose.yaml",
+          "Makefile",
+          "src/rapporteur/llm/profiles.py",
+          "src/rapporteur/model_choice.py",
+          "src/rapporteur/llm/client.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "ollama"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-007-team-boundary": {
-      "path": "docs/adr/ADR-007-team-boundary.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/api/**",
+          "src/rapporteur/app.py",
+          "src/rapporteur/asr_service.py",
+          "src/rapporteur/contracts/**",
+          "src/rapporteur/errors.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "api"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-010-inference-server": {
-      "path": "docs/adr/ADR-010-inference-server.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "pyproject.toml",
+          "uv.lock",
+          "frontend/package.json",
+          "Dockerfile",
+          "Makefile",
+          "frontend/vite.config.ts",
+          "tests/test_upgrade.py",
+          ".dockerignore",
+          ".gitignore",
+          "CODEOWNERS",
+          "frontend/.gitignore"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "development"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-012-domain-api": {
-      "path": "docs/adr/ADR-012-domain-api.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "tests/**",
+          "frontend/src/**/*.test.*",
+          "Makefile",
+          "docs/benchmarks/2026-11-14-redesign.md"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "testing"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-004-postgres-queue": {
-      "path": "docs/adr/ADR-004-postgres-queue.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "docs/benchmarks/2026-11-14-redesign.md",
+          "tests/test_upgrade.py",
+          "scripts/doctor.sh",
+          "compose.yaml"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "acceptance"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.README": {
-      "path": "docs/adr/README.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/preparation.py",
+          "src/rapporteur/summarize/verify.py",
+          "src/rapporteur/departments.py",
+          "docs/benchmarks/2026-11-14-redesign.md",
+          "tests/fictional_talk.py"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "research"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-006-conference-and-report": {
-      "path": "docs/adr/ADR-006-conference-and-report.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "pyproject.toml",
+          "Makefile",
+          "compose.yaml",
+          "docs/benchmarks/2026-11-14-redesign.md"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "readme"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-009-stage-graph": {
-      "path": "docs/adr/ADR-009-stage-graph.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      {
+        "candidatePaths": [
+          "src/rapporteur/**",
+          "frontend/src/**",
+          "tests/**",
+          "Makefile",
+          "compose.yaml",
+          "scripts/**"
+        ],
+        "reason": "\u0421\u0430\u043c\u043e\u0441\u0442\u043e\u044f\u0442\u0435\u043b\u044c\u043d\u043e \u0441\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u0440\u0430\u0437\u0434\u0435\u043b \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0440\u0435\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u0438",
+        "sourceAreas": [
+          "backend",
+          "frontend",
+          "delivery",
+          "contracts",
+          "verification"
+        ],
+        "topic": "traceability"
+      }
+    ],
+    "sourceAreas": {
+      "backend": {
+        "candidatePaths": [
+          "src/rapporteur/**"
+        ],
+        "evidence": [
+          "pyproject.toml",
+          "src/rapporteur/app.py"
+        ],
+        "reason": "FastAPI, \u043f\u0440\u0435\u0434\u043c\u0435\u0442\u043d\u0430\u044f \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0430 \u0438 \u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-008-contract-amendments": {
-      "path": "docs/adr/ADR-008-contract-amendments.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      "contracts": {
+        "candidatePaths": [
+          "prompts/**",
+          "templates/**",
+          "profiles.yaml"
+        ],
+        "evidence": [
+          "profiles.yaml",
+          "prompts/README.md",
+          "templates/README.md"
+        ],
+        "reason": "\u041c\u043e\u0434\u0435\u043b\u044c\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u043d\u0438\u044f, \u043f\u0440\u043e\u0444\u0438\u043b\u0438 \u0438 \u0431\u043b\u0430\u043d\u043a"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-011-simplified-mvp": {
-      "path": "docs/adr/ADR-011-simplified-mvp.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      "delivery": {
+        "candidatePaths": [
+          "compose.yaml",
+          "Dockerfile",
+          "Makefile",
+          "scripts/**"
+        ],
+        "evidence": [
+          "compose.yaml",
+          "Makefile"
+        ],
+        "reason": "\u0422\u0440\u0438 runtime-\u0441\u0435\u0440\u0432\u0438\u0441\u0430 \u0438 \u043e\u0444\u043b\u0430\u0439\u043d-\u043f\u043e\u0441\u0442\u0430\u0432\u043a\u0430"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-001-stack": {
-      "path": "docs/adr/ADR-001-stack.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
+      "frontend": {
+        "candidatePaths": [
+          "frontend/src/**"
+        ],
+        "evidence": [
+          "frontend/package.json",
+          "frontend/src/App.tsx"
+        ],
+        "reason": "React-\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u043e\u0434\u043d\u043e\u0433\u043e \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430"
       },
-      "relatedDocuments": []
-    },
-    "legacy.docs.adr.ADR-013-summaries-in-platform": {
-      "path": "docs/adr/ADR-013-summaries-in-platform.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": true
-      },
-      "relatedDocuments": []
-    },
-    "legacy.docs.superpowers.plans.2026-11-14-workflow-redesign": {
-      "path": "docs/superpowers/plans/2026-11-14-workflow-redesign.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": false
-      },
-      "relatedDocuments": []
-    },
-    "legacy.DESIGN": {
-      "path": "DESIGN.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": false
-      },
-      "relatedDocuments": []
-    },
-    "legacy.PRODUCT": {
-      "path": "PRODUCT.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": false
-      },
-      "relatedDocuments": []
-    },
-    "legacy.prompts.README": {
-      "path": "prompts/README.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": false
-      },
-      "relatedDocuments": []
-    },
-    "legacy.templates.README": {
-      "path": "templates/README.md",
-      "sourcePatterns": [],
-      "sourceHashes": {},
-      "metadata": {
-        "historical": false
-      },
-      "relatedDocuments": []
+      "verification": {
+        "candidatePaths": [
+          "tests/**",
+          "frontend/src/**/*.test.*"
+        ],
+        "evidence": [
+          "tests/test_upgrade.py"
+        ],
+        "reason": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u0441\u043e\u0432\u043c\u0435\u0441\u0442\u0438\u043c\u043e\u0441\u0442\u0438 \u0438 \u043f\u043e\u0432\u0435\u0434\u0435\u043d\u0438\u044f"
+      }
     }
   }
 }

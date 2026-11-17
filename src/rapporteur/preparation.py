@@ -4,9 +4,10 @@ import base64
 import json
 import sqlite3
 import urllib.request
+from collections.abc import Iterator
 from itertools import pairwise
 from pathlib import PurePosixPath
-from typing import Self
+from typing import Annotated, Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -20,7 +21,20 @@ from rapporteur.llm.client import LlmClient
 from rapporteur.llm.tasks import json_task
 from rapporteur.storage import Storage, blob_key, cache_key
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
+AuthorName = Annotated[str, Field(min_length=1, max_length=200)]
+
+
+def candidate_windows(
+    candidates: list[dict[str, Any]], budget: int
+) -> Iterator[list[dict[str, Any]]]:
+    batch: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if batch and len(json.dumps([*batch, candidate], ensure_ascii=False)) > budget:
+            yield batch
+            batch = []
+        batch.append(candidate)
+    yield batch
 
 
 class Prepared(BaseModel):
@@ -36,7 +50,7 @@ class ASRSegment(BaseModel):
 
 
 class Visual(BaseModel):
-    description: str
+    description: str = Field(max_length=1500)
 
 
 class Link(BaseModel):
@@ -81,8 +95,8 @@ class ProposalWrite(BaseModel):
 
 class Boundary(BaseModel):
     index: int = Field(ge=0)
-    title: str = Field(min_length=1)
-    speakers: list[str] = Field(default_factory=list)
+    title: str = Field(min_length=1, max_length=1000)
+    speakers: list[AuthorName] = Field(default_factory=list, max_length=20)
 
 
 class Boundaries(BaseModel):
@@ -90,11 +104,34 @@ class Boundaries(BaseModel):
 
 
 class MaterialMatch(BaseModel):
-    title: str | None
-    speakers: list[str]
+    title: Annotated[str, Field(max_length=1000)] | None
+    speakers: list[AuthorName] = Field(max_length=20)
     talk_index: int | None = Field(ge=0)
     confidence: float = Field(ge=0, le=1)
-    reason: str
+    reason: str = Field(max_length=600)
+
+
+def transcript_windows(texts: list[str], budget: int) -> Iterator[list[tuple[int, str]]]:
+    """Budgeted overlapping windows retain absolute ASR indices, including split segments."""
+    width = max(1, (budget - 40) // 2)
+    parts = [
+        (i, text[start : start + width])
+        for i, text in enumerate(texts)
+        for start in range(0, len(text), width)
+    ]
+    start = 0
+    while start < len(parts):
+        end, size = start, 0
+        while end < len(parts) and end - start < 100:
+            added = len(parts[end][1]) + 20
+            if size + added > budget:
+                break
+            size += added
+            end += 1
+        yield parts[start:end]
+        if end == len(parts):
+            return
+        start = max(start + 1, end - 5)
 
 
 def prepared_key(file: db.Row, profile_revision: str) -> str:
@@ -223,6 +260,7 @@ def extract(
                         "Слайд " + str(number),
                         Visual,
                         (base64.b64encode(storage.get(image_key)).decode(),),
+                        task=f"Визуальный разбор {file['relative_path']}, страница {number}",
                     )
 
                 visual = storage.cached(visual_key, Visual, describe)
@@ -242,6 +280,9 @@ def extract(
 
 
 def queue(conn: sqlite3.Connection, conference_id: str) -> None:
+    from rapporteur.departments import require_regulations
+
+    require_regulations(conn)
     materials.require_conference(conn, conference_id)
     row = db.one(conn, "SELECT job FROM preparations WHERE conference_id = ?", conference_id)
     if row and row["job"] in ("queued", "running"):
@@ -415,11 +456,32 @@ def propose(
         time_starts = [f.locator.start_ms for f in fragments if isinstance(f.locator, TimeLocator)]
         boundaries = []
         # Overlap supplies context at a window boundary; deduplicate absolute starts.
-        for start in range(0, len(fragments), 100):
-            window = fragments[max(0, start - 5) : start + 100]
-            content = "\n".join(
-                f"{i + max(0, start - 5)}: {f.normalized_text}" for i, f in enumerate(window)
-            )
+        budget = max(
+            1000,
+            min(
+                16000,
+                (
+                    profile.generation.context_tokens
+                    - min(profile.generation.max_tokens, 6000)
+                    - 4000
+                )
+                * 2,
+            ),
+        )
+        for window in transcript_windows([f.normalized_text for f in fragments], budget):
+            indices = sorted({i for i, _ in window})
+            content = "\n".join(f"{i}: {text}" for i, text in window)
+            schema = Boundaries.model_json_schema()
+            schema["$defs"]["Boundary"]["properties"]["index"]["enum"] = indices
+            schema["properties"]["talks"]["maxItems"] = len(indices)
+
+            def check_boundaries(value: Boundaries, allowed: list[int] = indices) -> list[str]:
+                return (
+                    []
+                    if all(b.index in allowed for b in value.talks)
+                    else ["Начало доклада вне текущего окна"]
+                )
+
             found = json_task(
                 client,
                 profile,
@@ -429,10 +491,12 @@ def propose(
                 "Если начало доклада не видно, не выдумывай его. Тема по-русски.",
                 "Программа:\n" + program[:12000] + "\nСтенограмма:\n" + content,
                 Boundaries,
+                schema=schema,
+                task=f"Разбиение {file['relative_path']}, сегменты {indices[0]}–{indices[-1]}",
+                check=check_boundaries,
             )
             for boundary in found.talks:
-                if max(0, start - 5) <= boundary.index < min(len(fragments), start + 100):
-                    boundaries.append(boundary)
+                boundaries.append(boundary)
         starts = {b.index: b for b in boundaries}
         if fragments and not starts:
             starts[0] = Boundary(
@@ -499,30 +563,55 @@ def propose(
             ]
         )
         if known is None:
-            content = json.dumps(
-                {
-                    "program": program[:8000],
-                    "material": "\n".join(
-                        f.normalized_text for f in extracted[file["id"]].fragments
-                    )[:16000],
-                    "candidates": [
-                        {"index": i, "title": p.title, "speakers": [s.name for s in p.speakers]}
-                        for i, p in enumerate(proposed)
-                    ],
-                },
-                ensure_ascii=False,
+            budget = max(
+                4000,
+                min(
+                    16000,
+                    (
+                        profile.generation.context_tokens
+                        - min(profile.generation.max_tokens, 6000)
+                        - 4000
+                    ),
+                ),
             )
-            matched = json_task(
-                client,
-                profile,
-                "Определи тему и явно указанных авторов материала. "
-                "Если материал относится к одному из предложенных докладов, укажи "
-                "talk_index и уверенность. "
-                "При неоднозначности talk_index=null. Не придумывай фамилии. "
-                "reason объясняет основания.",
-                content,
-                MaterialMatch,
-            )
+            candidates = [
+                {"index": i, "title": p.title, "speakers": [s.name for s in p.speakers]}
+                for i, p in enumerate(proposed)
+            ]
+            matches = []
+            for batch in candidate_windows(candidates, budget // 2):
+                allowed = [item["index"] for item in batch]
+                content = json.dumps(
+                    {
+                        "program": program[: budget // 4],
+                        "material": "\n".join(
+                            f.normalized_text for f in extracted[file["id"]].fragments
+                        )[: budget // 2],
+                        "candidates": batch,
+                    },
+                    ensure_ascii=False,
+                )
+                schema = MaterialMatch.model_json_schema()
+                schema["properties"]["talk_index"] = {"enum": [None, *allowed]}
+
+                def check_match(value: MaterialMatch, ids: list[int] = allowed) -> list[str]:
+                    return [] if value.talk_index in (None, *ids) else ["Неизвестный доклад"]
+
+                matched_part = json_task(
+                    client,
+                    profile,
+                    "Определи тему и явно указанных авторов материала. "
+                    "Если материал относится к одному из предложенных докладов, укажи "
+                    "talk_index и уверенность. При неоднозначности talk_index=null. "
+                    "Не придумывай фамилии. reason объясняет основания.",
+                    content,
+                    MaterialMatch,
+                    schema=schema,
+                    task=f"Тема и авторы {file['relative_path']}",
+                    check=check_match,
+                )
+                matches.append(matched_part)
+            matched = max(matches, key=lambda value: value.confidence)
             title = matched.title or title
             speakers = [Speaker(name=name) for name in matched.speakers] or speakers
             if (

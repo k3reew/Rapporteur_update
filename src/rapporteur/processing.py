@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
-from rapporteur import db, departments, materials, model_choice, preparation
+from rapporteur import db, departments, materials, model_choice, preparation, report_jobs, screening
 from rapporteur.contracts import (
     FactsArtifact,
     ModelProfile,
@@ -28,7 +28,7 @@ from rapporteur.contracts import (
     can_transition,
 )
 from rapporteur.contracts.enums import FileKind, TalkStatus
-from rapporteur.errors import FailureCode, StageError
+from rapporteur.errors import FailureCode, StageError, UserError
 from rapporteur.ingest import notes as notes_parser
 from rapporteur.ingest import slides as slides_parser
 from rapporteur.ingest.limits import NotesConfig, PresentationConfig
@@ -51,10 +51,14 @@ ClientFactory = Callable[[ModelProfile], LlmClient]
 
 def enqueue(conn: sqlite3.Connection, talk_ids: list[str]) -> None:
     """Повторная постановка во время обработки допустима: доклад пройдёт цепочку ещё раз."""
-    conn.executemany(
-        "UPDATE talks SET job = 'queued', step = NULL, error = NULL, queued_at = ? WHERE id = ?",
-        [(db.now(), talk_id) for talk_id in talk_ids],
-    )
+    departments.require_regulations(conn)
+    for talk_id in talk_ids:
+        screening.queue(conn, talk_id)
+        eligible = screening.view(conn, talk_id)["eligible"]
+        conn.execute(
+            "UPDATE talks SET job=?, step=?, error=NULL, queued_at=? WHERE id=?",
+            ("queued" if eligible else None, None if eligible else "screening", db.now(), talk_id),
+        )
 
 
 def enqueue_ready(conn: sqlite3.Connection, conference_id: str) -> int:
@@ -98,6 +102,10 @@ class Processor:
         # Доклады, прерванные остановкой приложения, обрабатываются заново.
         with self.database.tx() as conn:
             conn.execute("UPDATE recommendation_jobs SET job='queued' WHERE job='running'")
+            conn.execute("UPDATE talk_screenings SET job='queued' WHERE job='running'")
+            conn.execute(
+                "UPDATE report_jobs SET status='queued',step='queued' WHERE status='running'"
+            )
             conn.execute("UPDATE preparations SET job = 'queued' WHERE job = 'running'")
             conn.execute("UPDATE talks SET job = 'queued', step = NULL WHERE job = 'running'")
         self._thread = threading.Thread(target=self._loop, name="processing", daemon=True)
@@ -125,10 +133,24 @@ class Processor:
 
     def run_once(self) -> bool:
         """Обрабатывает следующий доклад из очереди; False, если очередь пуста."""
+        if report_jobs.run_once(self.database, self.storage):
+            return True
         if self._prepare_once():
             return True
+        screened = screening.run_once(self.database, self.storage, self.client, self._screen_pack)
+        if screened is not None:
+            with self.database.tx() as conn:
+                if screening.view(conn, screened)["eligible"]:
+                    enqueue(conn, [screened])
+                elif error := screening.view(conn, screened)["error"]:
+                    conn.execute(
+                        "UPDATE talks SET job='failed',step='screening',error=? WHERE id=?",
+                        (error, screened),
+                    )
         talk = self._take()
         if talk is None:
+            if screened is not None:
+                return True
             return departments.run_once(self.database, self.client)
         log.info("Обработка доклада %s", talk.id)
         try:
@@ -145,32 +167,54 @@ class Processor:
             self._save(talk.id, summary, pack, talk.revision)
         return True
 
+    def _screen_pack(self, talk_id: str) -> TalkFragmentPack:
+        with self.database.read() as conn:
+            talk = self._load_talk(conn, talk_id)
+        return self._pack(talk)
+
+    def _load_talk(self, conn: sqlite3.Connection, talk_id: str) -> _Talk:
+        row = db.one(
+            conn,
+            "SELECT talks.id, talks.input_revision, sections.conference_id "
+            "FROM talks JOIN sections ON sections.id=talks.section_id WHERE talks.id=?",
+            talk_id,
+        )
+        if row is None:
+            raise ValueError("Доклад не найден")
+        files = conn.execute(
+            "SELECT files.*, NULL AS start_ms, NULL AS end_ms, NULL AS "
+            "page_start, NULL AS page_end "
+            "FROM files WHERE talk_id = ? AND confirmed = 1 "
+            "AND NOT EXISTS (SELECT 1 FROM material_links WHERE file_id=files.id) "
+            "UNION ALL SELECT files.*, material_links.start_ms, material_links.end_ms, "
+            "material_links.page_start, material_links.page_end FROM material_links "
+            "JOIN files ON files.id=material_links.file_id WHERE material_links.talk_id=? "
+            "ORDER BY relative_path",
+            (talk_id, talk_id),
+        ).fetchall()
+        return _Talk(row["id"], row["conference_id"], files, row["input_revision"])
+
     def _take(self) -> _Talk | None:
         with self.database.tx() as conn:
-            row = db.one(
-                conn,
-                "SELECT talks.id, talks.input_revision, sections.conference_id FROM talks "
-                "JOIN sections ON sections.id = talks.section_id "
-                "WHERE talks.job = 'queued' ORDER BY talks.queued_at LIMIT 1",
-            )
-            if row is None:
-                return None
-            conn.execute(
-                "UPDATE talks SET job = 'running', step = 'parse', error = NULL WHERE id = ?",
-                (row["id"],),
-            )
-            files = conn.execute(
-                "SELECT files.*, NULL AS start_ms, NULL AS end_ms, NULL AS "
-                "page_start, NULL AS page_end "
-                "FROM files WHERE talk_id = ? AND confirmed = 1 "
-                "AND NOT EXISTS (SELECT 1 FROM material_links WHERE file_id=files.id) "
-                "UNION ALL SELECT files.*, material_links.start_ms, material_links.end_ms, "
-                "material_links.page_start, material_links.page_end FROM material_links "
-                "JOIN files ON files.id=material_links.file_id WHERE material_links.talk_id=? "
-                "ORDER BY relative_path",
-                (row["id"], row["id"]),
+            rows = conn.execute(
+                "SELECT id FROM talks WHERE job='queued' ORDER BY queued_at"
             ).fetchall()
-        return _Talk(row["id"], row["conference_id"], files, row["input_revision"])
+            for row in rows:
+                if not screening.view(conn, row["id"])["eligible"]:
+                    try:
+                        enqueue(conn, [row["id"]])
+                    except UserError as error:
+                        conn.execute(
+                            "UPDATE talks SET job='failed',error=? WHERE id=?",
+                            (str(error), row["id"]),
+                        )
+                    continue
+                conn.execute(
+                    "UPDATE talks SET job='running',step='parse',error=NULL WHERE id=?",
+                    (row["id"],),
+                )
+                return self._load_talk(conn, row["id"])
+        return None
 
     def _step(self, talk_id: str, step: str) -> None:
         with self.database.tx() as conn:
@@ -291,6 +335,15 @@ class Processor:
             if row is None:
                 return False
             conference_id, version = row["conference_id"], row["version"]
+            try:
+                departments.require_regulations(conn)
+            except UserError as error:
+                conn.execute(
+                    "UPDATE preparations SET job='failed',error=? "
+                    "WHERE conference_id=? AND version=?",
+                    (error.message, conference_id, version),
+                )
+                return True
             conn.execute(
                 "UPDATE preparations SET job='running', error=NULL WHERE conference_id=?",
                 (conference_id,),

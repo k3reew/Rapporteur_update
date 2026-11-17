@@ -136,6 +136,8 @@ def build_report_input(
             )
             if not talk.title or not talk.speakers:
                 warnings.append(f"Уточните тему или автора: {_name(talk)}")
+            if summary.prompt_versions.get("summary") == "v3" and len(summary.sentences) < 6:
+                warnings.append(f"Короткая сводка: проверьте полноту источников — {_name(talk)}")
             if summary.status is SummaryStatus.NEEDS_ATTENTION:
                 warnings.append(f"Сводка не прошла проверки, нужна правка: {_name(talk)}")
             if talk.status is TalkStatus.STALE:
@@ -185,7 +187,13 @@ def _report_talk(sources: ReportSources, talk: Talk, title: str, summary: Summar
             _clean(person.affiliation) for person in speakers if person.affiliation
         ),
         status=talk.status,
-        summary=" ".join(line.text for line in summary.sentences),
+        summary=(
+            " ".join(line.text for line in summary.sentences[: (len(summary.sentences) + 1) // 2])
+            + "\n\n"
+            + " ".join(line.text for line in summary.sentences[(len(summary.sentences) + 1) // 2 :])
+            if summary.prompt_versions.get("summary") == "v3" and len(summary.sentences) >= 6
+            else " ".join(line.text for line in summary.sentences)
+        ),
         conclusions=[line.text for line in summary.conclusions],
     )
 

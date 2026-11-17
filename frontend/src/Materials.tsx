@@ -8,6 +8,8 @@ import { useUnsavedChanges } from './useUnsavedChanges';
 export function Materials({ conferenceId, onPrepared }: { conferenceId: string; onPrepared: () => void }) {
   const base = `/api/v1/conferences/${conferenceId}`;
   const { data: review, error, refresh } = useResource<Review>(`${base}/materials`);
+  const { data: departments, error: departmentError } = useResource<{ pages: { text: string }[] }[]>('/api/v1/departments');
+  const ready = departments?.some(dep => dep.pages.some(page => page.text.trim())) ?? false;
   const filesInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState('');
@@ -51,12 +53,14 @@ export function Materials({ conferenceId, onPrepared }: { conferenceId: string; 
   return <section className="workflow-page" aria-labelledby="materials-title" aria-busy={!!busy}>
     <h2 id="materials-title">Загрузите материалы конференции</h2>
     <p className="muted">Презентации, тексты выступлений, фото, аудио или видео.</p>
+    {departmentError && <p role="alert">{departmentError}</p>}
+    {departments && !ready && <p className="notice">Сначала <a href="#/departments">загрузите положение отдела</a>. Оно нужно для отбора докладов по обязанностям организации.</p>}
     <div className="upload-zone">
       <div><h3>Добавьте всё, что у вас есть</h3><p className="muted">Можно выбрать несколько файлов или папку целиком.</p></div>
-      <div className="row"><button disabled={!!busy} onClick={() => filesInput.current?.click()}>Выбрать файлы</button>
-        <button className="link" disabled={!!busy} onClick={() => folderInput.current?.click()}>Выбрать папку</button></div>
-      <input className="sr-only" tabIndex={-1} aria-label="Отдельные файлы" type="file" multiple ref={filesInput} disabled={!!busy} onChange={e => void upload(e.currentTarget)} />
-      <input className="sr-only" tabIndex={-1} aria-label="Папка конференции" type="file" ref={input => { folderInput.current = input; input?.setAttribute('webkitdirectory', ''); }} disabled={!!busy} onChange={e => void upload(e.currentTarget)} />
+      <div className="row"><button disabled={!!busy || !ready} onClick={() => filesInput.current?.click()}>Выбрать файлы</button>
+        <button className="link" disabled={!!busy || !ready} onClick={() => folderInput.current?.click()}>Выбрать папку</button></div>
+      <input className="sr-only" tabIndex={-1} aria-label="Отдельные файлы" type="file" multiple ref={filesInput} disabled={!!busy || !ready} onChange={e => void upload(e.currentTarget)} />
+      <input className="sr-only" tabIndex={-1} aria-label="Папка конференции" type="file" ref={input => { folderInput.current = input; input?.setAttribute('webkitdirectory', ''); }} disabled={!!busy || !ready} onChange={e => void upload(e.currentTarget)} />
     </div>
     <p role="status">{busy || status}</p>
     {(error || errors.length > 0) && <div role="alert">{error}<ul>{errors.map((message, index) => <li key={index}>{message}</li>)}</ul></div>}
@@ -70,7 +74,7 @@ export function Materials({ conferenceId, onPrepared }: { conferenceId: string; 
         <div className="material-details">
           {file.warning && <p className="notice">{file.warning}</p>}
           {['presentation', 'document', 'notes', 'program'].includes(file.source.kind) && <label className="field">Назначение файла
-            <select aria-label={`Назначение ${file.relative_path}`} disabled={!!busy} value={file.source.kind} onChange={e => {
+            <select aria-label={`Назначение ${file.relative_path}`} disabled={!!busy || !ready} value={file.source.kind} onChange={e => {
               const purpose = e.target.value;
               setBusy('Сохранение назначения…'); setErrors([]);
               void request(`/api/v1/files/${file.source.id}/purpose`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose }) })
@@ -82,6 +86,6 @@ export function Materials({ conferenceId, onPrepared }: { conferenceId: string; 
       </details>)}
     </div>}
     <footer className="step-footer"><p className="muted">{files.length ? `Материалов загружено — ${files.length}. Следующий шаг — выделение докладов.` : 'Начните с загрузки имеющихся материалов.'}</p>
-      <button className="primary" disabled={!!busy || !files.length} onClick={() => void prepare()}>Подготовить доклады</button></footer>
+      <button className="primary" disabled={!!busy || !ready || !files.length} onClick={() => void prepare()}>Подготовить доклады</button></footer>
   </section>;
 }

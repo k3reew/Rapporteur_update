@@ -231,3 +231,15 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
 .summary-header .kv { margin: .8rem 0; gap: 1rem 1.5rem; }
 .summary-header .kv div { font-size: .8rem; }
 .review h3:first-child { margin-top: 0; }
+
+.interest-details { margin-top: .65rem; font-weight: 400; font-size: .9rem; max-width: 65ch; }
+.interest-details p { margin-block: .5rem; }
+.interest-details blockquote { margin: .6rem 0; padding-inline: .8rem; border-inline-start: 1px solid var(--border); }
+.summary-prose { max-width: 75ch; }
+.summary-prose p { margin-block: 1rem; }
+.summary-prose .chip { font-size: .72rem; padding: 0 .25rem; vertical-align: baseline; }
+
+.processing-table { min-width: 620px; }
+.processing-table th:first-child { width: 42%; }
+.processing-table .pill { white-space: normal; word-break: normal; }
+.processing-table .interest-details { max-width: 75ch; }

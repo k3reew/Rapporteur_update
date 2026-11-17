@@ -113,6 +113,38 @@ class Database:
             self._migrate(conn)
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
+        self._migrate_v1(conn)
+        if conn.execute("PRAGMA user_version").fetchone()[0] >= 2:
+            return
+        with sqlite3.connect(str(self.path) + ".before-v2.bak") as backup:
+            conn.backup(backup)
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("""CREATE TABLE talk_screenings (
+                talk_id TEXT NOT NULL REFERENCES talks(id) ON DELETE CASCADE,
+                version INTEGER NOT NULL, input_revision INTEGER NOT NULL,
+                department_revisions TEXT NOT NULL, profile TEXT NOT NULL,
+                job TEXT NOT NULL, result TEXT NOT NULL DEFAULT '[]', error TEXT,
+                manual INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+                PRIMARY KEY(talk_id, version)
+            )""")
+            conn.execute("""CREATE TABLE report_jobs (
+                id TEXT PRIMARY KEY,
+                conference_id TEXT NOT NULL REFERENCES conferences(id) ON DELETE CASCADE,
+                idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL, snapshot TEXT NOT NULL,
+                status TEXT NOT NULL, step TEXT NOT NULL, error TEXT,
+                attempt INTEGER NOT NULL DEFAULT 0,
+                report_version_id TEXT REFERENCES report_versions(id),
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(conference_id,idempotency_key)
+            )""")
+            conn.execute("PRAGMA user_version = 2")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+
+    def _migrate_v1(self, conn: sqlite3.Connection) -> None:
         if conn.execute("PRAGMA user_version").fetchone()[0] >= 1:
             return
         # Backup before the first upgrade; SQLite backup also includes committed WAL data.

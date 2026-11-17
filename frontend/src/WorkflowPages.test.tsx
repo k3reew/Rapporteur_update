@@ -15,6 +15,7 @@ test('после подтверждения и сбоя запуска пред�
   let confirmed = false;
   let attempts = 0;
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/departments')) return Response.json([{ pages: [{ text: 'Обязанности отдела' }] }]);
     if (url.endsWith('/processing')) {
       attempts++;
       return attempts === 1 ? Response.json({ message: 'Сервис занят' }, { status: 503 }) : Response.json({});
@@ -37,6 +38,7 @@ test('после подтверждения и сбоя запуска пред�
 test('частичная ошибка загрузки сохраняет успешные файлы и разрешает подготовку', async () => {
   let uploaded = false;
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/departments')) return Response.json([{ pages: [{ text: 'Обязанности отдела' }] }]);
     if (init?.method === 'POST') {
       if (url.includes('broken')) return Response.json({ message: 'Файл повреждён' }, { status: 422 });
       uploaded = true; return Response.json({}, { status: 201 });
@@ -55,7 +57,7 @@ test('частичная ошибка загрузки сохраняет усп
 });
 
 test('закрытие ручного редактора сохраняет черновик названия', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/materials')
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/departments') ? [{ pages: [{ text: 'Обязанности отдела' }] }] : url.endsWith('/materials')
     ? { files: [], talks: [], sections: [] } : { version: 1, job: 'done', talks: [], error: null })));
   render(<Preparation conferenceId="c" onConfirmed={() => {}} />);
   const disclosure = await screen.findByText('Добавить доклад вручную и настроить привязки');
@@ -84,7 +86,7 @@ test('загрузка папки сохраняет вложенный путь
   Object.defineProperty(file, 'webkitRelativePath', { value: 'Конференция/Секция/Доклад/speech.txt' });
   const registry = new File(['id: old'], 'conference.yaml');
   Object.defineProperty(registry, 'webkitRelativePath', { value: 'Конференция/conference.yaml' });
-  const api = vi.fn(async (_url: string, init?: RequestInit) => Response.json(init?.method === 'POST' ? {} : { files: [] }));
+  const api = vi.fn(async (_url: string, init?: RequestInit) => Response.json(_url.endsWith('/departments') ? [{ pages: [{ text: 'Обязанности отдела' }] }] : init?.method === 'POST' ? {} : { files: [] }));
   vi.stubGlobal('fetch', api);
   render(<Materials conferenceId="c" onPrepared={() => {}} />);
   fireEvent.change(screen.getByLabelText('Папка конференции'), { target: { files: [file, registry] } });
@@ -98,6 +100,7 @@ test('смена назначения файла отправляет новое
   const { Materials } = await import('./Materials');
   let purpose = 'presentation';
   const api = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/departments')) return Response.json([{ pages: [{ text: 'Обязанности отдела' }] }]);
     if (url.endsWith('/purpose')) purpose = JSON.parse(init?.body as string).purpose;
     return Response.json({ files: [{ source: { id: 'f', kind: purpose }, relative_path: 'slides.pdf', title_candidates: null, warning: null }] });
   });
@@ -107,4 +110,14 @@ test('смена назначения файла отправляет новое
   fireEvent.change(select, { target: { value: 'program' } });
   await waitFor(() => expect(select.value).toBe('program'));
   expect(api).toHaveBeenCalledWith('/api/v1/files/f/purpose', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ purpose: 'program' }) }));
+});
+
+test('при отсутствии положения направляет в отделы и блокирует загрузку', async () => {
+  const { Materials } = await import('./Materials');
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/departments') ? [] : { files: [] })));
+  render(<Materials conferenceId="c" onPrepared={() => {}} />);
+  const link = await screen.findByRole('link', { name: 'загрузите положение отдела' });
+  expect(link.getAttribute('href')).toBe('#/departments');
+  expect((screen.getByRole('button', { name: 'Выбрать файлы' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Подготовить доклады' }) as HTMLButtonElement).disabled).toBe(true);
 });

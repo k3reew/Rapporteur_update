@@ -20,7 +20,7 @@ from rapporteur.contracts.reports import ReportFile
 from rapporteur.errors import NotFoundError, UserError
 from rapporteur.materials import require_conference
 from rapporteur.report.assemble import ReportError, ReportSources
-from rapporteur.report.build import build_report
+from rapporteur.report.build import BuiltReport, build_report
 from rapporteur.storage import Storage
 
 
@@ -77,15 +77,7 @@ def build(
     database: db.Database, storage: Storage, conference_id: str, data: ReportBuild
 ) -> ReportVersionView:
     with database.read() as conn:
-        sources = _sources(conn, conference_id)
-    ordered = [talk.id for talk in sources.ordered_talks()]
-    talk_ids = ordered if data.talk_ids is None else data.talk_ids
-    if not talk_ids:
-        raise UserError("В конференции нет докладов")
-    if set(talk_ids) - set(ordered):
-        raise UserError("В выборке есть доклад другой конференции")
-    selection = ReportSelection(days=[], section_ids=[], talk_ids=talk_ids)
-    _check(sources, selection, data.unreviewed_confirmed)
+        sources, selection = select_input(conn, conference_id, data)
 
     version_id = db.new_id()
     try:
@@ -101,29 +93,51 @@ def build(
     except ReportError as error:
         raise UserError(f"Справка не собрана: {error}") from error
 
-    created = dt.datetime.now(dt.UTC)
     with database.tx() as conn:
-        require_conference(conn, conference_id)
-        number = conn.execute(
-            "SELECT coalesce(max(number), 0) + 1 FROM report_versions WHERE conference_id = ?",
-            (conference_id,),
-        ).fetchone()[0]
-        conn.execute(
-            "INSERT INTO report_versions "
-            "(id, conference_id, number, input, variables, files, warnings, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                version_id,
-                conference_id,
-                number,
-                built.input.model_dump_json(),
-                built.variables.model_dump_json(),
-                db.dumps([file.model_dump(mode="json") for file in built.files]),
-                db.dumps(built.warnings),
-                created.isoformat(),
-            ),
-        )
-        row = db.one(conn, "SELECT * FROM report_versions WHERE id = ?", version_id)
+        return save_version(conn, conference_id, version_id, built)
+
+
+def select_input(
+    conn: sqlite3.Connection, conference_id: str, data: ReportBuild
+) -> tuple[ReportSources, ReportSelection]:
+    sources = _sources(conn, conference_id)
+    ordered = [talk.id for talk in sources.ordered_talks()]
+    talk_ids = ordered if data.talk_ids is None else data.talk_ids
+    if not talk_ids:
+        raise UserError("В конференции нет докладов")
+    if set(talk_ids) - set(ordered):
+        raise UserError("В выборке есть доклад другой конференции")
+    selection = ReportSelection(days=[], section_ids=[], talk_ids=talk_ids)
+    _check(sources, selection, data.unreviewed_confirmed)
+
+    return sources, selection
+
+
+def save_version(
+    conn: sqlite3.Connection, conference_id: str, version_id: str, built: BuiltReport
+) -> ReportVersionView:
+    created = dt.datetime.now(dt.UTC)
+    require_conference(conn, conference_id)
+    number = conn.execute(
+        "SELECT coalesce(max(number), 0) + 1 FROM report_versions WHERE conference_id = ?",
+        (conference_id,),
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO report_versions "
+        "(id, conference_id, number, input, variables, files, warnings, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            version_id,
+            conference_id,
+            number,
+            built.input.model_dump_json(),
+            built.variables.model_dump_json(),
+            db.dumps([file.model_dump(mode="json") for file in built.files]),
+            db.dumps(built.warnings),
+            created.isoformat(),
+        ),
+    )
+    row = db.one(conn, "SELECT * FROM report_versions WHERE id = ?", version_id)
     assert row is not None
     return version(row)
 

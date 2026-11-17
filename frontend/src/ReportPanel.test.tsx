@@ -23,7 +23,7 @@ const conference = {
 const progress = {
   processing_started: true,
   files: 1,
-  talks: [{ id: 'talk', section: 'Секция', order: 1, title: 'Доклад', status: 'processed', job: 'done', step: null, error: null, summary_number: 1, summary_status: 'ready' }],
+  talks: [{ id: 'talk', section: 'Секция', order: 1, title: 'Доклад', status: 'processed', job: 'done', step: null, error: null, summary_number: 1, summary_status: 'ready', screening: { eligible: true } }],
 };
 const version = {
   id: 'version',
@@ -35,11 +35,16 @@ const version = {
 };
 
 test('предупреждает о датах и собирает справку с подтверждением непроверенных', async () => {
-  const api = vi.fn()
-    .mockResolvedValueOnce(Response.json(conference))
-    .mockResolvedValueOnce(Response.json(progress))
-    .mockResolvedValueOnce(Response.json([]))
-    .mockResolvedValueOnce(Response.json(version, { status: 201 }));
+  let submitted = false;
+  const api = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/progress')) return Response.json(progress);
+    if (url.endsWith('/report-jobs')) {
+      if (init?.method === 'POST') { submitted = true; return Response.json({ id: 'job' }, { status: 202 }); }
+      return Response.json(submitted ? [{ id: 'job', status: 'done', step: 'done', report_version_id: 'version' }] : []);
+    }
+    if (url.endsWith('/reports')) return Response.json(submitted ? [version] : []);
+    return Response.json(conference);
+  });
   vi.stubGlobal('fetch', api);
   render(<ReportPanel conferenceId="conference" />);
 
@@ -48,28 +53,46 @@ test('предупреждает о датах и собирает справк�
   fireEvent.click(screen.getByLabelText('Собрать, даже если не все сводки проверены'));
   fireEvent.click(screen.getByRole('button', { name: 'Собрать справку' }));
 
-  await screen.findByText('Собрана версия 1.');
+  await screen.findByText('Версия 1');
   expect(screen.getByText('Сводка не проверена человеком: «Доклад»')).toBeDefined();
   expect(screen.getByRole('link', { name: 'PDF' }).getAttribute('href'))
     .toBe('/api/v1/report-versions/version/files/pdf');
-  expect(api).toHaveBeenLastCalledWith('/api/v1/conferences/conference/reports', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ unreviewed_confirmed: true, talk_ids: ['talk'] }),
-  });
+  const call = api.mock.calls.find(([, init]) => init?.method === 'POST');
+  expect(call?.[0]).toBe('/api/v1/conferences/conference/report-jobs');
+  expect(JSON.parse(call?.[1]?.body as string)).toEqual({ unreviewed_confirmed: true, talk_ids: ['talk'], idempotency_key: expect.any(String) });
+
 });
 
 test('собирает только выбранные доклады', async () => {
   const api = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/progress')) return Response.json({ ...progress, talks: [...progress.talks, { ...progress.talks[0], id: 'two', title: 'Второй' }] });
-    if (url.endsWith('/reports')) return Response.json(init?.method === 'POST' ? version : []);
+    if (url.endsWith('/report-jobs')) return Response.json(init?.method === 'POST' ? { id: 'job' } : []);
+    if (url.endsWith('/reports')) return Response.json([]);
     return Response.json(conference);
   });
   vi.stubGlobal('fetch', api);
   render(<ReportPanel conferenceId="conference" />);
   fireEvent.click(await screen.findByRole('checkbox', { name: /Второй/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Собрать справку' }));
-  await screen.findByText('Собрана версия 1.');
+  await screen.findByText('Сборка поставлена в очередь. Можно переходить к другим разделам.');
   const body = api.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body;
   expect(JSON.parse(body as string).talk_ids).toEqual(['talk']);
+});
+
+test('восстанавливает неудачное задание после открытия страницы и повторяет его', async () => {
+  let failed = true;
+  const api = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/progress')) return Response.json(progress);
+    if (url.endsWith('/reports')) return Response.json([]);
+    if (url.endsWith('/retry')) { failed = false; return Response.json({}); }
+    if (url.endsWith('/report-jobs')) return Response.json([{ id: 'saved', status: failed ? 'failed' : 'queued', step: failed ? 'failed' : 'queued', error: failed ? 'PDF недоступен' : null }]);
+    void init;
+    return Response.json(conference);
+  });
+  vi.stubGlobal('fetch', api);
+  render(<ReportPanel conferenceId="conference" />);
+  await screen.findByText('PDF недоступен');
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить сборку' }));
+  await screen.findByText('Справка собирается · В очереди');
+  expect(api).toHaveBeenCalledWith('/api/v1/report-jobs/saved/retry', { method: 'POST' });
 });

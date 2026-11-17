@@ -185,3 +185,11 @@ def test_cuda_prefetch_uses_native_locked_wheel_and_registry_metadata(
     main()
     assert fetched == [wheel["url"]]
     assert all("--no-installer-metadata" in command for command in commands)
+
+
+def test_bundle_contains_current_release_instructions_and_checksums() -> None:
+    makefile = Path("Makefile").read_text()
+    assert "cp -a docs/. $(BUNDLE)/docs/" in makefile
+    checksum_command = next(line for line in makefile.splitlines() if "xargs -0 sha256sum" in line)
+    assert "docs" in checksum_command
+    assert "docs/benchmarks/2026-11-17-release-0.3.0.md" in makefile

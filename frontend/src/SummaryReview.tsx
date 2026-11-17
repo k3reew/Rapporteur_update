@@ -38,6 +38,7 @@ type Summary = {
   sentences: Line[];
   conclusions: Line[];
   human_edit: boolean;
+  prompt_versions?: Record<string, string>;
   created_at: string;
 };
 export type SummaryView = {
@@ -327,7 +328,9 @@ export function SummaryReview(
           {draft
             ? <ol className="summary-text">{lineEditor('sentences', 'Предложение')}</ol>
             : lines('sentences').length
-              ? <ol className="summary-text">{lines('sentences').map(lineView)}</ol>
+              ? <div className="summary-prose">{[0, ...(summary.sentences.length >= 6 ? [Math.ceil(summary.sentences.length / 2)] : [])].map((start, group) => <p key={start}>
+                {summary.sentences.slice(start, group === 0 && summary.sentences.length >= 6 ? Math.ceil(summary.sentences.length / 2) : undefined).map((line, index) => <span key={index}>{line.text}{' '}{line.claim_ids.map(key => <button key={key} className="chip" aria-pressed={selected === key} title={claims.get(key)?.text} onClick={() => setSelected(selected === key ? '' : key)}>{key}</button>)}{' '}</span>)}
+              </p>)}{summary.prompt_versions?.summary === 'v3' && summary.sentences.length < 6 && <p className="notice">Короткая сводка. Проверьте, достаточно ли в источниках сведений для знакомства с докладом.</p>}</div>
               : <p className="muted">Текста сводки нет.</p>}
           <h3>Выводы</h3>
           {draft

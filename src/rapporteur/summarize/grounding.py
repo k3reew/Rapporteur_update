@@ -28,6 +28,11 @@ class GroundingReview(BaseModel):
     decisions: list[LineDecision]
 
 
+class ReaderReview(GroundingReview):
+    reader_passed: bool
+    reader_issues: list[str] = Field(max_length=6)
+
+
 def review_summary(
     client: LlmClient,
     profile: ModelProfile,
@@ -37,7 +42,7 @@ def review_summary(
     *,
     attempt: int,
     seed: int,
-) -> CheckResult:
+) -> list[CheckResult]:
     by_key = {claim.key: claim for claim in claims}
     lines = []
     expected: list[str] = []
@@ -55,13 +60,23 @@ def review_summary(
                     ],
                 }
             )
-    schema = GroundingReview.model_json_schema()
+    output = ReaderReview if profile.prompt_version == "v3" else GroundingReview
+    schema = output.model_json_schema()
+    if output is ReaderReview:
+        schema["properties"]["reader_issues"]["items"]["maxLength"] = 240
     schema["$defs"]["LineDecision"]["properties"]["line"]["enum"] = expected
     schema["properties"]["decisions"]["minItems"] = len(expected)
     schema["properties"]["decisions"]["maxItems"] = len(expected)
     prompt = load_prompt("critic", profile.prompt_version)
 
     def complete(review: GroundingReview) -> list[str]:
+        if isinstance(review, ReaderReview) and (
+            review.reader_passed == bool(review.reader_issues)
+            or any(len(issue) > 240 for issue in review.reader_issues)
+        ):
+            return [
+                "Для непонятного текста перечисли краткие замечания, для понятного список пуст."
+            ]
         found = [decision.line for decision in review.decisions]
         if sorted(found) == sorted(expected):
             return []
@@ -75,7 +90,7 @@ def review_summary(
             Message("system", prompt.render("system")),
             Message("user", prompt.render("user", lines=json.dumps(lines, ensure_ascii=False))),
         ],
-        GroundingReview,
+        output,
         think=False,
         max_repairs=1,
         seed=seed,
@@ -87,9 +102,21 @@ def review_summary(
         for decision in reviewed.value.decisions
         if not decision.supported
     ]
-    return CheckResult(
-        check=CheckName.CRITIC,
-        passed=not problems,
-        attempt=attempt,
-        details="; ".join(problems) if problems else None,
-    )
+    checks = [
+        CheckResult(
+            check=CheckName.CRITIC,
+            passed=not problems,
+            attempt=attempt,
+            details="; ".join(problems) if problems else None,
+        )
+    ]
+    if isinstance(reviewed.value, ReaderReview):
+        checks.append(
+            CheckResult(
+                check=CheckName.READER_CONTEXT,
+                passed=reviewed.value.reader_passed,
+                attempt=attempt,
+                details="; ".join(reviewed.value.reader_issues) or None,
+            )
+        )
+    return checks
