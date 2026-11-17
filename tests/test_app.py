@@ -418,7 +418,7 @@ def test_system_shows_profiles_and_templates(app: Fixture) -> None:
 
     assert {"local", "local-fast"} <= {profile["name"] for profile in info["profiles"]}
     assert [p["name"] for p in info["profiles"] if p["default"]] == ["local"]
-    assert info["templates"] == [{"name": "starter", "version": "starter-1"}]
+    assert info["templates"] == [{"name": "starter", "version": "starter-2"}]
     # В тестах сети нет: Ollama недоступна, но страница управления открывается.
     assert info["ollama_available"] is False and info["queue"] == {}
 

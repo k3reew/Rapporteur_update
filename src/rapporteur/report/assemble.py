@@ -176,6 +176,7 @@ def build_report_input(
 
 def _report_talk(sources: ReportSources, talk: Talk, title: str, summary: Summary) -> ReportTalk:
     speakers = [person for person in talk.speakers if person.role is PersonRole.SPEAKER]
+    authors, organizations, contacts = _card(talk)
     return ReportTalk(
         talk_id=talk.id,
         section_title=sources.section_by_id[talk.section_id].title,
@@ -187,7 +188,41 @@ def _report_talk(sources: ReportSources, talk: Talk, title: str, summary: Summar
         status=talk.status,
         summary=" ".join(line.text for line in summary.sentences),
         conclusions=[line.text for line in summary.conclusions],
+        authors=authors,
+        organizations=organizations,
+        contacts=contacts,
     )
+
+
+def _card(talk: Talk) -> tuple[list[str], list[str], list[str]]:
+    """Карточка доклада для бланка: авторы с организацией, прочие организации, контакты."""
+    authors = [
+        f"{_clean(person.name)} ({_clean(person.affiliation)})"
+        if person.affiliation
+        else _clean(person.name)
+        for person in talk.speakers
+    ]
+    shown = {
+        _clean(part)
+        for person in talk.speakers
+        if person.affiliation
+        for part in [person.affiliation, *person.affiliation.split(";")]
+    }
+    organizations = _unique(
+        _clean(item) for item in talk.organizations if _clean(item) not in shown
+    )
+    several = len(talk.speakers) > 1
+    contacts = _unique(
+        [
+            *(
+                f"{_clean(contact)} ({_clean(person.name)})" if several else _clean(contact)
+                for person in talk.speakers
+                for contact in person.contacts
+            ),
+            *(_clean(contact) for contact in talk.contacts),
+        ]
+    )
+    return authors, organizations, contacts
 
 
 def _period(

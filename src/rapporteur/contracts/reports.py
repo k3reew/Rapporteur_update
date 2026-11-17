@@ -24,7 +24,11 @@ class ReportSelection(ContractModel):
 
 
 class ReportTalk(ContractModel):
-    """Доклад в справке. Название и докладчики — из реестра, текст — из сводки."""
+    """Доклад в справке. Название и докладчики — из реестра, текст — из сводки.
+
+    Карточка перед сводкой: authors — все авторы с организацией в скобках, organizations —
+    организации, не указанные у авторов, contacts — контакты с фамилией автора, если авторов
+    несколько. В версиях справки до карточки эти поля пусты."""
 
     talk_id: UUID
     section_title: NonEmptyStr
@@ -34,6 +38,9 @@ class ReportTalk(ContractModel):
     status: TalkStatus
     summary: NonEmptyStr
     conclusions: list[NonEmptyStr]
+    authors: list[NonEmptyStr] = Field(default_factory=list)
+    organizations: list[NonEmptyStr] = Field(default_factory=list)
+    contacts: list[NonEmptyStr] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _reportable(self) -> Self:
