@@ -448,8 +448,11 @@ def test_bundle_rebuild_replaces_asr_snapshot(
         shutil.copy(name, tmp_path)
     (tmp_path / "docs").mkdir()
     (tmp_path / "scripts").mkdir()
-    for name in ("doctor.sh", "asr-mode.sh"):
+    for name in ("doctor.sh", "asr-mode.sh", "storage-access.sh"):
         shutil.copy(Path("scripts") / name, tmp_path / "scripts")
+    module = tmp_path / "src/rapporteur/storage_access.py"
+    module.parent.mkdir(parents=True)
+    shutil.copy("src/rapporteur/storage_access.py", module)
     docker = tmp_path / "docker"
     docker.write_text(
         '#!/bin/sh\ncase "$*" in "compose config --images ollama") echo ollama:fake ;; esac\n'

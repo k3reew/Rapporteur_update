@@ -23,7 +23,7 @@
       "sourceHashes": {
         "compose.yaml": "770a95fd7de1b658d640677ec94e0a639e695924e5b4197e68c5232714838da2",
         "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
-        "scripts/doctor.sh": "e37634a6d04f87324a7008e20b50e8586ba542b228269fe51be828a19881c884",
+        "scripts/doctor.sh": "d5a9b183f062c256ed9e7172cb76bbc7dc147ba6eeda69cc6bf76d421331accf",
         "tests/test_upgrade.py": "57c8ecccbd8a71a6b06c96d11cb0061fca2ee56182770608a1160dd8ddb2e6e5"
       },
       "sourcePatterns": [
@@ -62,7 +62,7 @@
         "src/rapporteur/api/system.py": "ebd50cc5320f8e86a145127f88cbbe8f767f71b4c0e3beb787c64c95fd5acd9a",
         "src/rapporteur/api/talks.py": "9b99b9bfe4999cb8bf3680cf2319cf9cebd6dc8ebc4c625e4ca9c541a6b788a7",
         "src/rapporteur/api/workflow.py": "80c36077ed8baf5cbd4525afd78200b3ecfbb1bdb12f0db2fab39710c764e756",
-        "src/rapporteur/app.py": "d8a5107d13a1a9da1d9fd7f20f7e4de94e89e4f1bdb0ea0d6c043f4ebfb2acb1",
+        "src/rapporteur/app.py": "972aa820a1a4ffe8a75076229b5720a80667ddbd5f135ac9b40f7c3ee2ad76b9",
         "src/rapporteur/asr_service.py": "682ed782a1123b63c743dcc09425764fb2d56ad35e8154608d1b8acc1603b6c3",
         "src/rapporteur/contracts/__init__.py": "9ee2eeb8dcdd4b66ddba7a7e161a0327f61de3bb280ddbecf0e192dc7ed2e642",
         "src/rapporteur/contracts/artifacts.py": "1213bedfee19964cdb028bee379379192293ad34a6b71c657e3398f6523c5b03",
@@ -107,7 +107,7 @@
         "compose.yaml": "770a95fd7de1b658d640677ec94e0a639e695924e5b4197e68c5232714838da2",
         "docs/adr/ADR-014-simplification.md": "61bdf3c7b41580f86b3c66983a0d0f82a29d81a279fc4cbf63c7d5c801ebf133",
         "src/rapporteur/api/dependencies.py": "cc43d72ca058c9a876b1a1c8ed881927650b6ac80a33fd21e7a4e508f9270e66",
-        "src/rapporteur/app.py": "d8a5107d13a1a9da1d9fd7f20f7e4de94e89e4f1bdb0ea0d6c043f4ebfb2acb1",
+        "src/rapporteur/app.py": "972aa820a1a4ffe8a75076229b5720a80667ddbd5f135ac9b40f7c3ee2ad76b9",
         "src/rapporteur/db.py": "ac73a8e50a43e7e298b9cda671c561bbf6c34f096b511e94361118b1e922ff38",
         "src/rapporteur/processing.py": "45f3762aaa6105c50caeaf5bf73a1798c84f4a94d719fc33b9ea97259b1170cf",
         "src/rapporteur/report_jobs.py": "a3ec970ac79be77449ba1f0e922c1ccd126c6413e90dfc57e71de01bc874d15f",
@@ -171,7 +171,7 @@
       "sourceHashes": {
         "frontend/src/Processing.test.tsx": "bb47a522f9168eef65f6c4b846243f1fdb713e591770bcc2728303608156ac2d",
         "tests/test_card.py": "9a4d48b36631f7b7d1826249c37f0efa3954f1cb8358e8ccf9529451ed5b91ac",
-        "tests/test_deployment.py": "eea1ab93782eecb0dc3e1f08dadcce7d20983cf5537581f68ed609d8b3cf2cc9",
+        "tests/test_deployment.py": "2fbe62935d02d1c62cf4ecd1182824d40a060fb7aa7848dffec0abc7dc3752da",
         "tests/test_prepared_model_revision.py": "1d01c85683e207071be529c437dfa3ad8d962d1105c4f36014faad6c188aa188",
         "tests/test_report_build.py": "25abd857e0820318e1f103e822659ca987f21670d71fceb8bef350f856f56a46",
         "tests/test_summary_v3.py": "a629d7308e36ee01a666ccd695ed0f71df079dced924545d3b37573f7cf0c56c",
@@ -324,7 +324,7 @@
         "src/rapporteur/db.py": "ac73a8e50a43e7e298b9cda671c561bbf6c34f096b511e94361118b1e922ff38",
         "src/rapporteur/departments.py": "2a9e625c97ef511228e014ca4e3626cad8c44e86894ba68f7b2132e212a4512b",
         "src/rapporteur/materials.py": "7060e72cc58e7e95e7238244ec1673756592418904d144d47273cb9c7cb18550",
-        "src/rapporteur/storage.py": "aa9b53bba8719aa64f1def335894d95c49f2b8c5dc98fe12135aa94488527eac",
+        "src/rapporteur/storage.py": "8829a0feb76e53ad54e2225e63d8f60f9182b326d40e0be767587a6b2df37533",
         "src/rapporteur/summaries.py": "5a0d67b8cdc6537b1feb2a1286f14d2dddc8966c95b0e85147785b75e4d6d201",
         "src/rapporteur/summarize/pack.py": "923ea6308726e80bed8ac3c2685dd6e7a7eb0a178c5d7ffaa1aa729ef9fa9dd2",
         "tests/test_upgrade.py": "57c8ecccbd8a71a6b06c96d11cb0061fca2ee56182770608a1160dd8ddb2e6e5"
@@ -372,7 +372,7 @@
         ".gitignore": "e7a78bd5400bf2d8b68b82ea2474eea216f84ec1428d0149098cf3dda3ed5e89",
         "CODEOWNERS": "97eb3f334f22838abe99717568bb14abb9aff2146336aeadad5bda1fbce0a089",
         "Dockerfile": "b8e1fa3ee7c4eb194e46841ab00210b1fdd37aaf57566a3671071933375563aa",
-        "Makefile": "ff181b169f4578fbf5769a4cc46938b5ade83e7e411afd0417381bdf9bcfe04d",
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
         "frontend/.gitignore": "790e3169bc19b046fe55ba1da6d13b976c28363c8c00462a2195fe5faf260910",
         "frontend/package.json": "615c458228d32f42bb8bb5bc761db8cc98245203a4ab685044ff38066d4af9e7",
         "frontend/vite.config.ts": "6a8e540228b1abd579e289981bb25b84c1cf1c7eae0fd3290364b835dd10949e",
@@ -580,12 +580,15 @@
         "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
       },
       "sourceHashes": {
-        "Makefile": "ff181b169f4578fbf5769a4cc46938b5ade83e7e411afd0417381bdf9bcfe04d",
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
+        "scripts/storage-access.sh": "b36f7207ec28ba407e2d38393b184409553da5f3ea08a143928bdab57aa5ce97",
         "src/rapporteur/asr_models.py": "f0cb6ce749623b8fa3614a14192e489b0325f645224022a86cc8fc6e58f0de06",
         "src/rapporteur/asr_service.py": "682ed782a1123b63c743dcc09425764fb2d56ad35e8154608d1b8acc1603b6c3",
         "src/rapporteur/db.py": "ac73a8e50a43e7e298b9cda671c561bbf6c34f096b511e94361118b1e922ff38",
         "src/rapporteur/offline_models.py": "81b9bcf44bfd18c824a3089f4ae81997deb331b53a8a7a4560d7bef38d1b5fe4",
         "src/rapporteur/preparation.py": "fe93b455d353e2279c2de9009014a20935ad1ea8b82bafd6102d1508a61326a0",
+        "src/rapporteur/storage.py": "8829a0feb76e53ad54e2225e63d8f60f9182b326d40e0be767587a6b2df37533",
+        "src/rapporteur/storage_access.py": "9058f552ff71457605db93b365ea34faf7596ad9f32702856b2fb8a20e1788ac",
         "src/rapporteur/summarize/grounding.py": "31f48a159ae673834e3956de7f975128dbb3cf2644a74644545f6ebe76052233",
         "src/rapporteur/summarize/summary.py": "a17f2c4d4d948b45351d280868591947abcc51ddd166f9e5fa574d3c40c017e5",
         "summary.yaml": "a6f6fe9a7a5aa4d6efcc46f59b053c4f6c579e2993f00c587d88bcac52d7b1fc"
@@ -599,7 +602,10 @@
         "src/rapporteur/summarize/grounding.py",
         "src/rapporteur/summarize/summary.py",
         "Makefile",
-        "summary.yaml"
+        "summary.yaml",
+        "src/rapporteur/storage_access.py",
+        "src/rapporteur/storage.py",
+        "scripts/storage-access.sh"
       ]
     },
     "legacy.DESIGN": {
@@ -894,13 +900,15 @@
       },
       "sourceHashes": {
         ".env.example": "b3275c9bfe86f6d432d7d505dfb550795af204344aef1c531385ce1440a26daa",
-        "Makefile": "ff181b169f4578fbf5769a4cc46938b5ade83e7e411afd0417381bdf9bcfe04d",
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
         "compose.yaml": "770a95fd7de1b658d640677ec94e0a639e695924e5b4197e68c5232714838da2",
         "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
-        "scripts/doctor.sh": "e37634a6d04f87324a7008e20b50e8586ba542b228269fe51be828a19881c884",
+        "scripts/doctor.sh": "d5a9b183f062c256ed9e7172cb76bbc7dc147ba6eeda69cc6bf76d421331accf",
+        "scripts/storage-access.sh": "b36f7207ec28ba407e2d38393b184409553da5f3ea08a143928bdab57aa5ce97",
         "src/rapporteur/asr_models.py": "f0cb6ce749623b8fa3614a14192e489b0325f645224022a86cc8fc6e58f0de06",
         "src/rapporteur/db.py": "ac73a8e50a43e7e298b9cda671c561bbf6c34f096b511e94361118b1e922ff38",
-        "src/rapporteur/offline_models.py": "81b9bcf44bfd18c824a3089f4ae81997deb331b53a8a7a4560d7bef38d1b5fe4"
+        "src/rapporteur/offline_models.py": "81b9bcf44bfd18c824a3089f4ae81997deb331b53a8a7a4560d7bef38d1b5fe4",
+        "src/rapporteur/storage_access.py": "9058f552ff71457605db93b365ea34faf7596ad9f32702856b2fb8a20e1788ac"
       },
       "sourcePatterns": [
         "Makefile",
@@ -910,7 +918,9 @@
         "src/rapporteur/db.py",
         "docs/benchmarks/2026-11-14-redesign.md",
         "src/rapporteur/asr_models.py",
-        "src/rapporteur/offline_models.py"
+        "src/rapporteur/offline_models.py",
+        "src/rapporteur/storage_access.py",
+        "scripts/storage-access.sh"
       ]
     },
     "ollama": {
@@ -928,7 +938,7 @@
         "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
       },
       "sourceHashes": {
-        "Makefile": "ff181b169f4578fbf5769a4cc46938b5ade83e7e411afd0417381bdf9bcfe04d",
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
         "compose.yaml": "770a95fd7de1b658d640677ec94e0a639e695924e5b4197e68c5232714838da2",
         "src/rapporteur/llm/client.py": "58b9390b6496c39c24e08504882e5611cca8d8f5efd235abb304a168d3eb3102",
         "src/rapporteur/llm/profiles.py": "779b0d21efd7d829ba667fad7753c9a992082120cb5c762b5ec971a1c5de0257",
@@ -1044,7 +1054,7 @@
         "tests": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0438"
       },
       "sourceHashes": {
-        "Makefile": "ff181b169f4578fbf5769a4cc46938b5ade83e7e411afd0417381bdf9bcfe04d",
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
         "compose.yaml": "770a95fd7de1b658d640677ec94e0a639e695924e5b4197e68c5232714838da2",
         "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
         "pyproject.toml": "ba3b77a5db69779dfa79c2b374b78c2af14569e8c23a1d04af88b7728ec54b26"
@@ -1165,6 +1175,48 @@
         "tests/fictional_talk.py"
       ]
     },
+    "storage-permissions": {
+      "documentKind": "runbook",
+      "path": "docs/storage-permissions.md",
+      "relatedDocuments": [
+        "offline",
+        "configuration",
+        "testing",
+        "handoff"
+      ],
+      "sections": {
+        "context": "\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442",
+        "coverage": "\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+        "escalation": "\u0414\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430 \u0438 \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0435 \u0437\u0430 \u043f\u043e\u043c\u043e\u0449\u044c\u044e",
+        "prerequisites": "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430",
+        "procedure": "\u041f\u043e\u0440\u044f\u0434\u043e\u043a \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439",
+        "relatedDocumentation": "\u0421\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b",
+        "rollback": "\u041e\u0442\u043a\u0430\u0442",
+        "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438",
+        "symptoms": "\u0421\u0438\u043c\u043f\u0442\u043e\u043c\u044b \u0438 \u0437\u0430\u0434\u0430\u0447\u0438",
+        "verification": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0430"
+      },
+      "sourceHashes": {
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
+        "scripts/doctor.sh": "d5a9b183f062c256ed9e7172cb76bbc7dc147ba6eeda69cc6bf76d421331accf",
+        "scripts/storage-access.sh": "b36f7207ec28ba407e2d38393b184409553da5f3ea08a143928bdab57aa5ce97",
+        "src/rapporteur/app.py": "972aa820a1a4ffe8a75076229b5720a80667ddbd5f135ac9b40f7c3ee2ad76b9",
+        "src/rapporteur/storage.py": "8829a0feb76e53ad54e2225e63d8f60f9182b326d40e0be767587a6b2df37533",
+        "src/rapporteur/storage_access.py": "9058f552ff71457605db93b365ea34faf7596ad9f32702856b2fb8a20e1788ac",
+        "tests/test_deployment.py": "2fbe62935d02d1c62cf4ecd1182824d40a060fb7aa7848dffec0abc7dc3752da",
+        "tests/test_storage_access.py": "96ef8e782157505b9099430573c82151148fea5d718afffdfd428c8ea31fb9aa"
+      },
+      "sourcePatterns": [
+        "src/rapporteur/storage_access.py",
+        "src/rapporteur/storage.py",
+        "src/rapporteur/app.py",
+        "scripts/storage-access.sh",
+        "scripts/doctor.sh",
+        "Makefile",
+        "tests/test_storage_access.py",
+        "tests/test_deployment.py"
+      ]
+    },
     "testing": {
       "documentKind": "test-strategy",
       "path": "docs/testing.md",
@@ -1184,7 +1236,7 @@
         "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
       },
       "sourceHashes": {
-        "Makefile": "ff181b169f4578fbf5769a4cc46938b5ade83e7e411afd0417381bdf9bcfe04d",
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
         "docs/benchmarks/2026-11-14-redesign.md": "4267688ee59cb383ff577e316b079f61df2f8354d8c0f08b5a47f6112e63d8b7",
         "frontend/src/App.test.tsx": "3bf7154c0c8c4cb5640dfb9b91488d1673ff2fdc5d78e609bf13e105b027e801",
         "frontend/src/Departments.test.tsx": "46795ea2b07ae06d63d502e79ca8eb0ef2b698e1c031c29feafef862c733ecaf",
@@ -1210,7 +1262,7 @@
         "tests/test_app.py": "3c3a0a634731a3ac96e85d294e26f60b7ce2d1acbc8bbe41e04c5d83d027f8d8",
         "tests/test_card.py": "9a4d48b36631f7b7d1826249c37f0efa3954f1cb8358e8ccf9529451ed5b91ac",
         "tests/test_contracts.py": "55ac7ce90e7e32f002c5c83e7c9e8936851feb2c4b41d8aefc301d7c24e59f67",
-        "tests/test_deployment.py": "eea1ab93782eecb0dc3e1f08dadcce7d20983cf5537581f68ed609d8b3cf2cc9",
+        "tests/test_deployment.py": "2fbe62935d02d1c62cf4ecd1182824d40a060fb7aa7848dffec0abc7dc3752da",
         "tests/test_grounded_summary.py": "1c1ca4e441d2bd077b1188c2b2f45abcf9f98fdb11edd8b89b237719babe8f29",
         "tests/test_interest.py": "aca1c59ed231c7b3d2e9e12f16094b53e7511bac19b962822737b73a00d8922e",
         "tests/test_llm.py": "643a936e2657d7b0b68a194684f139b774908d06158df3f2c530782d81ecb6f7",
@@ -1227,6 +1279,7 @@
         "tests/test_report_template.py": "3acc32df38edb20b261dc35ec71b6fb1e7c3ec70717f9f025851d98c7affb8cb",
         "tests/test_screening.py": "ceab5bb4d76d64858a723414665ed9ffec9751243975d6d961534c53311c6a42",
         "tests/test_slides.py": "8a9723cc29b30e934577b490d9d2990c227c1fc29b59a284dda700b18abe5724",
+        "tests/test_storage_access.py": "96ef8e782157505b9099430573c82151148fea5d718afffdfd428c8ea31fb9aa",
         "tests/test_structured_tasks.py": "1c80d138bc9225b9f9f3ee0b896dfa1511b2684fa6ff9d07f5fc42aa94fb96c8",
         "tests/test_summarize_steps.py": "a5dd1d0f7bc6685f03dbdd30f5462330f03105cb3587262df956801de5fdf12a",
         "tests/test_summary_policy.py": "11e0c188f76c10753373d0b8d1d590a95b59efce9afd52e793789f37744d029a",
@@ -1259,7 +1312,7 @@
         "sources": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438"
       },
       "sourceHashes": {
-        "Makefile": "ff181b169f4578fbf5769a4cc46938b5ade83e7e411afd0417381bdf9bcfe04d",
+        "Makefile": "02588494616590a0ea8871fe13a08373a3ad7e2dbc190b1ba8756b36e872e252",
         "compose.yaml": "770a95fd7de1b658d640677ec94e0a639e695924e5b4197e68c5232714838da2",
         "frontend/src/App.test.tsx": "3bf7154c0c8c4cb5640dfb9b91488d1673ff2fdc5d78e609bf13e105b027e801",
         "frontend/src/App.tsx": "36834bd42d0773a7be881152a2678e472f7a7e125e0d67b82152db125b09a46e",
@@ -1297,9 +1350,10 @@
         "frontend/src/useUnsavedChanges.test.tsx": "e6383cbaddc03d3000a94941108138b46ef74b19f56363138e9b37b822454513",
         "frontend/src/useUnsavedChanges.ts": "0d6b4534f25cf2a6872bf0988dc61cc49271adbda371a10a180dc22ac6bc01ca",
         "scripts/asr-mode.sh": "ec57e5cfa25ec5e5e9b1931c57ea152db9e37c16cd062491d7b3efb19336d168",
-        "scripts/doctor.sh": "e37634a6d04f87324a7008e20b50e8586ba542b228269fe51be828a19881c884",
+        "scripts/doctor.sh": "d5a9b183f062c256ed9e7172cb76bbc7dc147ba6eeda69cc6bf76d421331accf",
         "scripts/fetch-cuda-wheels.py": "45aa22c7c09a025da00a7fea75ec31f89b77f82ca8c3ed33c44a96a2a689668b",
         "scripts/fetch-debs.py": "cbe39c4967f6cadb6dac78dd7dc5d57ade9c28b39f72a8bd6145ad71fb728ee2",
+        "scripts/storage-access.sh": "b36f7207ec28ba407e2d38393b184409553da5f3ea08a143928bdab57aa5ce97",
         "src/rapporteur/__init__.py": "23674b0ba1694fd86ee8b30844b0cea07553898098842e590b994b51f29bb949",
         "src/rapporteur/api/__init__.py": "0474983a1fd4ea6a9c84050ef0f922d33f877852717c83d2468ae9bb4d62beb8",
         "src/rapporteur/api/conferences.py": "b1a55533c81e6e0243e32735db3265f34a7667c1de8e2f2f6e84bc34a69070a3",
@@ -1311,7 +1365,7 @@
         "src/rapporteur/api/system.py": "ebd50cc5320f8e86a145127f88cbbe8f767f71b4c0e3beb787c64c95fd5acd9a",
         "src/rapporteur/api/talks.py": "9b99b9bfe4999cb8bf3680cf2319cf9cebd6dc8ebc4c625e4ca9c541a6b788a7",
         "src/rapporteur/api/workflow.py": "80c36077ed8baf5cbd4525afd78200b3ecfbb1bdb12f0db2fab39710c764e756",
-        "src/rapporteur/app.py": "d8a5107d13a1a9da1d9fd7f20f7e4de94e89e4f1bdb0ea0d6c043f4ebfb2acb1",
+        "src/rapporteur/app.py": "972aa820a1a4ffe8a75076229b5720a80667ddbd5f135ac9b40f7c3ee2ad76b9",
         "src/rapporteur/asr_models.py": "f0cb6ce749623b8fa3614a14192e489b0325f645224022a86cc8fc6e58f0de06",
         "src/rapporteur/asr_service.py": "682ed782a1123b63c743dcc09425764fb2d56ad35e8154608d1b8acc1603b6c3",
         "src/rapporteur/bundle.py": "9692b641f3de9ce431eb006fe14d9929d0fc477baf2c06c00cd408bd3b0dc1d0",
@@ -1365,7 +1419,8 @@
         "src/rapporteur/reports.py": "6703e0dfb8a4abe932153b146a17a1938fadd48df80c1aef1d4b396219cc2d49",
         "src/rapporteur/screening.py": "d6ae5d01d1c84824ac67e24b548d5908117d31b5ac22d4396b604eed8c2c642e",
         "src/rapporteur/settings.py": "84ddba78e3277f76ac17faee366e59fe9f0556240f3211864e3b8dc3f4438cc1",
-        "src/rapporteur/storage.py": "aa9b53bba8719aa64f1def335894d95c49f2b8c5dc98fe12135aa94488527eac",
+        "src/rapporteur/storage.py": "8829a0feb76e53ad54e2225e63d8f60f9182b326d40e0be767587a6b2df37533",
+        "src/rapporteur/storage_access.py": "9058f552ff71457605db93b365ea34faf7596ad9f32702856b2fb8a20e1788ac",
         "src/rapporteur/summaries.py": "5a0d67b8cdc6537b1feb2a1286f14d2dddc8966c95b0e85147785b75e4d6d201",
         "src/rapporteur/summarize/__init__.py": "7b3580e64b3eed5ec8c643530d7714044386c16d1a1ee258ac9a3213664f48e9",
         "src/rapporteur/summarize/checks.py": "c360edb9c284bab8e86d7e4ec08fa76af68b2ae8ded935bd298771e2ebe15683",
@@ -1390,7 +1445,7 @@
         "tests/test_app.py": "3c3a0a634731a3ac96e85d294e26f60b7ce2d1acbc8bbe41e04c5d83d027f8d8",
         "tests/test_card.py": "9a4d48b36631f7b7d1826249c37f0efa3954f1cb8358e8ccf9529451ed5b91ac",
         "tests/test_contracts.py": "55ac7ce90e7e32f002c5c83e7c9e8936851feb2c4b41d8aefc301d7c24e59f67",
-        "tests/test_deployment.py": "eea1ab93782eecb0dc3e1f08dadcce7d20983cf5537581f68ed609d8b3cf2cc9",
+        "tests/test_deployment.py": "2fbe62935d02d1c62cf4ecd1182824d40a060fb7aa7848dffec0abc7dc3752da",
         "tests/test_grounded_summary.py": "1c1ca4e441d2bd077b1188c2b2f45abcf9f98fdb11edd8b89b237719babe8f29",
         "tests/test_interest.py": "aca1c59ed231c7b3d2e9e12f16094b53e7511bac19b962822737b73a00d8922e",
         "tests/test_llm.py": "643a936e2657d7b0b68a194684f139b774908d06158df3f2c530782d81ecb6f7",
@@ -1407,6 +1462,7 @@
         "tests/test_report_template.py": "3acc32df38edb20b261dc35ec71b6fb1e7c3ec70717f9f025851d98c7affb8cb",
         "tests/test_screening.py": "ceab5bb4d76d64858a723414665ed9ffec9751243975d6d961534c53311c6a42",
         "tests/test_slides.py": "8a9723cc29b30e934577b490d9d2990c227c1fc29b59a284dda700b18abe5724",
+        "tests/test_storage_access.py": "96ef8e782157505b9099430573c82151148fea5d718afffdfd428c8ea31fb9aa",
         "tests/test_structured_tasks.py": "1c80d138bc9225b9f9f3ee0b896dfa1511b2684fa6ff9d07f5fc42aa94fb96c8",
         "tests/test_summarize_steps.py": "a5dd1d0f7bc6685f03dbdd30f5462330f03105cb3587262df956801de5fdf12a",
         "tests/test_summary_policy.py": "11e0c188f76c10753373d0b8d1d590a95b59efce9afd52e793789f37744d029a",

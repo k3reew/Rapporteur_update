@@ -24,6 +24,7 @@ from rapporteur.errors import UserError
 from rapporteur.llm.client import make_client
 from rapporteur.processing import ClientFactory, Processor
 from rapporteur.storage import Storage
+from rapporteur.storage_access import StoragePermissionError, access_error, check_storage
 
 log = logging.getLogger("rapporteur")
 
@@ -43,6 +44,8 @@ def create_app(
         log.addHandler(handler)
         log.setLevel(logging.INFO)
     data_dir = data_dir or settings.DATA_DIR
+    data_dir.mkdir(parents=True, exist_ok=True)
+    check_storage(data_dir)
     database = db.Database(data_dir / "rapporteur.db")
     storage = Storage(data_dir)
     processor = Processor(
@@ -107,6 +110,30 @@ def create_app(
                 **({"code": error.code} if error.code else {}),
             },
             status_code=error.status,
+        )
+
+    @app.exception_handler(PermissionError)
+    async def storage_error(request: Request, error: PermissionError) -> JSONResponse:
+        if not isinstance(error, StoragePermissionError):
+            if error.filename is None or not Path(error.filename).absolute().is_relative_to(
+                data_dir.absolute()
+            ):
+                log.exception("request=%s: ошибка доступа вне хранилища", request.state.request_id)
+                return JSONResponse(
+                    {
+                        "message": "Внутренняя ошибка. Подробности находятся в журнале приложения.",
+                        "request_id": request.state.request_id,
+                    },
+                    status_code=500,
+                )
+            error = access_error(Path(error.filename), error)
+        return JSONResponse(
+            {
+                "message": str(error),
+                "code": "storage_unwritable",
+                "request_id": request.state.request_id,
+            },
+            status_code=503,
         )
 
     @app.exception_handler(RequestValidationError)
