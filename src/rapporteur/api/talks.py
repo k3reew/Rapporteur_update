@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rapporteur import (
     db,
     materials,
+    preparation,
 )
 from rapporteur.api.dependencies import ReadTx, Tx
 from rapporteur.contracts import Speaker
@@ -69,6 +70,7 @@ def update_talk(conn: Tx, talk_id: str, data: TalkUpdate) -> Response:
     ).rowcount
     if not updated:
         raise NotFoundError("Доклад не найден")
+    preparation.sync_talk_card(conn, talk_id)
     return Response(status_code=204)
 
 

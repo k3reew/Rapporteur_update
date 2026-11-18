@@ -7,7 +7,7 @@
 """
 
 import uuid
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from rapporteur.contracts import Evidence, FragmentDraft, PackedFragment, TalkFragmentPack
@@ -32,19 +32,24 @@ class PackSource:
 
 
 def bounded_fragment(
-    fragment: PackedFragment, evidence: Collection[Evidence | EvidenceDraft]
+    fragment: PackedFragment,
+    evidence: Collection[Evidence | EvidenceDraft],
+    anchors: Sequence[tuple[int, int]] = (),
 ) -> PackedFragment:
     """Окна нужны только запросу. Цитаты сверяются с каноническим пакетом."""
     if len(fragment.text) <= 6000:
         return fragment
-    spans = [(0, 400)]
+    matched_spans = list(anchors)
     for item in evidence:
         if item.label != fragment.label:
             continue
         matched = match_quote(item.quote, fragment.text, QuoteConfig())
         if matched.span is not None:
-            start, end = matched.span
-            spans.append((max(0, start - 600), min(len(fragment.text), end + 600)))
+            matched_spans.append(matched.span)
+    spans = [(0, 400)]
+    spans.extend(
+        (max(0, start - 600), min(len(fragment.text), end + 600)) for start, end in matched_spans
+    )
     if len(spans) == 1:
         spans.append((max(400, len(fragment.text) - 1200), len(fragment.text)))
     parts = []
@@ -61,10 +66,14 @@ def bounded_fragment(
 
 
 def context_fragments(
-    pack: TalkFragmentPack, evidence: Collection[Evidence | EvidenceDraft]
+    pack: TalkFragmentPack,
+    evidence: Collection[Evidence | EvidenceDraft],
+    *,
+    anchors: Mapping[str, Sequence[tuple[int, int]]] | None = None,
 ) -> list[PackedFragment]:
     """Соседние сегменты сохраняют оговорку, отделённую ASR от цитируемой фразы."""
-    labels = {item.label for item in evidence}
+    anchors = anchors or {}
+    labels = {item.label for item in evidence} | anchors.keys()
     selected = set(labels)
     for index, fragment in enumerate(pack.fragments):
         if fragment.label not in labels or fragment.kind is not FragmentKind.TRANSCRIPT:
@@ -76,7 +85,11 @@ def context_fragments(
                 and neighbor.block is fragment.block
             ):
                 selected.add(neighbor.label)
-    return [bounded_fragment(f, evidence) for f in pack.fragments if f.label in selected]
+    return [
+        bounded_fragment(f, evidence, anchors.get(f.label, ()))
+        for f in pack.fragments
+        if f.label in selected
+    ]
 
 
 def build_pack(

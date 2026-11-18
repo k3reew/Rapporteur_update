@@ -6,11 +6,14 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+
+from rapporteur.asr_models import ASR_REQUIRED_FILES, ASR_SELECTOR, check_asr_model
 
 
 def read_json(url: str) -> tuple[dict[str, Any], bytes]:
@@ -174,38 +177,80 @@ def asr(root: Path, model: str = DEFAULT_ASR_MODEL) -> None:
     repo = asr_repository(model)
     info, _ = read_json(f"https://huggingface.co/api/models/{repo}/revision/main?blobs=true")
     revision = info["sha"]
-    root.mkdir(parents=True, exist_ok=True)
-    previous = root / "manifest.json"
-    stale = set(json.loads(previous.read_text()).get("files", {})) if previous.is_file() else set()
-    files = {}
+    if not re.fullmatch(r"[0-9a-f]+", revision):
+        raise ValueError("Недопустимая ревизия Whisper")
+
+    artifacts = {}
     for item in info["siblings"]:
         name = item["rfilename"]
-        if "/" in name or not name.endswith((".json", ".bin", ".txt", ".md")):
+        if not re.fullmatch(r"[A-Za-z0-9._-]+\.(json|bin|txt|md)", name):
             continue
         lfs = item.get("lfs") or {}
-        size = item.get("size") or lfs.get("size")
+        size = item.get("size")
         if size is None:
-            with urllib.request.urlopen(
-                f"https://huggingface.co/{repo}/resolve/{revision}/{name}", timeout=60
-            ) as source:
-                data = source.read()
-            (root / name).write_bytes(data)
-        else:
-            download(
-                f"https://huggingface.co/{repo}/resolve/{revision}/{name}",
-                root / name,
-                lfs.get("sha256"),
-                size,
-            )
-        files[name] = digest(root / name)
-    # Файлы прежней модели мешают новой: preprocessor_config.json от large-v3 задаёт
-    # 128 мел-полос, а small ждёт 80.
-    for name in stale - files.keys():
-        if "/" not in name:
-            (root / name).unlink(missing_ok=True)
-    (root / "manifest.json").write_text(
-        json.dumps({"repository": repo, "revision": revision, "files": files}, indent=2)
-    )
+            size = lfs.get("size")
+        sha256 = lfs.get("sha256")
+        blob_id = item.get("blobId")
+        if not isinstance(size, int) or size < 0 or not (sha256 or (not lfs and blob_id)):
+            raise OSError(f"Нет размера или контрольной суммы ASR: {name}")
+        artifacts[name] = (size, sha256, blob_id)
+    if not ASR_REQUIRED_FILES.issubset(artifacts):
+        raise OSError("В репозитории ASR отсутствуют обязательные файлы")
+
+    def manifest_for(directory: Path) -> str:
+        check_asr_model(directory)
+        unexpected = (
+            {path.name for path in directory.iterdir()} - artifacts.keys() - {"manifest.json"}
+        )
+        if unexpected:
+            raise OSError(f"Посторонние файлы в ревизии ASR: {', '.join(sorted(unexpected))}")
+        files = {}
+        for name, (size, sha256, blob_id) in artifacts.items():
+            path = directory / name
+            if path.is_symlink() or path.stat().st_size != size:
+                raise OSError(f"Не совпал размер файла ASR: {name}")
+            files[name] = digest(path)
+            if sha256:
+                valid = files[name] == sha256
+            else:
+                # Hugging Face reports the Git blob ID for regular files.
+                data = path.read_bytes()
+                valid = hashlib.sha1(f"blob {size}\0".encode() + data).hexdigest() == blob_id
+            if not valid:
+                raise OSError(f"Не совпала контрольная сумма ASR: {name}")
+        return json.dumps({"repository": repo, "revision": revision, "files": files}, indent=2)
+
+    revisions = root / "revisions"
+    revisions.mkdir(parents=True, exist_ok=True)
+    if revisions.resolve() != root.resolve() / "revisions":
+        raise OSError(f"Недопустимый каталог ревизий ASR: {revisions}")
+    target = revisions / f"{model}-{revision}"
+    with tempfile.TemporaryDirectory(prefix=".asr-", dir=revisions) as temporary:
+        stage = Path(temporary) / "model"
+        verify_existing = target.exists()
+        if not verify_existing:
+            stage.mkdir()
+            for name, (size, sha256, _) in artifacts.items():
+                download(
+                    f"https://huggingface.co/{repo}/resolve/{revision}/{name}",
+                    stage / name,
+                    sha256,
+                    size,
+                )
+            (stage / "manifest.json").write_text(manifest_for(stage))
+            try:
+                stage.rename(target)
+            except OSError:
+                if not target.is_dir():
+                    raise
+                verify_existing = True
+        if verify_existing and (
+            target.is_symlink() or (target / "manifest.json").read_text() != manifest_for(target)
+        ):
+            raise OSError(f"Некорректная ревизия ASR: {target}")
+        selector = Path(temporary) / ASR_SELECTOR
+        selector.write_text(json.dumps(target.relative_to(root).as_posix()) + "\n")
+        os.replace(selector, root / ASR_SELECTOR)
     print(f"ASR: {repo}@{revision}", flush=True)
 
 

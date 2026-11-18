@@ -47,6 +47,7 @@ def render_formats(
         talk.model_copy(
             update={
                 "speakers": talk.speakers or ["Автор не установлен"],
+                "authors": talk.authors or talk.speakers or ["Автор не установлен"],
                 # docxtpl uses the paragraph marker to preserve real Word paragraph boundaries.
                 "summary": talk.summary.replace("\n\n", "\a") if talk.summary else None,
             }

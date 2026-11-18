@@ -18,7 +18,7 @@ from rapporteur.contracts.base import NonEmptyStr
 from rapporteur.contracts.enums import FileKind, FragmentKind, TextOrigin
 from rapporteur.contracts.fragments import PageLocator, TimeLocator
 from rapporteur.errors import FailureCode, StageError, UserError
-from rapporteur.ingest import card, documents, notes
+from rapporteur.ingest import card, documents, notes, titles
 from rapporteur.llm.client import LlmClient
 from rapporteur.llm.tasks import json_task
 from rapporteur.storage import Storage, blob_key, cache_key
@@ -27,6 +27,7 @@ log = logging.getLogger("rapporteur.preparation")
 
 VERSION = "2.0.0"
 _RECORDINGS = (FileKind.AUDIO, FileKind.VIDEO)
+_UNTITLED = "Тема не установлена"
 ASR_DISABLED = "Распознавание речи выключено (ASR_MODE): запись не расшифрована"
 AuthorName = Annotated[str, Field(min_length=1, max_length=200)]
 
@@ -143,16 +144,22 @@ def transcript_windows(texts: list[str], budget: int) -> Iterator[list[tuple[int
         start = max(start + 1, end - 5)
 
 
-def prepared_key(file: db.Row, profile_revision: str) -> str:
+def _asr_revision(file: db.Row) -> str:
     import os
     from pathlib import Path
 
-    manifest = Path(os.environ.get("ASR_MODEL_DIR", "models/asr")) / "manifest.json"
-    asr_revision = (
-        manifest.read_text()
-        if file["kind"] in (FileKind.AUDIO, FileKind.VIDEO) and manifest.is_file()
-        else ""
-    )
+    from rapporteur.asr_models import resolve_asr_model
+
+    if file["kind"] not in _RECORDINGS:
+        return ""
+    root = Path(os.environ.get("ASR_MODEL_DIR", "models/asr"))
+    manifest = resolve_asr_model(root) / "manifest.json"
+    return manifest.read_text() if manifest.is_file() else ""
+
+
+def prepared_key(file: db.Row, profile_revision: str, *, asr_revision: str | None = None) -> str:
+    if asr_revision is None:
+        asr_revision = _asr_revision(file)
     profile_revision += asr_revision
     return (
         f"cache/prepared/{cache_key(VERSION, file['sha256'], file['kind'], profile_revision)}.json"
@@ -165,7 +172,8 @@ def extract(
     client: LlmClient,
     profile: ModelProfile,
 ) -> Prepared:
-    key = prepared_key(file, profile.model_dump_json())
+    asr_revision = _asr_revision(file)
+    key = prepared_key(file, profile.model_dump_json(), asr_revision=asr_revision)
     if file["kind"] in _RECORDINGS and not settings.ASR_ENABLED and not storage.exists(key):
         # Не кэшируется: после включения ASR запись расшифруется. Готовая расшифровка
         # из кэша используется и без ASR.
@@ -181,7 +189,10 @@ def extract(
                     {"Content-Type": "application/json"},
                 )
                 with urllib.request.urlopen(request, timeout=14400) as answer:
-                    segments = json.load(answer)["segments"]
+                    result = json.load(answer)
+                if asr_revision and result.get("revision") != asr_revision:
+                    raise ValueError("Несовпадение ревизии ASR: перезапустите app и ASR вместе")
+                segments = result["segments"]
             except (OSError, ValueError, KeyError) as error:
                 raise StageError(FailureCode.LLM_UNAVAILABLE, f"ASR недоступен: {error}") from error
             # Merge segments starting in the same second to keep transcript labels unique.
@@ -313,13 +324,53 @@ def state(conn: sqlite3.Connection, conference_id: str) -> dict[str, object]:
     warnings = _warnings(conn, conference_id)
     if not row:
         return {"version": 0, "job": None, "error": None, "talks": [], "warnings": warnings}
+    proposal = json.loads(row["proposal"])
+    if row["job"] == "confirmed":
+        talks = {talk["id"]: talk for talk in db.conference_talks(conn, conference_id)}
+        for item in proposal:
+            if (talk := talks.get(item.get("talk_id"))) is not None:
+                item.update(_card_fields(talk))
     return {
         "version": row["version"],
         "job": row["job"],
         "error": row["error"],
-        "talks": json.loads(row["proposal"]),
+        "talks": proposal,
         "warnings": warnings,
     }
+
+
+def _card_fields(talk: db.Row) -> dict[str, Any]:
+    return {
+        "title": talk["title"] or _UNTITLED,
+        "speakers": json.loads(talk["speakers"]),
+        "organizations": json.loads(talk["organizations"]),
+        "contacts": json.loads(talk["contacts"]),
+    }
+
+
+def sync_talk_card(conn: sqlite3.Connection, talk_id: str) -> None:
+    row = db.one(
+        conn,
+        "SELECT preparations.* FROM talks JOIN sections ON sections.id=talks.section_id "
+        "JOIN preparations ON preparations.conference_id=sections.conference_id WHERE talks.id=?",
+        talk_id,
+    )
+    if row is None:
+        return
+    proposal = json.loads(row["proposal"])
+    matching = [item for item in proposal if item.get("talk_id") == talk_id]
+    if not matching and row["job"] != "running":
+        return
+    talk = db.one(conn, "SELECT * FROM talks WHERE id=?", talk_id)
+    assert talk is not None
+    for item in matching:
+        item.update(_card_fields(talk))
+    # A running worker captured the old card. Its version check discards that result.
+    conn.execute(
+        "UPDATE preparations SET proposal=?, version=version+1, "
+        "job=CASE WHEN job='running' THEN 'queued' ELSE job END WHERE conference_id=?",
+        (db.dumps(proposal), row["conference_id"]),
+    )
 
 
 def _warnings(conn: sqlite3.Connection, conference_id: str) -> list[str]:
@@ -363,8 +414,13 @@ def apply(
     data: ProposalWrite,
     storage: Storage | None = None,
 ) -> None:
-    current = state(conn, conference_id)
-    if current["version"] != data.version or current["job"] not in ("done", "confirmed"):
+    materials.require_conference(conn, conference_id)
+    current = db.one(conn, "SELECT * FROM preparations WHERE conference_id=?", conference_id)
+    if (
+        current is None
+        or current["version"] != data.version
+        or current["job"] not in ("done", "confirmed")
+    ):
         raise UserError("Разбиение изменилось или ещё не готово: обновите страницу", 409)
     files = {
         r["id"]: r
@@ -425,10 +481,13 @@ def apply(
     for item in data.talks:
         talk_id = item.talk_id or materials.add_talk(conn, conference_id, item.title, None)
         changed.add(talk_id)
+        title: str | None = item.title
+        if title == _UNTITLED and item.talk_id and talks[item.talk_id]["title"] is None:
+            title = None
         conn.execute(
             "UPDATE talks SET title=?, speakers=?, organizations=?, contacts=? WHERE id=?",
             (
-                item.title,
+                title,
                 db.dumps([s.model_dump(mode="json") for s in item.speakers]),
                 db.dumps(item.organizations),
                 db.dumps(item.contacts),
@@ -481,6 +540,7 @@ def propose(
     storage: Storage | None = None,
 ) -> list[ProposedTalk]:
     proposed: list[ProposedTalk] = []
+    known_talks = {talk.id: talk for talk in existing.talks}
     program = "\n".join(
         f.normalized_text
         for file in files
@@ -562,6 +622,7 @@ def propose(
             )
             if existing_id:
                 used_talks.add(existing_id)
+            known = known_talks.get(existing_id) if existing_id else None
             ordered = sorted(starts)
             end = (
                 time_starts[ordered[index + 1]] if index + 1 < len(ordered) else file["duration_ms"]
@@ -569,8 +630,12 @@ def propose(
             proposed.append(
                 ProposedTalk(
                     talk_id=existing_id,
-                    title=boundary.title,
-                    speakers=[Speaker(name=s) for s in boundary.speakers],
+                    title=known.title if known and known.title else boundary.title,
+                    speakers=(
+                        known.speakers
+                        if known and known.speakers
+                        else [Speaker(name=s) for s in boundary.speakers]
+                    ),
                     links=[
                         Link(
                             file_id=file["id"],
@@ -602,7 +667,25 @@ def propose(
                 for s in (material.title_candidates.speakers if material.title_candidates else [])
             ]
         )
-        if known is None:
+        fragments = extracted[file["id"]].fragments
+        if known and not speakers:
+            fragments = [f for f in fragments if f.origin is not TextOrigin.VLM]
+        if known and not speakers and file["kind"] == FileKind.DOCUMENT:
+            first_page = next(
+                (
+                    fragment.normalized_text
+                    for fragment in fragments
+                    if isinstance(fragment.locator, PageLocator)
+                ),
+                "",
+            )
+            names = dict.fromkeys(
+                name
+                for line in first_page.splitlines()
+                for name in titles.speakers_in_line(line.strip(), explicit_only=True)
+            )
+            speakers = [Speaker(name=name) for name in names]
+        if known is None or (not speakers and fragments and file["kind"] in _CARD_KINDS):
             budget = max(
                 4000,
                 min(
@@ -614,19 +697,22 @@ def propose(
                     ),
                 ),
             )
-            candidates = [
-                {"index": i, "title": p.title, "speakers": [s.name for s in p.speakers]}
-                for i, p in enumerate(proposed)
-            ]
+            candidates = (
+                [
+                    {"index": i, "title": p.title, "speakers": [s.name for s in p.speakers]}
+                    for i, p in enumerate(proposed)
+                ]
+                if known is None
+                else []
+            )
+            material_text = "\n".join(f.normalized_text for f in fragments)[: budget // 2]
             matches = []
             for batch in candidate_windows(candidates, budget // 2):
                 allowed = [item["index"] for item in batch]
                 content = json.dumps(
                     {
                         "program": program[: budget // 4],
-                        "material": "\n".join(
-                            f.normalized_text for f in extracted[file["id"]].fragments
-                        )[: budget // 2],
+                        "material": material_text,
                         "candidates": batch,
                     },
                     ensure_ascii=False,
@@ -637,30 +723,45 @@ def propose(
                 def check_match(value: MaterialMatch, ids: list[int] = allowed) -> list[str]:
                     return [] if value.talk_index in (None, *ids) else ["Неизвестный доклад"]
 
-                matched_part = json_task(
-                    client,
-                    profile,
-                    "Определи тему и явно указанных авторов материала. "
-                    "Если материал относится к одному из предложенных докладов, укажи "
-                    "talk_index и уверенность. При неоднозначности talk_index=null. "
-                    "Не придумывай фамилии. reason объясняет основания.",
-                    content,
-                    MaterialMatch,
-                    schema=schema,
-                    task=f"Тема и авторы {file['relative_path']}",
-                    check=check_match,
-                )
+                try:
+                    matched_part = json_task(
+                        client,
+                        profile,
+                        "Определи тему и явно указанных авторов материала. "
+                        "Если материал относится к одному из предложенных докладов, укажи "
+                        "talk_index и уверенность. При неоднозначности talk_index=null. "
+                        "Не придумывай фамилии. reason объясняет основания.",
+                        content,
+                        MaterialMatch,
+                        schema=schema,
+                        task=f"Тема и авторы {file['relative_path']}",
+                        check=check_match,
+                    )
+                except StageError as error:
+                    if known is None:
+                        raise
+                    log.warning("Автор доклада не определён: %s", error.message)
+                    break
                 matches.append(matched_part)
-            matched = max(matches, key=lambda value: value.confidence)
-            title = matched.title or title
-            speakers = [Speaker(name=name) for name in matched.speakers] or speakers
-            if (
-                matched.talk_index is not None
-                and matched.confidence >= 0.85
-                and matched.talk_index < len(proposed)
-            ):
-                proposed[matched.talk_index].links.append(Link(file_id=file["id"]))
-                continue
+            if matches:
+                matched = max(matches, key=lambda value: value.confidence)
+                if known is None:
+                    title = matched.title or title
+                    speakers = [Speaker(name=name) for name in matched.speakers] or speakers
+                    if (
+                        matched.talk_index is not None
+                        and matched.confidence >= 0.85
+                        and matched.talk_index < len(proposed)
+                    ):
+                        proposed[matched.talk_index].links.append(Link(file_id=file["id"]))
+                        continue
+                else:
+                    source = " ".join(material_text.casefold().split())
+                    speakers = [
+                        Speaker(name=name)
+                        for name in dict.fromkeys(matched.speakers)
+                        if name.strip() and " ".join(name.casefold().split()) in source
+                    ]
         # Attach by known folder first, then exact title; ambiguous files remain separate proposals.
         title = title or PurePosixPath(file["relative_path"]).stem + " (тема предварительная)"
         match = next(
@@ -674,6 +775,8 @@ def propose(
         )
         if match:
             match.links.append(Link(file_id=file["id"]))
+            if not match.speakers:
+                match.speakers = speakers
             if match.talk_id is None:
                 match.talk_id = talk_id
         else:
@@ -686,7 +789,6 @@ def propose(
                     reason="Проверьте тему и привязку к записи.",
                 )
             )
-    known_talks = {talk.id: talk for talk in existing.talks}
     by_id = {file["id"]: file for file in files}
 
     def model_card(lines: list[str], names: list[str]) -> card.CardHints:

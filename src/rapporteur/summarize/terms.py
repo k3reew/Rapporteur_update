@@ -43,9 +43,9 @@ def find_definitions(pack: TalkFragmentPack, wanted: Iterable[str]) -> dict[str,
     result: dict[str, Definition] = {}
     for abbreviation in wanted:
         for fragment in pack.fragments:
-            definition = _definition(fragment.text, abbreviation)
-            if definition:
-                result[abbreviation] = Definition(abbreviation, definition, fragment.label)
+            match = definition_at(fragment.text, abbreviation)
+            if match:
+                result[abbreviation] = Definition(abbreviation, match[0], fragment.label)
                 break
     return result
 
@@ -78,18 +78,19 @@ def _explained(text: str, start: int, end: int) -> bool:
     return re.match(r"\s*[—–]\s*[a-zа-яё]", after) is not None
 
 
-def _definition(text: str, abbreviation: str) -> str | None:
+def definition_at(text: str, abbreviation: str) -> tuple[str, tuple[int, int]] | None:
+    """Расшифровка и положение конструкции, в которой она найдена."""
     escaped = re.escape(abbreviation)
     for match in re.finditer(rf"\(\s*{escaped}\s*[),;]", text):
         definition = _expansion_before(text[: match.start()], abbreviation)
         if definition:
-            return definition
+            return definition, match.span()
     after = re.search(rf"(?<![\w-]){escaped}\s*\(([^)]{{3,{_MAX_DEFINITION}}})\)", text)
     if after and _LOWER.search(after.group(1)):
-        return " ".join(after.group(1).split())
+        return " ".join(after.group(1).split()), after.span()
     dash = re.search(rf"(?<![\w-]){escaped}\s*[—–]\s*([^.;\n]{{3,{_MAX_DEFINITION}}})", text)
     if dash and _LOWER.search(dash.group(1)[:1]):
-        return " ".join(dash.group(1).split())
+        return " ".join(dash.group(1).split()), dash.span()
     return None
 
 

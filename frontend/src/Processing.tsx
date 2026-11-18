@@ -112,7 +112,7 @@ export function Processing(
                   <Fragment key={talk.id}><tr>
                     <th scope="row">{talk.section} · {talk.order}. {talk.title ?? 'Без названия'}</th>
                     <td>
-                      <span className={`pill ${statusTone[talk.status] ?? ''}`}>{talkStatuses[talk.status] ?? talk.status}</span>
+                      <span className={`pill ${statusTone[talk.status] ?? ''}`}>{talk.card_only && talk.status === 'processed' ? 'Карточка готова' : talkStatuses[talk.status] ?? talk.status}</span>
                       {talk.card_only && <><br /><span className="pill">только карточка</span></>}
                       {talk.summary_status === 'needs_attention' && !talk.card_only && <><br /><small>Сводка требует внимания</small></>}
                     </td>

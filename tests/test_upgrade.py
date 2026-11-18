@@ -72,3 +72,70 @@ def test_restart_requeues_all_interrupted_job_types(
         for table in ("preparations", "recommendation_jobs"):
             jobs = conn.execute(f"SELECT DISTINCT job FROM {table}").fetchall()
             assert [row["job"] for row in jobs] == ["queued"]
+
+
+def test_upgrade_invalidates_locally_edited_preparation_drafts(tmp_path: Path) -> None:
+    from rapporteur import db
+
+    from .workflow_support import seed_regulation
+
+    app = create_app(tmp_path, process=False)
+    seed_regulation(app.state.database)
+    with TestClient(app) as client:
+        conference = client.post("/api/v1/conferences", json={"title": "Пример"}).json()["id"]
+        base = f"/api/v1/conferences/{conference}"
+        url = base + "/preparation"
+        material = client.post(
+            base + "/materials",
+            params={"path": "речь.txt", "purpose": "document"},
+            headers={"Content-Type": "application/octet-stream"},
+            content="Текст доклада".encode(),
+        )
+        assert material.status_code == 201, material.text
+        with app.state.database.tx() as conn:
+            conn.execute(
+                "INSERT INTO preparations(conference_id, version, job) VALUES (?, 4, 'done')",
+                (conference,),
+            )
+        saved = client.put(
+            url,
+            json={
+                "version": 4,
+                "talks": [
+                    {
+                        "title": "Доклад",
+                        "contacts": ["proposal@example.org"],
+                        "links": [{"file_id": material.json()["id"]}],
+                    }
+                ],
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        draft = {key: saved.json()[key] for key in ("version", "talks")}
+        assert draft["version"] == 5
+        talk_id = draft["talks"][0]["talk_id"]
+        draft["talks"][0]["contacts"] = ["local-draft@example.org"]
+
+    # Recreate a v4 card edit, which changed the registry without bumping preparation.version.
+    with app.state.database.tx() as conn:
+        conn.execute(
+            "UPDATE talks SET contacts=?, input_revision=input_revision+1 WHERE id=?",
+            (db.dumps(["registry@example.org"]), talk_id),
+        )
+        conn.execute("PRAGMA user_version = 4")
+
+    with TestClient(create_app(tmp_path, process=False)) as client:
+        card_url = f"/api/v1/talks/{talk_id}"
+        before = client.get(card_url).json()
+        assert client.put(url, json=draft).status_code == 409
+        assert client.get(card_url).json() == before
+        refreshed = client.get(url).json()
+        assert refreshed["version"] == 6
+        assert refreshed["talks"][0]["contacts"] == ["registry@example.org"]
+        saved = client.put(url, json={key: refreshed[key] for key in ("version", "talks")})
+        assert saved.status_code == 200, saved.text
+        assert client.get(card_url).json()["contacts"] == ["registry@example.org"]
+        saved_version = saved.json()["version"]
+
+    with TestClient(create_app(tmp_path, process=False)) as client:
+        assert client.get(url).json()["version"] == saved_version

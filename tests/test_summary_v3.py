@@ -132,3 +132,129 @@ def test_short_v3_summary_warns_the_report_operator() -> None:
     )
     result = build_report_input(sources, select_talks(sources), "starter-1", True)
     assert any("Короткая сводка" in warning for warning in result.warnings)
+
+
+def test_critic_uses_the_definition_window_when_the_abbreviation_repeats() -> None:
+    from rapporteur.summarize.pack import PackSource, build_pack
+
+    from .fictional_talk import CONFERENCE, DECK, SLIDES, TALK, line, slide_draft
+
+    filler = "LRU в таблице. Большая таблица значений. " * 2600
+    definition = "LRU (least recently used). Определение не подтверждает выигрыш."
+    source = build_pack(
+        CONFERENCE,
+        TALK,
+        [
+            PackSource(
+                DECK,
+                [
+                    *[slide_draft(n, t) for n, t in enumerate(SLIDES, 1)],
+                    slide_draft(6, filler + definition + filler),
+                ],
+            )
+        ],
+    )
+    claims = verify_facts(
+        FactsDraft.model_validate_json(facts_answer()), source, QuoteConfig(), "v3"
+    )
+    items = [line("Автор сравнил альтернативы, включая LRU (least recently used).", "c2")] * 2
+    draft = SummaryDraft.model_validate({"sentences": items, "conclusions": []})
+    answer = {
+        "decisions": [{"line": key, "supported": True, "reason": "Есть"} for key in ("s1", "s2")],
+        "reader_passed": True,
+        "reader_issues": [],
+    }
+    client = ScriptedClient([json.dumps(answer)])
+    assert review_summary(
+        client, V3, draft, claims, source, attempt=1, seed=1, glossary={"LRU": "S6"}
+    )[0].passed
+    sources = json.loads(client.requests[0].messages[1].content)
+    assert all(
+        any(definition in item["text"] and len(item["text"]) < 6000 for item in row["sources"])
+        for row in sources
+    )
+    assert len(source.fragments[-1].text) > 200_000
+
+
+def test_critic_paginates_requests_and_preserves_decisions_and_reader_issues() -> None:
+    from rapporteur.llm.client import ChatRequest, ChatResponse
+    from rapporteur.summarize.pack import PackSource, build_pack
+
+    from .fictional_talk import CONFERENCE, DECK, SLIDES, TALK, line, slide_draft
+
+    slides = list(SLIDES)
+    slides[2] += " Дополнительные данные о методе." * 165
+    source = build_pack(
+        CONFERENCE, TALK, [PackSource(DECK, [slide_draft(n, t) for n, t in enumerate(slides, 1)])]
+    )
+    claims = verify_facts(
+        FactsDraft.model_validate_json(facts_answer()), source, QuoteConfig(), "v3"
+    )
+    draft = SummaryDraft.model_validate(
+        {
+            "sentences": [line(f"Описание метода {n}.", "c2") for n in range(1, 11)],
+            "conclusions": [line("Вывод из доклада.", "c2")],
+        }
+    )
+
+    class BudgetClient:
+        def __init__(self) -> None:
+            self.pages: list[list[str]] = []
+
+        def chat(self, request: ChatRequest) -> ChatResponse:
+            assert request.schema
+            chars = sum(len(msg.content) for msg in request.messages) + len(
+                json.dumps(request.schema)
+            )
+            assert chars // 4 + request.max_tokens <= request.context_tokens
+            ids = request.schema["$defs"]["LineDecision"]["properties"]["line"]["enum"]
+            self.pages.append(ids)
+            assert "Описание метода 1." in request.messages[1].content
+            assert "Вывод из доклада." in request.messages[1].content
+            issues = ["Данные требуют пояснения."] if "c1" not in ids else ["Уточни результат."]
+            if "s1" in ids:
+                issues = []
+            result = {
+                "decisions": [
+                    {"line": key, "supported": key not in {"s1", "c1"}, "reason": "Решение"}
+                    for key in ids
+                ],
+                "reader_passed": not issues,
+                "reader_issues": issues,
+            }
+            return ChatResponse(json.dumps(result), "", "stop", 100, 100, 0)
+
+    client = BudgetClient()
+    critic, reader = review_summary(client, V3, draft, claims, source, attempt=2, seed=1)
+    assert len(client.pages) > 1
+    assert [key for page in client.pages for key in page] == [
+        *(f"s{n}" for n in range(1, 11)),
+        "c1",
+    ]
+    assert critic.details == "s1: Решение; c1: Решение"
+    assert not reader.passed and reader.attempt == 2
+    assert reader.details and "Уточни результат." in reader.details
+
+
+def test_critic_reserves_only_the_output_needed_for_a_small_draft() -> None:
+    from .fictional_talk import line
+
+    source = pack()
+    claims = verify_facts(
+        FactsDraft.model_validate_json(facts_answer()), source, QuoteConfig(), "v3"
+    )
+    draft = SummaryDraft.model_validate(
+        {"sentences": [line("Автор сравнил две политики.", "c2")], "conclusions": []}
+    )
+    profile = V3.model_copy(
+        update={"generation": V3.generation.model_copy(update={"max_tokens": 8000})}
+    )
+    answer = {
+        "decisions": [{"line": "s1", "supported": True, "reason": "Есть"}],
+        "reader_passed": True,
+        "reader_issues": [],
+    }
+    client = ScriptedClient([json.dumps(answer)])
+    assert review_summary(client, profile, draft, claims, source, attempt=1, seed=1)[0].passed
+    assert 240 <= client.requests[0].max_tokens < 8000
+    assert profile.generation.max_tokens == 8000

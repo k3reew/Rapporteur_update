@@ -486,3 +486,160 @@ def test_preparation_asks_model_for_card_and_caches_answer(
     assert state["talks"][0]["contacts"] == ["+7 495 111-22-33"]
     assert len(list((tmp_path / "cache" / "card").iterdir())) == 1
     assert not scripted.responses
+
+
+def test_reapplying_preparation_keeps_manual_cards_and_rejects_stale_drafts(
+    web: tuple[TestClient, ScriptedClient],
+) -> None:
+    client, _ = web
+    conference = client.post("/api/v1/conferences", json={"title": "Карточки"}).json()["id"]
+    base = f"/api/v1/conferences/{conference}"
+    url = base + "/preparation"
+    proposed = []
+    for number in (1, 2):
+        uploaded = client.post(
+            base + "/materials",
+            params={"path": f"речь-{number}.txt", "purpose": "document"},
+            headers={"Content-Type": "application/octet-stream"},
+            content=f"Доклад {number}".encode(),
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        proposed.append(
+            {"title": f"Доклад {number}", "links": [{"file_id": uploaded.json()["id"]}]}
+        )
+    database = client.app.state.database  # type: ignore[attr-defined]
+    with database.tx() as conn:
+        conn.execute(
+            "INSERT INTO preparations(conference_id,version,job) VALUES (?,1,'done')",
+            (conference,),
+        )
+    confirmed = client.put(url, json={"version": 1, "talks": proposed})
+    assert confirmed.status_code == 200, confirmed.text
+    draft = {key: confirmed.json()[key] for key in ("version", "talks")}
+    card_urls = [f"/api/v1/talks/{talk['talk_id']}" for talk in draft["talks"]]
+    cards = []
+    for number, card_url in enumerate(card_urls, 1):
+        before = client.get(card_url).json()
+        response = client.put(
+            card_url,
+            json={
+                "title": f"Исправленный доклад {number}",
+                "speakers": [{"name": f"Автор {number}"}],
+                "organizations": [f"Институт {number}"],
+                "contacts": [f"author{number}@example.org"],
+                "revision": before["revision"],
+            },
+        )
+        assert response.status_code == 204, response.text
+        cards.append(client.get(card_url).json())
+        assert cards[-1]["revision"] == before["revision"] + 1
+
+    assert client.put(url, json=draft).status_code == 409
+    assert [client.get(card_url).json() for card_url in card_urls] == cards
+
+    current = client.get(url).json()
+    assert current["version"] == draft["version"] + 2
+    assert current["talks"][0]["contacts"] == ["author1@example.org"]
+    assert current["talks"][1]["contacts"] == ["author2@example.org"]
+    saved = client.put(url, json={key: current[key] for key in ("version", "talks")})
+    assert saved.status_code == 200, saved.text
+    for card_url, before in zip(card_urls, cards, strict=True):
+        after = client.get(card_url).json()
+        assert after == {**before, "revision": before["revision"] + 1}
+
+    # Simulate a confirmed proposal persisted before card edits and preparation were synchronized.
+    with database.tx() as conn:
+        conn.execute(
+            "UPDATE talks SET title=NULL, contacts=? WHERE id=?",
+            (db.dumps(["legacy-edit@example.org"]), draft["talks"][0]["talk_id"]),
+        )
+    refreshed = client.get(url).json()
+    assert refreshed["talks"][0]["contacts"] == ["legacy-edit@example.org"]
+    assert (
+        client.put(url, json={key: refreshed[key] for key in ("version", "talks")}).status_code
+        == 200
+    )
+    legacy = client.get(card_urls[0]).json()
+    assert legacy["title"] is None and legacy["contacts"] == ["legacy-edit@example.org"]
+
+
+@pytest.mark.parametrize(
+    ("suffix", "byline"),
+    [
+        ("docx", "Автор: Иванов Иван Иванович."),
+        ("txt", "Автор: Иванов Иван Иванович."),
+        ("txt", "Доклад подготовлен Иванов Иван Иванович"),
+    ],
+)
+def test_folder_document_recovers_explicit_author(
+    web: tuple[TestClient, ScriptedClient], suffix: str, byline: str
+) -> None:
+    from io import BytesIO
+
+    from docx import Document
+
+    client, scripted = web
+    conference = client.post("/api/v1/conferences", json={"title": "Карточки"}).json()["id"]
+    base = f"/api/v1/conferences/{conference}"
+    lines = [
+        "Тема доклада: Кэширование запросов.",
+        byline,
+        "Институт примера",
+        "ivanov@example.org",
+    ]
+    if not byline.startswith("Автор:"):
+        scripted.responses.append(
+            '{"title":"Другая тема","speakers":["Иванов Иван Иванович","Неподтверждённый автор"],'
+            '"talk_index":null,"confidence":1,"reason":"Строка об авторе"}'
+        )
+    content = "\n".join(lines).encode()
+    if suffix == "docx":
+        document = Document()
+        for line in lines:
+            document.add_paragraph(line)
+        buffer = BytesIO()
+        document.save(buffer)
+        content = buffer.getvalue()
+    uploaded = client.post(
+        base + "/materials",
+        params={"path": f"01_Кэширование/речь.{suffix}", "purpose": "document"},
+        headers={"Content-Type": "application/octet-stream"},
+        content=content,
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    talk = client.get(base + "/materials").json()["talks"][0]
+    assert client.post(base + "/preparation").status_code == 202
+    assert client.app.state.processor.run_once()  # type: ignore[attr-defined]
+    state = client.get(base + "/preparation").json()
+    assert state["job"] == "done", state
+    assert state["talks"][0]["title"] == talk["title"]
+    assert state["talks"][0]["speakers"] == [
+        {
+            "name": "Иванов Иван Иванович",
+            "role": "speaker",
+            "affiliation": "Институт примера",
+            "contacts": ["ivanov@example.org"],
+        }
+    ]
+
+
+def test_manual_card_edit_requeues_an_inflight_proposal(
+    web: tuple[TestClient, ScriptedClient],
+) -> None:
+    client, _ = web
+    conference, talk = _talk(client)
+    url = f"/api/v1/conferences/{conference}/preparation"
+    assert client.post(url).status_code == 202
+    database = client.app.state.database  # type: ignore[attr-defined]
+    with database.tx() as conn:
+        conn.execute("UPDATE preparations SET job='running' WHERE conference_id=?", (conference,))
+    running = client.get(url).json()
+    assert (
+        client.put(
+            f"/api/v1/talks/{talk}",
+            json={"title": "Ручная правка", "speakers": [{"name": "Автор"}]},
+        ).status_code
+        == 204
+    )
+    queued = client.get(url).json()
+    assert queued["job"] == "queued" and queued["version"] == running["version"] + 1
