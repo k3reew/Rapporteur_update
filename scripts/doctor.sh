@@ -59,9 +59,21 @@ if command -v ss >/dev/null && ss -H -ltn | awk '{print $4}' | grep -qE ":${port
     echo "Порт $bind:$port занят: измените WEB_PORT в .env"; exit 1
   fi
 fi
-storage=$(value RAPPORTEUR_STORAGE ./storage)
+storage=${RAPPORTEUR_STORAGE:-$(value RAPPORTEUR_STORAGE ./storage)}
 parent="$storage"; [[ -d "$parent" ]] || parent=$(dirname "$parent")
 [[ -w "$parent" ]] || { echo "Нет права записи в $parent"; exit 1; }
+if [[ -d "$storage" ]]; then
+  if bash scripts/storage-access.sh check; then
+    :
+  else
+    status=$?
+    if [[ "$status" == 3 ]]; then
+      echo 'Образ app ещё не загружен: вложенные права будут проверены при запуске приложения'
+    else
+      exit "$status"
+    fi
+  fi
+fi
 available=$(df -Pk "$parent" | awk 'NR==2 {print $4}')
 (( available >= 5242880 )) || { echo 'Для запуска нужно не менее 5 ГБ свободного места'; exit 1; }
 echo "Проверка пройдена. Интерфейс: http://$bind:$port"

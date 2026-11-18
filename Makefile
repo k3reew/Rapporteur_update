@@ -30,7 +30,7 @@ RUN = $(COMPOSE) $$profile up
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: bundle-docs help up start down ps logs config check lint test format pull lock bundle install prepare doctor
+.PHONY: bundle-docs help up start down ps logs config check lint test format pull lock bundle install prepare doctor storage-check storage-repair
 
 help:
 	@grep -E '^## ' Makefile | sed 's/^## //'
@@ -124,6 +124,8 @@ bundle:
 	cp compose.yaml Makefile $(BUNDLE)/
 	mkdir -p $(BUNDLE)/scripts
 	cp scripts/doctor.sh scripts/asr-mode.sh $(BUNDLE)/scripts/
+	cp scripts/storage-access.sh $(BUNDLE)/scripts/
+	cp src/rapporteur/storage_access.py $(BUNDLE)/scripts/storage-access.py
 	$(MAKE) bundle-docs
 	sed 's|^OLLAMA_MODELS_DIR=.*|OLLAMA_MODELS_DIR=./models|; s|^ASR_MODELS_DIR=.*|ASR_MODELS_DIR=./models/asr|' .env.example > $(BUNDLE)/.env.example
 	printf '\n# Образ Ollama из комплекта: тег вместо digest (docs/offline.md).\nOLLAMA_IMAGE=%s\n' \
@@ -157,3 +159,13 @@ prepare:
 ## make doctor — проверить настройки, порт, GPU и наличие моделей без изменения сервера
 doctor:
 	@bash scripts/doctor.sh
+
+## make storage-check — проверить права вложенных каталогов от UID/GID приложения без обращения к моделям
+storage-check:
+	@bash scripts/storage-access.sh check
+
+## make storage-repair — остановить писателей, исправить владельца/права только хранилища и проверить доступ
+storage-repair:
+	$(ALL) stop app app-shared asr asr-cpu
+	@bash scripts/storage-access.sh repair
+	@bash scripts/storage-access.sh check
