@@ -253,3 +253,14 @@ Reviewed-сводка и положения → связи факт–пункт
 - Экраны и клиент. [frontend/src](../frontend/src)
 - Проверки. [tests](../tests)
 - Сквозная приёмка. [docs/benchmarks/2026-11-14-redesign.md](benchmarks/2026-11-14-redesign.md)
+
+## Дополнение аудита 18 ноября 2026
+
+| Поведение | Реализация | Регрессия |
+| --- | --- | --- |
+| Защита карточки и старых черновиков | api/talks.py, preparation.py, db.py v5 | test_card.py, test_upgrade.py |
+| Бюджет критика и определения | summarize/grounding.py, pack.py, terms.py | test_summary_v3.py |
+| Активная ревизия ASR и кэш | asr_models.py, asr_service.py, preparation.py | test_deployment.py, test_prepared_model_revision.py |
+| Точный снимок весов в бандле и смена режимов | Makefile, scripts/doctor.sh | test_deployment.py |
+
+Условия и результаты — в [протоколе исправлений](benchmarks/2026-11-18-audit-fixes.md).

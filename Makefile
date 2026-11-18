@@ -21,19 +21,12 @@ ASR_MODELS_DIR ?= $(or $(shell sed -n 's/^ASR_MODELS_DIR=//p' .env 2>/dev/null),
 OLLAMA_NETWORK ?= $(shell sed -n 's/^OLLAMA_NETWORK=//p' .env 2>/dev/null)
 # Хранилище приложения на хосте (RAPPORTEUR_STORAGE в .env), по умолчанию storage/.
 RAPPORTEUR_STORAGE ?= $(or $(shell sed -n 's/^RAPPORTEUR_STORAGE=//p' .env 2>/dev/null),./storage)
-# Распознавание речи: off, cpu или gpu по ASR_MODE (scripts/asr-mode.sh). Режим вычисляется
-# один раз и только в командах, которые его используют: auto опрашивает nvidia-smi.
-ASR_RESOLVED = $(eval ASR_RESOLVED := $$(shell bash scripts/asr-mode.sh))$(ASR_RESOLVED)
-ASR_SERVICE = $(if $(filter gpu,$(ASR_RESOLVED)),asr,$(if $(filter cpu,$(ASR_RESOLVED)),asr-cpu))
-ASR_FLAGS = $(if $(ASR_SERVICE),--profile asr-$(ASR_RESOLVED))
-# Приложение узнаёт из ASR_ENABLED, запущен ли ASR: без него записи пропускаются.
-ASR_ENABLED = $(if $(ASR_SERVICE),1,0)
-# Все режимы: down, ps и logs видят app, app-shared и оба варианта ASR.
+# Все режимы: down, stop, ps и logs видят app, app-shared и оба варианта ASR.
 ALL := $(COMPOSE) --profile shared-ollama --profile asr-gpu --profile asr-cpu
 ifneq ($(strip $(OLLAMA_NETWORK)),)
-RUN = ASR_ENABLED=$(ASR_ENABLED) $(COMPOSE) --profile shared-ollama $(ASR_FLAGS) up app-shared $(ASR_SERVICE)
+RUN = $(COMPOSE) --profile shared-ollama $$profile up app-shared $$service
 else
-RUN = ASR_ENABLED=$(ASR_ENABLED) $(COMPOSE) $(ASR_FLAGS) up
+RUN = $(COMPOSE) $$profile up
 endif
 
 .DEFAULT_GOAL := help
@@ -43,14 +36,17 @@ help:
 	@grep -E '^## ' Makefile | sed 's/^## //'
 
 ## make up      — собрать и запустить приложение, Ollama и ASR по ASR_MODE, http://127.0.0.1:18763
-up: doctor
-	mkdir -p $(RAPPORTEUR_STORAGE)
-	$(RUN) --build --detach --wait --wait-timeout 180
-
 ## make start   — запустить без сборки и скачивания образов (машина без интернета)
-start: doctor
-	mkdir -p $(RAPPORTEUR_STORAGE)
-	$(RUN) --detach --wait --wait-timeout 180 --no-build --pull never
+up start:
+	@set -eu; mode=$$(bash scripts/asr-mode.sh); ASR_MODE="$$mode" bash scripts/doctor.sh; \
+	mkdir -p "$(RAPPORTEUR_STORAGE)"; \
+	service=; profile=; export ASR_ENABLED=1; \
+	case "$$mode" in \
+	  gpu) service=asr; profile="--profile asr-gpu"; $(ALL) stop asr-cpu ;; \
+	  cpu) service=asr-cpu; profile="--profile asr-cpu"; $(ALL) stop asr ;; \
+	  off) ASR_ENABLED=0; $(ALL) stop asr asr-cpu ;; \
+	esac; \
+	$(RUN) --detach --wait --wait-timeout 180 $(if $(filter up,$@),--build,--no-build --pull never)
 
 ## make down    — остановить; база, материалы и справки остаются в storage/
 down:
@@ -105,8 +101,24 @@ bundle:
 	docker tag $(OLLAMA_PINNED) $(OLLAMA_TAG)
 	mkdir -p $(BUNDLE)/models
 	$(COMPOSE) run --rm export-model $(MODEL)
-	mkdir -p $(BUNDLE)/models/asr
-	cp -a $(ASR_MODELS_DIR)/. $(BUNDLE)/models/asr/
+	@set -eu; source="$(ASR_MODELS_DIR)"; target="$(BUNDLE)/models/asr"; \
+	if [ "$$source" -ef "$$target" ]; then exit 0; fi; \
+	source_path=$$(realpath -e -- "$$source"); \
+	case "$$source_path" in \
+	  "$$(realpath -m -- "$$target")"/*) echo "ASR_MODELS_DIR находится внутри $$target" >&2; exit 1 ;; \
+	esac; \
+	stage=$$(mktemp -d "$(BUNDLE)/models/.asr-XXXXXX"); \
+	trap 'rm -rf -- "$$stage"' EXIT; \
+	mkdir "$$stage/new"; cp -a "$$source/." "$$stage/new/"; \
+	if [ -e "$$target" ] || [ -L "$$target" ]; then mv -T "$$target" "$$stage/old"; fi; \
+	if ! mv -T "$$stage/new" "$$target"; then \
+	  if [ -e "$$stage/old" ] || [ -L "$$stage/old" ]; then \
+	    if ! mv -T "$$stage/old" "$$target"; then \
+	      trap - EXIT; echo "Прежний комплект ASR сохранён в $$stage/old" >&2; \
+	    fi; \
+	  fi; \
+	  exit 1; \
+	fi
 	bash -o pipefail -c 'docker save rapporteur:local rapporteur-asr:local $(OLLAMA_TAG) | gzip -1 > $(BUNDLE)/images.tar.gz.partial'
 	mv $(BUNDLE)/images.tar.gz.partial $(BUNDLE)/images.tar.gz
 	cp compose.yaml Makefile $(BUNDLE)/
@@ -136,7 +148,7 @@ install:
 
 ## make prepare — скачать обе модели и собрать образы на машине с интернетом
 prepare:
-	mkdir -p $(ASR_MODELS_DIR)
+	mkdir -p "$(ASR_MODELS_DIR)"
 	@mkdir -p $$(sed -n 's/^OLLAMA_MODELS_DIR=//p' .env)
 	$(COMPOSE) build app asr
 	$(MAKE) pull MODEL=$(MODEL)

@@ -113,8 +113,8 @@ def candidates_from_lines(title: str | None, other_lines: Sequence[str]) -> Titl
     )
 
 
-def speakers_in_line(line: str) -> list[str]:
-    if _NOT_SPEAKER.search(line):
+def speakers_in_line(line: str, *, explicit_only: bool = False) -> list[str]:
+    if _NOT_SPEAKER.search(line) or (explicit_only and not _SPEAKER_LABEL.match(line)):
         return []
     rest = _SPEAKER_LABEL.sub("", line, count=1)
     rest = _GROUP_CODE.sub(" ", rest)

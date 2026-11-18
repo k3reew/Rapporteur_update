@@ -45,7 +45,7 @@ from rapporteur.summarize.pack import context_fragments
 from rapporteur.summarize.terms import Definition, abbreviations, find_definitions
 
 # Версия шага входит в ключ кэша.
-VERSION = "2.1.0"
+VERSION = "2.1.1"
 STEP = "summary"
 
 _SUMMARY_NAMESPACE = uuid.UUID("9a4e2c71-3b5d-4f8e-a6c0-7d1b2e3f4a5c")

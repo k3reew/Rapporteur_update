@@ -12,11 +12,13 @@ from typing import Annotated, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, StringConstraints
 
+from rapporteur.asr_models import check_asr_model, resolve_asr_model
 from rapporteur.storage import Storage, blob_key, cache_key
 
 app = FastAPI(docs_url=None, redoc_url=None)
 _lock = Lock()
 _model: Any = None
+_model_directory: Path | None = None
 CHUNK_SECONDS = 300
 
 
@@ -24,8 +26,14 @@ class Input(BaseModel):
     sha256: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 
-def model() -> Any:
-    global _model
+def model_directory() -> Path:
+    directory = resolve_asr_model(Path(os.environ.get("ASR_MODEL_DIR", "/models/asr")))
+    check_asr_model(directory)
+    return directory
+
+
+def model(directory: Path) -> Any:
+    global _model, _model_directory
     if _model is None:
         from faster_whisper import WhisperModel
 
@@ -34,18 +42,21 @@ def model() -> Any:
             "int8" if device == "cpu" else "float16"
         )
         _model = WhisperModel(
-            os.environ.get("ASR_MODEL_DIR", "/models/asr"),
+            str(directory),
             device=device,
             compute_type=compute_type,
             local_files_only=True,
         )
+        _model_directory = directory
     return _model
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    if not (Path(os.environ.get("ASR_MODEL_DIR", "/models/asr")) / "model.bin").is_file():
-        raise HTTPException(503, "ASR model.bin отсутствует")
+    try:
+        model_directory()
+    except (OSError, ValueError) as error:
+        raise HTTPException(503, str(error)) from error
     return {"status": "ok"}
 
 
@@ -55,13 +66,15 @@ def transcribe(data: Input) -> dict[str, Any]:
     source = storage.path(blob_key(data.sha256))
     if not source.is_file():
         raise HTTPException(404, "Оригинал не найден")
-    # A read-only models directory is fingerprinted by the offline preparation manifest.
-    manifest = Path(os.environ.get("ASR_MODEL_DIR", "/models/asr")) / "manifest.json"
-    revision = (
-        manifest.read_text() if manifest.is_file() else os.environ.get("ASR_REVISION", "small")
-    )
     with _lock, tempfile.TemporaryDirectory(prefix="asr-") as tmp:
         try:
+            directory = _model_directory or model_directory()
+            manifest = directory / "manifest.json"
+            revision = (
+                manifest.read_text()
+                if manifest.is_file()
+                else os.environ.get("ASR_REVISION", "small")
+            )
             probe = subprocess.run(
                 [
                     "ffprobe",
@@ -117,7 +130,7 @@ def transcribe(data: Input) -> dict[str, Any]:
                     capture_output=True,
                     timeout=300,
                 )
-                segments, _ = model().transcribe(
+                segments, _ = model(directory).transcribe(
                     str(audio), vad_filter=True, beam_size=5, condition_on_previous_text=False
                 )
                 chunk = [

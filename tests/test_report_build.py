@@ -6,6 +6,7 @@ import io
 import json
 import re
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -372,3 +373,31 @@ def test_report_card_lists_authors_organizations_and_contacts() -> None:
     assert first.contacts == ["i@ex.org (Иванов И. И.)", "+7 495 000-00-00"]
     # Счётчики и прежние поля бланка не меняются: соавтор не докладчик.
     assert first.speakers == ["Иванов И. И."]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_export_shows_missing_author_in_all_formats(tmp_path: Path, legacy: bool) -> None:
+    sources = ReportSources(
+        conference=CONFERENCE,
+        sections=SECTIONS,
+        talks=[talk.model_copy(update={"speakers": []}) for talk in TALKS],
+        summaries=SUMMARIES,
+    )
+    assembled = build_report_input(sources, select_talks(sources), "starter-1", True)
+    context = template_context(assembled.input, report_variables(assembled.input))
+    template = load_template(STARTER)
+    if legacy:
+        document = Document()
+        document.add_paragraph(
+            "{% for talk in talks %}{{ talk.speakers | join(', ') }} {% endfor %}"
+        )
+        path = tmp_path / "legacy.docx"
+        document.save(str(path))
+        template = replace(template, document=path)
+    rendered = render_formats(template, context, list(ReportFormat), tmp_path)
+    expected = "Автор не установлен"
+    pdf = pdfium.PdfDocument(rendered[ReportFormat.PDF])
+    pdf_text = "".join(page.get_textpage().get_text_range() for page in pdf)
+    assert expected in "\n".join(paragraphs(rendered[ReportFormat.DOCX]))
+    assert expected in rendered[ReportFormat.MARKDOWN].decode()
+    assert expected in pdf_text

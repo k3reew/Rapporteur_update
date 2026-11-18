@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { Processing } from './Processing';
@@ -36,6 +36,9 @@ test('доклад без интереса отделов получает то�
   render(<Processing conferenceId="c" onOpen={() => {}} />);
 
   expect(await screen.findByText('только карточка')).toBeDefined();
+  const cardRow = screen.getByRole('rowheader', { name: /Кэширование/ }).closest('tr')!;
+  expect(within(cardRow).getByText('Карточка готова')).toBeDefined();
+  expect(within(cardRow).queryByText(/Сводка готова/)).toBeNull();
   expect(screen.getByText(/только карточка — у 1/)).toBeDefined();
   expect(screen.getByText('Интерес не найден — только карточка')).toBeDefined();
   const buttons = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Открыть сводку' });

@@ -2,17 +2,19 @@
 
 import json
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from rapporteur.contracts import Claim, ModelProfile, SummaryDraft, TalkFragmentPack
 from rapporteur.contracts.claims import CheckResult
 from rapporteur.contracts.enums import CheckName
+from rapporteur.errors import FailureCode, StageError
 from rapporteur.llm.client import LlmClient, Message
 from rapporteur.llm.prompts import edition, load_prompt
 from rapporteur.llm.structured import ask_structured
 from rapporteur.summarize.pack import context_fragments
-from rapporteur.summarize.terms import abbreviations
+from rapporteur.summarize.terms import abbreviations, definition_at
 
 
 class LineDecision(BaseModel):
@@ -50,29 +52,88 @@ def review_summary(
     понятность текста новому читателю (READER_CONTEXT)."""
     by_key = {claim.key: claim for claim in claims}
     fragments = {fragment.label: fragment for fragment in pack.fragments}
-    lines = []
-    expected: list[str] = []
+    definitions = {}
+    for abbreviation, label in (glossary or {}).items():
+        if label in fragments and (match := definition_at(fragments[label].text, abbreviation)):
+            definitions[abbreviation] = (label, match[1])
+    lines: list[tuple[str, str, list[dict[str, str]]]] = []
     for prefix, items in (("s", draft.sentences), ("c", draft.conclusions)):
         for number, line in enumerate(items, 1):
-            expected.append(f"{prefix}{number}")
             evidence = [item for key in line.claim_ids for item in by_key[key].evidence]
+            anchors: dict[str, list[tuple[int, int]]] = {}
+            for abbreviation in abbreviations(line.text):
+                if abbreviation in definitions:
+                    label, span = definitions[abbreviation]
+                    anchors.setdefault(label, []).append(span)
             sources = [
                 {"label": fragment.label, "text": fragment.text}
-                for fragment in context_fragments(pack, evidence)
+                for fragment in context_fragments(pack, evidence, anchors=anchors)
             ]
-            for abbreviation in abbreviations(line.text):
-                label = (glossary or {}).get(abbreviation)
-                if label and label in fragments and all(s["label"] != label for s in sources):
-                    sources.append({"label": label, "text": fragments[label].text})
-            lines.append({"line": f"{prefix}{number}", "text": line.text, "sources": sources})
+            lines.append((f"{prefix}{number}", line.text, sources))
+
     output = ReaderReview if edition(profile.prompt_version) >= 3 else GroundingReview
-    schema = output.model_json_schema()
-    if output is ReaderReview:
-        schema["properties"]["reader_issues"]["items"]["maxLength"] = 240
-    schema["$defs"]["LineDecision"]["properties"]["line"]["enum"] = expected
-    schema["properties"]["decisions"]["minItems"] = len(expected)
-    schema["properties"]["decisions"]["maxItems"] = len(expected)
     prompt = load_prompt("critic", profile.prompt_version)
+    system = prompt.render("system")
+    # Ответ ограничен краткими причинами по строкам и шестью замечаниями читателя.
+    max_tokens = min(profile.generation.max_tokens, 1024 + 256 * len(lines))
+    generation = profile.generation.model_copy(update={"max_tokens": max_tokens})
+    critic_profile = profile.model_copy(update={"generation": generation})
+    # Кириллица расходует около 3 символов на токен. Оставляем место для ответа,
+    # предыдущей попытки и инструкции исправления.
+    budget = 3 * (generation.context_tokens - 2 * generation.max_tokens - 256)
+
+    def request(
+        rows: Sequence[tuple[str, str, list[dict[str, str]]]],
+        reader_context: str = "",
+    ) -> tuple[list[Message], dict[str, Any]]:
+        schema = output.model_json_schema()
+        if output is ReaderReview:
+            schema["properties"]["reader_issues"]["items"]["maxLength"] = 240
+        schema["$defs"]["LineDecision"]["properties"]["line"]["enum"] = [row[0] for row in rows]
+        schema["properties"]["decisions"]["minItems"] = len(rows)
+        schema["properties"]["decisions"]["maxItems"] = len(rows)
+        payload = [{"line": key, "text": text, "sources": sources} for key, text, sources in rows]
+        user = prompt.render("user", lines=json.dumps(payload, ensure_ascii=False))
+        system_text = system
+        if reader_context:
+            system_text += (
+                "\nОцени понятность по полному тексту сводки. "
+                "Решения о поддержке дай только по строкам с источниками."
+            )
+            user = f"Полный текст сводки: {reader_context}\nСтроки с источниками: {user}"
+        return [Message("system", system_text), Message("user", user)], schema
+
+    def fits(messages: list[Message], schema: dict[str, Any]) -> bool:
+        chars = sum(len(message.content) for message in messages) + len(json.dumps(schema))
+        return chars <= budget
+
+    whole_request = request(lines)
+    if fits(*whole_request):
+        requests = [whole_request]
+    else:
+        reader_context = (
+            json.dumps([text for _, text, _ in lines], ensure_ascii=False)
+            if output is ReaderReview
+            else ""
+        )
+        requests = []
+        start = 0
+        while start < len(lines):
+            end = start + 1
+            current = request(lines[start:end], reader_context)
+            if not fits(*current):
+                raise StageError(
+                    FailureCode.CONTEXT_OVERFLOW,
+                    f"Источники для строки {lines[start][0]} превышают бюджет критика",
+                )
+            while end < len(lines):
+                candidate = request(lines[start : end + 1], reader_context)
+                if not fits(*candidate):
+                    break
+                current = candidate
+                end += 1
+            requests.append(current)
+            start = end
 
     def complete(review: GroundingReview) -> list[str]:
         if isinstance(review, ReaderReview) and (
@@ -87,26 +148,28 @@ def review_summary(
             return []
         return ["Нужно ровно одно решение для каждой строки: " + ", ".join(expected)]
 
-    reviewed = ask_structured(
-        client,
-        profile,
-        prompt,
-        [
-            Message("system", prompt.render("system")),
-            Message("user", prompt.render("user", lines=json.dumps(lines, ensure_ascii=False))),
-        ],
-        output,
-        think=False,
-        max_repairs=1,
-        seed=seed,
-        check=complete,
-        schema=schema,
-    )
-    problems = [
-        decision.line + ": " + decision.reason
-        for decision in reviewed.value.decisions
-        if not decision.supported
-    ]
+    problems: list[str] = []
+    reader_issues: dict[str, None] = {}
+    for messages, schema in requests:
+        expected = schema["$defs"]["LineDecision"]["properties"]["line"]["enum"]
+        reviewed = ask_structured(
+            client,
+            critic_profile,
+            prompt,
+            messages,
+            output,
+            think=False,
+            max_repairs=1,
+            seed=seed,
+            check=complete,
+            schema=schema,
+        ).value
+        by_line = {decision.line: decision for decision in reviewed.decisions}
+        problems.extend(
+            key + ": " + by_line[key].reason for key in expected if not by_line[key].supported
+        )
+        if isinstance(reviewed, ReaderReview):
+            reader_issues.update(dict.fromkeys(reviewed.reader_issues))
     checks = [
         CheckResult(
             check=CheckName.CRITIC,
@@ -115,13 +178,13 @@ def review_summary(
             details="; ".join(problems) if problems else None,
         )
     ]
-    if isinstance(reviewed.value, ReaderReview):
+    if output is ReaderReview:
         checks.append(
             CheckResult(
                 check=CheckName.READER_CONTEXT,
-                passed=reviewed.value.reader_passed,
+                passed=not reader_issues,
                 attempt=attempt,
-                details="; ".join(reviewed.value.reader_issues) or None,
+                details="; ".join(list(reader_issues)[:6]) or None,
             )
         )
     return checks

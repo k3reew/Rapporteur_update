@@ -171,7 +171,12 @@ def _v4(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE talks ADD COLUMN card_only INTEGER NOT NULL DEFAULT 0")
 
 
-_MIGRATIONS = (_v1, _v2, _v3, _v4)
+def _v5(conn: sqlite3.Connection) -> None:
+    """Открытые до обновления черновики могли не учитывать ручные правки карточек."""
+    conn.execute("UPDATE preparations SET version=version+1")
+
+
+_MIGRATIONS = (_v1, _v2, _v3, _v4, _v5)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 
