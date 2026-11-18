@@ -4,6 +4,10 @@
 
 ## Одна основная ветка
 
+После [сведения совместной разработки](https://github.com/k3reew/Rapporteur_update/pull/2) последняя версия — `main`. В неё входят прежний main, выпуск 0.3.0, карточки и промпты v4 коллеги, исправления аудита и документация. На момент сведения дерево `feat/summary-and-card` (`49b60e9`) совпадало с проверенным `c8469a2`: кодовых конфликтов нет.
+
+`codex/release-0.2.1`, `codex/department-filter-and-summary-quality`, `codex/fix-summary-card-audit` и `feat/summary-and-card` сохранены как исторические указатели. Локальная `codex/workflow-redesign` совпадает по содержимому с опубликованным выпуском 0.2.1, её старые коммиты повторно переносить не нужно. Полная карта — в [HANDOFF](../HANDOFF.md#ветки-и-история).
+
 - Основная ветка — `main`. На GitHub она же стоит веткой по умолчанию (Settings → General → Default branch).
 - В `main` попадает только то, что прошло `make check` (README, «Перед слиянием в main»).
 - PR всегда открывается **в** `main`, никогда **из** `main` в другую ветку. Если GitHub предлагает базой не `main`, нужно исправить базу в PR, а не сливать.
@@ -13,10 +17,12 @@
 - Новая работа начинается со свежего `main`:
 
   ```bash
-  git switch main
-  git pull --ff-only
-  git switch -c feat/p1-15-short-name
+  git status --short
+  git fetch origin
+  git switch -c feat/p1-15-short-name origin/main
   ```
+
+- Эти команды выполняются в чистой рабочей копии. Создание ветки от `origin/main` работает и тогда, когда локальный `main` уже открыт в другом worktree. Если есть незакоммиченные файлы, сначала сохраните их отдельно или используйте чистую рабочую копию; не применяйте reset/clean ради переключения. Исходный `/home/kirill/projects/Rapporteur_update` содержит такие изменения и не обновлялся автоматически.
 
 - Имя: `тип/задача-суть`. Типы те же, что в сообщениях коммитов: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`. Номер задачи из backlog.md, если он есть.
 - Одна ветка — одна задача. Ветка живёт дни, а не недели. Если задача большая, лучше разбить её на несколько PR.
@@ -33,16 +39,16 @@
 - Подтянуть `main` и проверить, что ветка на нём:
 
   ```bash
-  git fetch Rapporteur
-  git rebase Rapporteur/main
+  git fetch origin
+  git rebase origin/main
   ```
 
-  Rebase делается только для своей ветки, которую ещё никто не взял. Если ветку уже кто-то использует, вместо rebase — `git merge Rapporteur/main`.
+  Rebase делается только для своей ветки, которую ещё никто не взял. Если ветку уже кто-то использует, вместо rebase — `git merge origin/main`.
 - Запустить `make check`, результат записать в описание PR.
 
 ## После слияния
 
-- Удалить ветку на GitHub (кнопка в PR; лучше включить Settings → General → «Automatically delete head branches»).
+- После завершения работы всех использующих её разработчиков удалить ветку на GitHub (кнопка в PR; лучше включить Settings → General → «Automatically delete head branches»).
 - Удалить ветку локально и почистить ссылки на удалённые ветки:
 
   ```bash
@@ -68,7 +74,7 @@
 ```bash
 git fetch --prune
 git branch -vv
-git branch --merged main
+git branch --merged origin/main
 ```
 
-Всё из `--merged main`, кроме самой `main`, можно удалить.
+Ветки из `--merged origin/main` уже включены в основную историю. Удалять их следует после завершения работы их авторов; занятые в worktree и локальные архивные ветки автоматически не удаляются.

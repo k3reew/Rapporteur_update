@@ -25,7 +25,13 @@ from rapporteur.ingest.inventory import PPTX, Inspection
 
 _TALK_FOLDER = re.compile(r"^([0-9]{1,6})[_. -]+(.+)$")
 _RECORDINGS = {FileKind.AUDIO, FileKind.VIDEO}
-PRIMARY_SOURCES = {FileKind.PRESENTATION, *_RECORDINGS}
+PRIMARY_SOURCES = {
+    FileKind.PRESENTATION,
+    FileKind.NOTES,
+    FileKind.DOCUMENT,
+    FileKind.IMAGE,
+    *_RECORDINGS,
+}
 _REVIEW_STATUSES = {TalkStatus.DRAFT, TalkStatus.MATCHED, TalkStatus.INSUFFICIENT_DATA}
 MAX_SECTIONS = 5
 DEFAULT_SECTION = "Основная секция"
@@ -59,6 +65,7 @@ class Material(BaseModel):
     suggested_talk_id: str | None = None
     confidence: float | None = None
     alternate_of: str | None = None
+    range_talk_ids: list[str] = []
 
 
 class ReviewTalk(BaseModel):
@@ -68,6 +75,9 @@ class ReviewTalk(BaseModel):
     order: int
     title: str | None
     status: TalkStatus
+    speakers: list[Speaker] = []
+    organizations: list[str] = []
+    contacts: list[str] = []
 
 
 class ReviewSection(BaseModel):
@@ -326,6 +336,13 @@ def review(conn: sqlite3.Connection, conference_id: str) -> Materials:
     talks = db.conference_talks(conn, conference_id)
     files = _files(conn, conference_id)
     for file in files:
+        file.range_talk_ids = [
+            r["talk_id"]
+            for r in conn.execute(
+                "SELECT DISTINCT talk_id FROM material_links WHERE file_id=?",
+                (str(file.source.id),),
+            )
+        ]
         file.suggested_talk_id, file.confidence = _suggest(file, talks)
     presentations = [file for file in files if file.source.kind is FileKind.PRESENTATION]
     pptx = [file for file in presentations if file.source.media_type == PPTX]
@@ -350,6 +367,9 @@ def review(conn: sqlite3.Connection, conference_id: str) -> Materials:
                 title=row["title"],
                 order=row["position"],
                 status=row["status"],
+                speakers=db.talk(row).speakers,
+                organizations=json.loads(row["organizations"]),
+                contacts=json.loads(row["contacts"]),
             )
             for row in talks
         ],
@@ -395,6 +415,13 @@ def confirm(conn: sqlite3.Connection, conference_id: str, data: BindingReview) -
     changed: set[str] = set()
     for file_id, talk_id in choices.items():
         file = files[file_id]
+        if file.range_talk_ids:
+            if talk_id is None:
+                for linked_id in file.range_talk_ids:
+                    by_talk[linked_id].append(file)
+                continue
+            changed.update(file.range_talk_ids)
+            conn.execute("DELETE FROM material_links WHERE file_id=?", (file_id,))
         previous = file.binding
         if talk_id is not None:
             by_talk[talk_id].append(file)
@@ -408,7 +435,35 @@ def confirm(conn: sqlite3.Connection, conference_id: str, data: BindingReview) -
             "UPDATE files SET talk_id = ?, confirmed = 1, confidence = ? WHERE id = ?",
             (talk_id, confidence, file_id),
         )
+    for talk_id in changed:
+        conn.execute(
+            "UPDATE talks SET input_revision = input_revision + 1 WHERE id = ?", (talk_id,)
+        )
     for talk_id, row in talks.items():
+        if not json.loads(row["speakers"]):
+            names = list(
+                dict.fromkeys(
+                    name
+                    for f in by_talk[talk_id]
+                    if f.title_candidates
+                    for name in f.title_candidates.speakers
+                )
+            )
+            if names:
+                conn.execute(
+                    "UPDATE talks SET speakers = ? WHERE id = ?",
+                    (
+                        db.dumps(
+                            [
+                                Speaker(
+                                    name=name, role=PersonRole.SPEAKER, affiliation=None
+                                ).model_dump(mode="json")
+                                for name in names
+                            ]
+                        ),
+                        talk_id,
+                    ),
+                )
         current = TalkStatus(row["status"])
         has_source = any(file.source.kind in PRIMARY_SOURCES for file in by_talk[talk_id])
         target = current

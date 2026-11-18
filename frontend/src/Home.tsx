@@ -1,19 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { request } from './Materials';
+import { request } from './api';
+import { useResource } from './useResource';
+import { useUnsavedChanges } from './useUnsavedChanges';
 
-export type ConferenceItem = {
-  id: string;
-  title: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  place: string | null;
-  organizer: string | null;
-  processing_started: boolean;
-  talks: number;
-  summaries: number;
-  reviewed: number;
-};
+import type { ConferenceItem } from './conferenceTypes';
 
 function period(item: ConferenceItem) {
   const format = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString('ru-RU');
@@ -23,22 +14,13 @@ function period(item: ConferenceItem) {
 }
 
 export function Home({ onOpen }: { onOpen: (conferenceId: string) => void }) {
-  const [conferences, setConferences] = useState<ConferenceItem[]>();
+  const { data: conferences, setData: setConferences, error: loadError } = useResource<ConferenceItem[]>('/api/v1/conferences');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void (async () => {
-      const response = await request('/api/v1/conferences', { signal: controller.signal });
-      setConferences(await response.json());
-    })().catch((reason: Error) => {
-      if (!controller.signal.aborted) setError(reason.message);
-    });
-    return () => controller.abort();
-  }, []);
+  const allowNavigation = useUnsavedChanges(!!title.trim() || !!busy);
 
   async function create() {
     setBusy('Создание…');
@@ -51,7 +33,7 @@ export function Home({ onOpen }: { onOpen: (conferenceId: string) => void }) {
       });
       const conference: ConferenceItem = await response.json();
       setTitle('');
-      onOpen(conference.id);
+      allowNavigation(); onOpen(conference.id);
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
@@ -67,7 +49,7 @@ export function Home({ onOpen }: { onOpen: (conferenceId: string) => void }) {
     setStatus('');
     try {
       await request(`/api/v1/conferences/${item.id}`, { method: 'DELETE' });
-      setConferences((previous) => previous?.filter(({ id }) => id !== item.id));
+      setConferences((conferences ?? []).filter(({ id }) => id !== item.id));
       setStatus(`Конференция «${name}» удалена.`);
     } catch (reason) {
       setError((reason as Error).message);
@@ -81,8 +63,7 @@ export function Home({ onOpen }: { onOpen: (conferenceId: string) => void }) {
       <div className="card">
         <h2 id="home-title">Конференции</h2>
         <p className="muted">
-          Загрузите папку с материалами конференции, подтвердите привязки файлов к докладам, проверьте
-          сводки и соберите справку по бланку.
+          Создайте конференцию и пройдите четыре этапа: материалы, доклады, проверка и справка.
         </p>
         <form className="row" onSubmit={(event) => { event.preventDefault(); void create(); }}>
           <label className="field">
@@ -92,7 +73,8 @@ export function Home({ onOpen }: { onOpen: (conferenceId: string) => void }) {
           <button className="primary" disabled={!!busy || !title.trim()} style={{ alignSelf: 'end' }}>Создать</button>
         </form>
         <p role="status">{busy || status}</p>
-        {error && <p role="alert">{error}</p>}
+        {(error || loadError) && <p role="alert">{error || loadError}</p>}
+        {!conferences && !loadError && <p className="loading">Загрузка конференций…</p>}
       </div>
       {conferences && !conferences.length && <p className="muted">Конференций пока нет.</p>}
       <div className="conference-list">

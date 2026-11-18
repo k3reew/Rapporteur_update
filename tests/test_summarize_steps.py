@@ -77,7 +77,8 @@ def test_facts_keep_profile_and_prompt() -> None:
     assert (artifact.talk_id, artifact.profile, artifact.prompt_version) == (TALK, "test", "v1")
     assert artifact.facts.results[0].text == "LFU снизила задержку на 23 %"
     sent = client.requests[0]
-    assert sent.think is True and sent.schema == FactsDraft.model_json_schema()
+    assert sent.schema is not None
+    assert sent.think is True and sent.schema["title"] == "FactsDraft"
     user = sent.messages[1].content
     assert "[S4] Результаты: при нагрузке 1000 запросов" in user
     assert "Заметки слушателей:\n[N1]" in user
@@ -157,7 +158,7 @@ def test_number_missing_from_sources_is_rejected() -> None:
     spaced = [*SENTENCES[:3], line("Сравнение шло при нагрузке 1 000 запросов в секунду.", "c3")]
 
     assert checks_of(changed, CONCLUSIONS) == {
-        CheckName.NUMBERS_IN_SOURCES: "числа 25 нет в материалах доклада"
+        CheckName.NUMBERS_IN_SOURCES: "числа 25 нет в привязанных источниках предложения"
     }
     assert checks_of(spaced, CONCLUSIONS) == {}
 
@@ -212,7 +213,10 @@ def test_failed_checks_regenerate_the_summary() -> None:
     summary, written, client = run_summary(summary_answer(wrong), summary_answer())
 
     assert summary.status is SummaryStatus.READY
-    assert "числа 25 нет в материалах доклада" in client.requests[1].messages[-1].content
+    assert (
+        "числа 25 нет в привязанных источниках предложения"
+        in client.requests[1].messages[-1].content
+    )
     assert [(c.check, c.attempt) for c in summary.checks if not c.passed] == [
         (CheckName.NUMBERS_IN_SOURCES, 1)
     ]

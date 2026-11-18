@@ -7,14 +7,20 @@
 """
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
-from rapporteur.contracts import FragmentDraft, PackedFragment, TalkFragmentPack
+from rapporteur.contracts import Evidence, FragmentDraft, PackedFragment, TalkFragmentPack
+from rapporteur.contracts.claims import EvidenceDraft
 from rapporteur.contracts.enums import FragmentKind, PackBlock
 from rapporteur.contracts.fragments import PageLocator
+from rapporteur.summarize.quotes import QuoteConfig, match_quote
 
-_SLIDE_PREFIX = {FragmentKind.SLIDE: "S", FragmentKind.SLIDE_DESCRIPTION: "V"}
+_SLIDE_PREFIX = {
+    FragmentKind.SLIDE: "S",
+    FragmentKind.SLIDE_DESCRIPTION: "V",
+    FragmentKind.DOCUMENT: "D",
+}
 
 
 @dataclass(frozen=True)
@@ -25,11 +31,73 @@ class PackSource:
     fragments: Sequence[FragmentDraft]
 
 
+def bounded_fragment(
+    fragment: PackedFragment,
+    evidence: Collection[Evidence | EvidenceDraft],
+    anchors: Sequence[tuple[int, int]] = (),
+) -> PackedFragment:
+    """Окна нужны только запросу. Цитаты сверяются с каноническим пакетом."""
+    if len(fragment.text) <= 6000:
+        return fragment
+    matched_spans = list(anchors)
+    for item in evidence:
+        if item.label != fragment.label:
+            continue
+        matched = match_quote(item.quote, fragment.text, QuoteConfig())
+        if matched.span is not None:
+            matched_spans.append(matched.span)
+    spans = [(0, 400)]
+    spans.extend(
+        (max(0, start - 600), min(len(fragment.text), end + 600)) for start, end in matched_spans
+    )
+    if len(spans) == 1:
+        spans.append((max(400, len(fragment.text) - 1200), len(fragment.text)))
+    parts = []
+    previous = 0
+    for start, end in sorted(set(spans)):
+        start = max(start, previous)
+        if start >= end:
+            continue
+        if start > previous:
+            parts.append("\n[Пропуск контекста]\n")
+        parts.append(fragment.text[start:end])
+        previous = end
+    return fragment.model_copy(update={"text": "".join(parts)})
+
+
+def context_fragments(
+    pack: TalkFragmentPack,
+    evidence: Collection[Evidence | EvidenceDraft],
+    *,
+    anchors: Mapping[str, Sequence[tuple[int, int]]] | None = None,
+) -> list[PackedFragment]:
+    """Соседние сегменты сохраняют оговорку, отделённую ASR от цитируемой фразы."""
+    anchors = anchors or {}
+    labels = {item.label for item in evidence} | anchors.keys()
+    selected = set(labels)
+    for index, fragment in enumerate(pack.fragments):
+        if fragment.label not in labels or fragment.kind is not FragmentKind.TRANSCRIPT:
+            continue
+        for neighbor in pack.fragments[max(0, index - 1) : index + 2]:
+            if (
+                neighbor.kind is FragmentKind.TRANSCRIPT
+                and neighbor.source_file_id == fragment.source_file_id
+                and neighbor.block is fragment.block
+            ):
+                selected.add(neighbor.label)
+    return [
+        bounded_fragment(f, evidence, anchors.get(f.label, ()))
+        for f in pack.fragments
+        if f.label in selected
+    ]
+
+
 def build_pack(
     conference_id: uuid.UUID,
     talk_id: uuid.UUID,
     presentations: Sequence[PackSource],
     notes: Sequence[PackSource] = (),
+    transcripts: Sequence[PackSource] = (),
 ) -> TalkFragmentPack:
     """S12 — слайд 12; при нескольких презентациях S2.12. N — заметки подряд по всем файлам.
     Фрагменты без текста в пакет не входят: на них нельзя сослаться."""
@@ -50,6 +118,15 @@ def build_pack(
                 continue
             note_no += 1
             packed.append(_packed(talk_id, source, draft, f"N{note_no}"))
+    from rapporteur.contracts.fragments import TimeLocator, _timecode
+
+    for index, source in enumerate(transcripts, 1):
+        for draft in source.fragments:
+            if draft.kind is not FragmentKind.TRANSCRIPT or not draft.normalized_text.strip():
+                continue
+            assert isinstance(draft.locator, TimeLocator)
+            label = f"T{index}.{_timecode(draft.locator.start_ms)}"
+            packed.append(_packed(talk_id, source, draft, label))
     return TalkFragmentPack(conference_id=conference_id, talk_id=talk_id, fragments=packed)
 
 

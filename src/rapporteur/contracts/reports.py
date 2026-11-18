@@ -24,7 +24,11 @@ class ReportSelection(ContractModel):
 
 
 class ReportTalk(ContractModel):
-    """Доклад в справке. Название и докладчики — из реестра, текст — из сводки."""
+    """Доклад в справке. Название и докладчики — из реестра, текст — из сводки.
+
+    Карточка перед сводкой: authors — все авторы с организацией в скобках, organizations —
+    организации, не указанные у авторов, contacts — контакты с фамилией автора, если авторов
+    несколько. В версиях справки до карточки эти поля пусты."""
 
     talk_id: UUID
     section_title: NonEmptyStr
@@ -32,8 +36,13 @@ class ReportTalk(ContractModel):
     speakers: list[NonEmptyStr]
     affiliations: list[NonEmptyStr]
     status: TalkStatus
-    summary: NonEmptyStr
+    # None — доклад только с карточкой (card_only): не интересен отделам или так решил оператор.
+    summary: NonEmptyStr | None
     conclusions: list[NonEmptyStr]
+    card_only: bool = False
+    authors: list[NonEmptyStr] = Field(default_factory=list)
+    organizations: list[NonEmptyStr] = Field(default_factory=list)
+    contacts: list[NonEmptyStr] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _reportable(self) -> Self:
@@ -67,6 +76,7 @@ class ReportInput(ContractModel):
     skipped: list[SkippedTalk]
     template_version: NonEmptyStr
     unreviewed_confirmed: bool
+    department_recommendations: list[dict[str, object]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
@@ -75,7 +85,10 @@ class ReportInput(ContractModel):
             raise PydanticCustomError(
                 "selection_mismatch", "выборка не совпадает с докладами справки"
             )
-        unreviewed = any(talk.status is not TalkStatus.REVIEWED for talk in self.talks)
+        # Карточку оператор подтвердил на этапе «Доклады»; проверять нужно сводки.
+        unreviewed = any(
+            talk.status is not TalkStatus.REVIEWED and not talk.card_only for talk in self.talks
+        )
         if unreviewed and not self.unreviewed_confirmed:
             raise PydanticCustomError(
                 "unreviewed_not_confirmed",

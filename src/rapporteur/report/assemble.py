@@ -28,6 +28,7 @@ from rapporteur.contracts.reports import (
     ReportVariables,
     SkippedTalk,
 )
+from rapporteur.llm.prompts import edition
 from rapporteur.report.template import Period
 
 _SKIP_REASONS = {
@@ -50,6 +51,8 @@ class ReportSources:
     sections: Sequence[Section]
     talks: Sequence[Talk]
     summaries: Sequence[Summary]
+    department_recommendations: Sequence[dict[str, Any]] = ()
+    recommendation_warnings: Sequence[str] = ()
 
     @cached_property
     def section_by_id(self) -> dict[UUID, Section]:
@@ -108,7 +111,7 @@ def build_report_input(
     """Снимок входа сборки. Без подтверждения непроверенные доклады — ошибка (ADR-006)."""
     included: list[ReportTalk] = []
     skipped: list[SkippedTalk] = []
-    warnings: list[str] = []
+    warnings: list[str] = list(sources.recommendation_warnings)
 
     for talk_id in selection.talk_ids:
         talk = sources.talk_by_id.get(talk_id)
@@ -117,14 +120,33 @@ def build_report_input(
         summary = sources.summary_by_talk.get(talk_id)
         if talk.status not in REPORTABLE_TALK_STATUSES:
             reason = _SKIP_REASONS.get(talk.status, f"статус {talk.status.value}")
+        elif talk.card_only:
+            included.append(_report_talk(sources, talk, talk.title or "Тема не установлена", None))
+            if not talk.title or not talk.speakers:
+                warnings.append(f"Уточните тему или автора: {_name(talk)}")
+            continue
         elif summary is None:
             reason = "нет сводки"
+        elif any(
+            c.status.value == "needs_human"
+            and c.key
+            in {key for line in summary.sentences + summary.conclusions for key in line.claim_ids}
+            for c in summary.claims
+        ):
+            reason = "визуальные или изменённые факты требуют подтверждения человеком"
         elif not summary.sentences:
             reason = "сводка пуста: нужна правка человеком"
-        elif talk.title is None:
-            reason = "у доклада нет названия в реестре"
         else:
-            included.append(_report_talk(sources, talk, talk.title, summary))
+            included.append(
+                _report_talk(sources, talk, talk.title or "Тема не установлена", summary)
+            )
+            if not talk.title or not talk.speakers:
+                warnings.append(f"Уточните тему или автора: {_name(talk)}")
+            if (
+                edition(summary.prompt_versions.get("summary", "v1")) >= 3
+                and len(summary.sentences) < 6
+            ):
+                warnings.append(f"Короткая сводка: проверьте полноту источников — {_name(talk)}")
             if summary.status is SummaryStatus.NEEDS_ATTENTION:
                 warnings.append(f"Сводка не прошла проверки, нужна правка: {_name(talk)}")
             if talk.status is TalkStatus.STALE:
@@ -148,6 +170,11 @@ def build_report_input(
             skipped=skipped,
             template_version=template_version,
             unreviewed_confirmed=unreviewed_confirmed,
+            department_recommendations=[
+                item
+                for item in sources.department_recommendations
+                if item["talk_id"] in {str(t.talk_id) for t in included}
+            ],
         )
     except ValidationError as error:
         if any(item["type"] == "unreviewed_not_confirmed" for item in error.errors()):
@@ -158,8 +185,11 @@ def build_report_input(
     return AssembledInput(input=report_input, warnings=warnings)
 
 
-def _report_talk(sources: ReportSources, talk: Talk, title: str, summary: Summary) -> ReportTalk:
+def _report_talk(
+    sources: ReportSources, talk: Talk, title: str, summary: Summary | None
+) -> ReportTalk:
     speakers = [person for person in talk.speakers if person.role is PersonRole.SPEAKER]
+    authors, organizations, contacts = _card(talk)
     return ReportTalk(
         talk_id=talk.id,
         section_title=sources.section_by_id[talk.section_id].title,
@@ -169,9 +199,54 @@ def _report_talk(sources: ReportSources, talk: Talk, title: str, summary: Summar
             _clean(person.affiliation) for person in speakers if person.affiliation
         ),
         status=talk.status,
-        summary=" ".join(line.text for line in summary.sentences),
-        conclusions=[line.text for line in summary.conclusions],
+        summary=_summary_text(summary) if summary else None,
+        conclusions=[line.text for line in summary.conclusions] if summary else [],
+        card_only=summary is None,
+        authors=authors,
+        organizations=organizations,
+        contacts=contacts,
     )
+
+
+def _summary_text(summary: Summary) -> str:
+    """С редакции v3 длинная сводка (от 6 предложений) делится на два абзаца: задача и подход,
+    затем результаты и ограничения."""
+    sentences = [line.text for line in summary.sentences]
+    if edition(summary.prompt_versions.get("summary", "v1")) < 3 or len(sentences) < 6:
+        return " ".join(sentences)
+    half = (len(sentences) + 1) // 2
+    return " ".join(sentences[:half]) + "\n\n" + " ".join(sentences[half:])
+
+
+def _card(talk: Talk) -> tuple[list[str], list[str], list[str]]:
+    """Карточка доклада для бланка: авторы с организацией, прочие организации, контакты."""
+    authors = [
+        f"{_clean(person.name)} ({_clean(person.affiliation)})"
+        if person.affiliation
+        else _clean(person.name)
+        for person in talk.speakers
+    ]
+    shown = {
+        _clean(part)
+        for person in talk.speakers
+        if person.affiliation
+        for part in [person.affiliation, *person.affiliation.split(";")]
+    }
+    organizations = _unique(
+        _clean(item) for item in talk.organizations if _clean(item) not in shown
+    )
+    several = len(talk.speakers) > 1
+    contacts = _unique(
+        [
+            *(
+                f"{_clean(contact)} ({_clean(person.name)})" if several else _clean(contact)
+                for person in talk.speakers
+                for contact in person.contacts
+            ),
+            *(_clean(contact) for contact in talk.contacts),
+        ]
+    )
+    return authors, organizations, contacts
 
 
 def _period(
@@ -227,4 +302,5 @@ def template_context(report_input: ReportInput, variables: ReportVariables) -> d
         "talks_count": variables.talks_count,
         "speakers_count": variables.speakers_count,
         "talks": list(report_input.talks),
+        "department_recommendations": report_input.department_recommendations,
     }

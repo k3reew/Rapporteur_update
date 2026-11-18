@@ -66,9 +66,13 @@ class Inspection:
 def upload_limit(head: bytes) -> int:
     if b"%PDF-" in head or head.startswith(b"PK\x03\x04"):
         return PresentationConfig().max_file_bytes
-    if not _looks_like_recording(head) and _looks_like_text(head):
-        return NotesConfig().max_file_bytes
-    return MAX_UPLOAD_BYTES
+    if _looks_like_recording(head):
+        return MAX_UPLOAD_BYTES
+    return (
+        NotesConfig().max_file_bytes
+        if _looks_like_text(head)
+        else PresentationConfig().max_file_bytes
+    )
 
 
 def inspect_file(path: Path, *, program: bool = False) -> Inspection:
@@ -93,12 +97,19 @@ def inspect_file(path: Path, *, program: bool = False) -> Inspection:
         return Inspection(kind, "application/pdf", title=title)
     if head.startswith(b"PK\x03\x04"):
         check_size(size, presentation.max_file_bytes)
-        return _office(path, presentation)
+        return _office(path, presentation, program=program)
     if head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        check_size(size, presentation.max_file_bytes)
+        if path.suffix.casefold() == ".doc":
+            return Inspection(
+                FileKind.PROGRAM if program else FileKind.DOCUMENT, "application/msword"
+            )
         raise StageError(
             FailureCode.UNSUPPORTED_FORMAT,
             "Старые и защищённые форматы Office: сохраните файл как pptx или pdf",
         )
+    if path.suffix.casefold() == ".doc" and head.startswith(b"\xd0\xcf\x11\xe0"):
+        return Inspection(FileKind.PROGRAM if program else FileKind.DOCUMENT, "application/msword")
     if _looks_like_recording(head):
         return _recording(path)
     if _looks_like_text(head):
@@ -111,10 +122,27 @@ def inspect_file(path: Path, *, program: bool = False) -> Inspection:
                 encoding=decoded.encoding,
                 warning=None if decoded.confident else "Кодировка определена неуверенно",
             )
-    raise StageError(FailureCode.UNSUPPORTED_FORMAT, "Формат файла не поддерживается")
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        try:
+            import pillow_heif
+
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            pass
+        with Image.open(path) as image:
+            if image.width * image.height > presentation.max_render_pixels:
+                raise StageError(FailureCode.FILE_TOO_LARGE, "Слишком большое изображение")
+            media = Image.MIME.get(image.format or "", "image/heif")
+            image.verify()
+        check_size(size, presentation.max_file_bytes)
+        return Inspection(FileKind.IMAGE, media)
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise StageError(FailureCode.UNSUPPORTED_FORMAT, "Формат файла не поддерживается") from None
 
 
-def _office(path: Path, config: PresentationConfig) -> Inspection:
+def _office(path: Path, config: PresentationConfig, *, program: bool = False) -> Inspection:
     check_zip(path, config)
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
@@ -125,7 +153,12 @@ def _office(path: Path, config: PresentationConfig) -> Inspection:
         return Inspection(FileKind.PRESENTATION, PPTX, title=pptx_title(slides[0]))
     for entry, media_type in _PROGRAMS.items():
         if entry in names:
-            return Inspection(FileKind.PROGRAM, media_type)
+            return Inspection(
+                FileKind.DOCUMENT
+                if entry == "word/document.xml" and not program
+                else FileKind.PROGRAM,
+                media_type,
+            )
     raise StageError(FailureCode.UNSUPPORTED_FORMAT, "Формат архива не поддерживается")
 
 

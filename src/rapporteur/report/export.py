@@ -6,11 +6,13 @@ DOCX — единственный источник текста: Markdown стр
 
 import io
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
 
 from rapporteur.contracts.enums import ReportFormat
 from rapporteur.contracts.reports import ReportFile
@@ -33,11 +35,63 @@ class ExportError(Exception):
 
 
 def render_formats(
-    template: Template, context: Mapping[str, Any], formats: Iterable[ReportFormat], work: Path
+    template: Template,
+    context: Mapping[str, Any],
+    formats: Iterable[ReportFormat],
+    work: Path,
+    *,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[ReportFormat, bytes]:
+    context = dict(context)
+    context["talks"] = [
+        talk.model_copy(
+            update={
+                "speakers": talk.speakers or ["Автор не установлен"],
+                "authors": talk.authors or talk.speakers or ["Автор не установлен"],
+                # docxtpl uses the paragraph marker to preserve real Word paragraph boundaries.
+                "summary": talk.summary.replace("\n\n", "\a") if talk.summary else None,
+            }
+        )
+        for talk in context.get("talks", [])
+    ]
+    if progress:
+        progress("docx")
     docx = render_docx(template, context)
+    # Add the appendix before deriving Markdown/PDF so all formats have identical text.
+    recommendations = context.get("department_recommendations", [])
+    if recommendations:
+        document = Document(io.BytesIO(docx))
+
+        def heading(text: str, *, centered: bool = False) -> None:
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.paragraph_format.space_before = Pt(12)
+            paragraph.paragraph_format.keep_with_next = True
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if centered else WD_ALIGN_PARAGRAPH.LEFT
+            paragraph.add_run(text).bold = True
+
+        heading("Доклады по интересам отделов", centered=True)
+        talks = {str(t.talk_id): t for t in context["talks"]}
+        for item in sorted(recommendations, key=lambda r: (r["department_name"], r["talk_id"])):
+            talk = talks[item["talk_id"]]
+            heading(item["department_name"])
+            authors = (", ".join(talk.speakers) or "Автор не установлен").rstrip(".")
+            document.add_paragraph(f"{talk.title.rstrip('.')}. Авторы: {authors}.")
+            document.add_paragraph(item["reason"])
+            document.add_paragraph(
+                f"Положение: {item['regulation_name']}, версия {item['department_version']}."
+            )
+            for key, text in item["paragraphs"].items():
+                document.add_paragraph(f"{key}: {text}")
+            for key, text in item["facts"].items():
+                document.add_paragraph(f"Факт доклада {key}: {text}")
+        output = io.BytesIO()
+        document.save(output)
+        docx = output.getvalue()
     rendered: dict[ReportFormat, bytes] = {}
     for report_format in formats:
+        if progress:
+            progress(report_format.value)
         match report_format:
             case ReportFormat.DOCX:
                 rendered[report_format] = docx

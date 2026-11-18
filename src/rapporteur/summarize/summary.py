@@ -1,4 +1,4 @@
-"""Шаги В и Г spec §6.7 без критика (критик — Ф4).
+"""Шаги В и Г spec §6.7 со смысловым критиком для промптов v2 и v3.
 
 Модель пишет текст только из утверждений, прошедших сверку. Код проверяет ссылки на
 утверждения, число предложений, числа и запрещённые слова; при нарушениях сводка пишется
@@ -12,10 +12,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
 
 from rapporteur.contracts import (
     Claim,
+    Evidence,
     FactsArtifact,
     ModelProfile,
     Summary,
@@ -28,18 +29,23 @@ from rapporteur.contracts.claims import CheckResult
 from rapporteur.contracts.enums import CheckName, ClaimType, SummaryStatus
 from rapporteur.llm.client import LlmClient, Message
 from rapporteur.llm.profiles import load_profile
-from rapporteur.llm.prompts import load_prompt
+from rapporteur.llm.prompts import edition, load_prompt
 from rapporteur.llm.structured import ask_structured
 from rapporteur.settings import PROMPTS_DIR
 from rapporteur.summarize.checks import (
+    CLAIM_NAMES,
     SummaryChecksConfig,
     check_summary,
+    required_lines,
     sentence_range,
     usable_claims,
 )
+from rapporteur.summarize.grounding import review_summary
+from rapporteur.summarize.pack import context_fragments
+from rapporteur.summarize.terms import Definition, abbreviations, find_definitions
 
 # Версия шага входит в ключ кэша.
-VERSION = "1.1.0"
+VERSION = "2.1.1"
 STEP = "summary"
 
 _SUMMARY_NAMESPACE = uuid.UUID("9a4e2c71-3b5d-4f8e-a6c0-7d1b2e3f4a5c")
@@ -63,12 +69,21 @@ class SummaryConfig(BaseModel):
     max_repairs: NonNegativeInt = 1
     seed: int = 1
 
+    @model_validator(mode="after")
+    def reader_defaults(self) -> "SummaryConfig":
+        if edition(self.profile.prompt_version) >= 3 and "checks" not in self.model_fields_set:
+            object.__setattr__(
+                self, "checks", SummaryChecksConfig(min_sentences=6, max_sentences=10)
+            )
+        return self
+
 
 @dataclass(frozen=True)
 class ClaimLine:
     key: str
     kind: str
     text: str
+    evidence: list[Evidence]
 
 
 @dataclass(frozen=True)
@@ -100,9 +115,36 @@ def write_summary(
     profile = config.profile
     prompt = load_prompt(STEP, profile.prompt_version, PROMPTS_DIR)
     low, high = sentence_range(config.checks, claims)
-    lines = [ClaimLine(claim.key, _KIND[claim.type], claim.text) for claim in usable]
+    # Утверждения идут в порядке важности их типов (summary.yaml, priorities).
+    ordered = sorted(usable, key=lambda claim: config.checks.rank(claim.type))
+    lines = [
+        ClaimLine(claim.key, _KIND[claim.type], claim.text, claim.evidence) for claim in ordered
+    ]
+    evidence = [item for claim in usable for item in claim.evidence]
+    # Расшифровки сокращений из материалов; без расшифровки сокращение в текст не входит.
+    glossary: dict[str, Definition] = {}
+    unexplained: list[str] = []
+    if config.checks.explain_abbreviations:
+        used = [
+            item
+            for item in abbreviations(" ".join(claim.text for claim in ordered))
+            if item not in config.checks.known_abbreviations
+        ]
+        glossary = find_definitions(pack, used)
+        unexplained = [item for item in used if item not in glossary]
     messages = [
-        Message("system", prompt.render("system", min_sentences=low, max_sentences=high)),
+        Message(
+            "system",
+            prompt.render(
+                "system",
+                min_sentences=low,
+                max_sentences=high,
+                priorities=[CLAIM_NAMES[item] for item in config.checks.priorities],
+                required=required_lines(config.checks, claims),
+                explain_abbreviations=config.checks.explain_abbreviations,
+                known_abbreviations=config.checks.known_abbreviations,
+            ),
+        ),
         Message(
             "user",
             prompt.render(
@@ -110,11 +152,14 @@ def write_summary(
                 title=title,
                 claims=lines,
                 has_conclusions=any(claim.type is ClaimType.CONCLUSION for claim in usable),
+                fragments=context_fragments(pack, evidence),
+                glossary=list(glossary.values()),
+                unexplained=unexplained,
             ),
         ),
     ]
     checks: list[CheckResult] = []
-    best: tuple[int, SummaryDraft] | None = None
+    best: tuple[tuple[bool, bool, int], SummaryDraft] | None = None
     for attempt in range(1, config.max_attempts + 1):
         result = ask_structured(
             client,
@@ -128,12 +173,30 @@ def write_summary(
         )
         draft = _punctuated(result.value)
         current = check_summary(draft, claims, pack, config.checks, attempt)
+        if edition(profile.prompt_version) >= 2 and all(check.passed for check in current):
+            current.extend(
+                review_summary(
+                    client,
+                    profile,
+                    draft,
+                    claims,
+                    pack,
+                    attempt=attempt,
+                    seed=config.seed,
+                    glossary={key: item.label for key, item in glossary.items()},
+                )
+            )
         checks.extend(current)
         failed = [check for check in current if not check.passed]
         if not failed:
             return Written(SummaryStatus.READY, draft.sentences, draft.conclusions, checks, attempt)
-        if best is None or len(failed) <= best[0]:
-            best = (len(failed), draft)
+        rank = (
+            any(check.check is CheckName.CLAIM_LINKS and not check.passed for check in current),
+            any(check.check is CheckName.SENTENCE_COUNT and not check.passed for check in current),
+            len(failed),
+        )
+        if best is None or rank <= best[0]:
+            best = (rank, draft)
         problems = [check.details or check.check.value for check in failed]
         messages = [*result.messages, Message("user", prompt.render("repair", problems=problems))]
 

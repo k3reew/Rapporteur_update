@@ -6,6 +6,7 @@ import io
 import json
 import re
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -14,6 +15,7 @@ from docx import Document
 
 from rapporteur.contracts import Conference, Section, Speaker, Summary, Talk
 from rapporteur.contracts.enums import PersonRole, ReportFormat, SummaryStatus, TalkStatus
+from rapporteur.contracts.reports import ReportSelection
 from rapporteur.report.assemble import (
     AssembledInput,
     ReportError,
@@ -178,7 +180,8 @@ def test_title_and_speakers_come_from_the_registry() -> None:
     assert (first.title, first.speakers) == ("Кэширование запросов", ["Иванов И. И."])
     assert first.affiliations == ["Институт примера"]
     assert MODEL_TITLE not in text and MODEL_SPEAKER not in text
-    assert "Козлов" not in text
+    # Соавтор есть в карточке, но докладчиком не считается.
+    assert "Авторы: Иванов И. И. (Институт примера), Козлов К. К. (Институт примера)" in text
 
 
 def test_one_section_counts_only_its_talks() -> None:
@@ -344,3 +347,57 @@ def test_empty_summary_stays_out_and_needs_attention_is_reported() -> None:
         in assembled.warnings
     )
     assert "Сводка не прошла проверки, нужна правка: «Кэширование запросов»" in assembled.warnings
+
+
+def test_report_card_lists_authors_organizations_and_contacts() -> None:
+    card = CACHE.model_copy(
+        update={
+            "speakers": [
+                Speaker(name="Иванов И. И.", affiliation="Институт примера", contacts=["i@ex.org"]),
+                Speaker(name="Козлов К. К.", role=PersonRole.COAUTHOR),
+            ],
+            "organizations": ["Институт примера", "Лаборатория  хранения"],
+            "contacts": ["+7 495 000-00-00"],
+        }
+    )
+    sources = ReportSources(
+        conference=CONFERENCE,
+        sections=SECTIONS,
+        talks=[card if item.id == CACHE.id else item for item in TALKS],
+        summaries=SUMMARIES,
+    )
+    selection = ReportSelection(days=[], section_ids=[], talk_ids=[CACHE.id])
+    first = build_report_input(sources, selection, "starter-2", True).input.talks[0]
+    assert first.authors == ["Иванов И. И. (Институт примера)", "Козлов К. К."]
+    assert first.organizations == ["Лаборатория хранения"]
+    assert first.contacts == ["i@ex.org (Иванов И. И.)", "+7 495 000-00-00"]
+    # Счётчики и прежние поля бланка не меняются: соавтор не докладчик.
+    assert first.speakers == ["Иванов И. И."]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_export_shows_missing_author_in_all_formats(tmp_path: Path, legacy: bool) -> None:
+    sources = ReportSources(
+        conference=CONFERENCE,
+        sections=SECTIONS,
+        talks=[talk.model_copy(update={"speakers": []}) for talk in TALKS],
+        summaries=SUMMARIES,
+    )
+    assembled = build_report_input(sources, select_talks(sources), "starter-1", True)
+    context = template_context(assembled.input, report_variables(assembled.input))
+    template = load_template(STARTER)
+    if legacy:
+        document = Document()
+        document.add_paragraph(
+            "{% for talk in talks %}{{ talk.speakers | join(', ') }} {% endfor %}"
+        )
+        path = tmp_path / "legacy.docx"
+        document.save(str(path))
+        template = replace(template, document=path)
+    rendered = render_formats(template, context, list(ReportFormat), tmp_path)
+    expected = "Автор не установлен"
+    pdf = pdfium.PdfDocument(rendered[ReportFormat.PDF])
+    pdf_text = "".join(page.get_textpage().get_text_range() for page in pdf)
+    assert expected in "\n".join(paragraphs(rendered[ReportFormat.DOCX]))
+    assert expected in rendered[ReportFormat.MARKDOWN].decode()
+    assert expected in pdf_text

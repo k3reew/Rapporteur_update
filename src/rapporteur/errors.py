@@ -36,10 +36,11 @@ class StageError(Exception):
 class UserError(Exception):
     """Ошибка запроса пользователя: API отдаёт её с кодом status и текстом message."""
 
-    def __init__(self, message: str, status: int = 422) -> None:
+    def __init__(self, message: str, status: int = 422, *, code: str | None = None) -> None:
         super().__init__(message)
         self.message = message
         self.status = status
+        self.code = code
 
 
 class NotFoundError(UserError):

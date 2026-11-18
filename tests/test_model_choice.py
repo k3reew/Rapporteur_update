@@ -11,12 +11,13 @@ from typing import Any, ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from rapporteur import settings
+from rapporteur import model_choice, settings
 from rapporteur.app import create_app
 from rapporteur.contracts import ModelProfile
 from rapporteur.llm.client import ScriptedClient
 
 from .test_app import Fixture, processed_talk
+from .workflow_support import WorkflowClient, seed_regulation
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -65,14 +66,24 @@ def used() -> list[ModelProfile]:
 
 
 @pytest.fixture
-def app(tmp_path: Path, ollama: str, used: list[ModelProfile]) -> Iterator[Fixture]:
-    scripted = ScriptedClient([])
+def app(
+    tmp_path: Path, ollama: str, used: list[ModelProfile], monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Fixture]:
+    from rapporteur.llm.profiles import load_profile
+
+    original = load_profile
+    monkeypatch.setattr(
+        model_choice, "load_profile", lambda: original().model_copy(update={"prompt_version": "v2"})
+    )
+    scripted = WorkflowClient([])
 
     def client(profile: ModelProfile) -> ScriptedClient:
         used.append(profile)
         return scripted
 
-    with TestClient(create_app(tmp_path, client=client, process=False)) as test_client:
+    application = create_app(tmp_path, client=client, process=False)
+    seed_regulation(application.state.database)
+    with TestClient(application) as test_client:
         yield Fixture(test_client, scripted, tmp_path)
 
 

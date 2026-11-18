@@ -1,0 +1,8 @@
+# Настройки сводки для сквозных тестов обработки: как в поставке, но без правила сокращений.
+min_sentences: 4
+max_sentences: 5
+priorities: [conclusion, result, method, problem]
+required:
+  conclusion: 3
+  result: 3
+explain_abbreviations: false

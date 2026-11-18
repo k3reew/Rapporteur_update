@@ -1,36 +1,14 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useState } from 'react';
 
-import { request, statusTone } from './Materials';
+import { Interest } from './Interest';
+import { request } from './api';
+import { useResource } from './useResource';
+import { statusTone, talkStatuses } from './status';
 
-type Job = 'queued' | 'running' | 'done' | 'failed';
-export type TalkProgress = {
-  id: string;
-  section: string;
-  order: number;
-  title: string | null;
-  status: string;
-  job: Job | null;
-  step: 'parse' | 'facts' | 'verify' | 'summary' | null;
-  error: string | null;
-  summary_number: number | null;
-  summary_status: 'ready' | 'needs_attention' | 'stale' | null;
-};
-export type Progress = {
-  processing_started: boolean;
-  files: number;
-  talks: TalkProgress[];
-};
+import type { Progress, TalkProgress } from './talkTypes';
 
-export const talkStatuses: Record<string, string> = {
-  draft: 'Черновик',
-  matched: 'Материалы привязаны',
-  insufficient_data: 'Недостаточно материалов',
-  processed: 'Сводка готова, не проверена',
-  reviewed: 'Проверен',
-  stale: 'Требуется обновление',
-  not_held: 'Не состоялся',
-};
 const steps: Record<string, string> = {
+  screening: 'отбор по отделам',
   parse: 'разбор материалов',
   facts: 'факты и цитаты',
   verify: 'сверка цитат',
@@ -51,47 +29,46 @@ function jobLabel(talk: TalkProgress) {
 export function Processing(
   { conferenceId, onOpen }: { conferenceId: string; onOpen: (talk: TalkProgress) => void },
 ) {
-  const [progress, setProgress] = useState<Progress>();
+  const { data: progress, error: loadError, refresh } = useResource<Progress>(`/api/v1/conferences/${conferenceId}/progress`, POLL_MS);
   const [error, setError] = useState('');
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      try {
-        const response = await request(`/api/v1/conferences/${conferenceId}/progress`, {
-          signal: controller.signal,
-        });
-        setProgress(await response.json());
-        setError('');
-      } catch (reason) {
-        if (!controller.signal.aborted) setError((reason as Error).message);
-      }
-    }
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => {
-      clearInterval(timer);
-      controller.abort();
-    };
-  }, [conferenceId, tick]);
-
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState('');
   async function retry(talk: TalkProgress) {
     try {
       await request(`/api/v1/talks/${talk.id}/retry`, { method: 'POST' });
-      setTick((value) => value + 1);
+      refresh();
     } catch (reason) {
       setError((reason as Error).message);
     }
   }
 
-  const ready = progress?.talks.filter((talk) => talk.summary_number !== null).length ?? 0;
+  async function confirmAll() {
+    const items = (progress?.talks ?? []).filter(t => t.bulk_reviewable)
+      .map(t => ({ talk_id: t.id, version: t.summary_number }));
+    setBulkBusy(true); setError('');
+    try {
+      const response = await request(`/api/v1/conferences/${conferenceId}/summaries/review`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }),
+      });
+      const result: { confirmed: string[]; skipped: { talk_id: string; reason: string }[] } = await response.json();
+      setNotice(`Подтверждено: ${result.confirmed.length}. ${result.skipped.map(s => s.reason).join('; ')}`);
+      refresh();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBulkBusy(false); }
+  }
+  const ready = progress?.talks.filter((talk) => talk.summary_number !== null && !talk.card_only).length ?? 0;
+  const cards = progress?.talks.filter((talk) => talk.card_only && talk.job === 'done').length ?? 0;
   return (
     <section className="card" aria-labelledby="processing-title">
-      <h2 id="processing-title">Обработка</h2>
-      {error && <p role="alert">{error}</p>}
+      <h2 id="processing-title">Проверка докладов</h2><p className="muted">Дождитесь обработки, проверьте сводки и подтвердите результаты.</p>
+      <button onClick={() => { void request(`/api/v1/conferences/${conferenceId}/screening`, { method: 'POST' }).then(refresh).catch((e: Error) => setError(e.message)); }}>Пересчитать интерес отделов</button>
+      <button disabled={bulkBusy || !progress?.talks.some(t => t.bulk_reviewable)} onClick={() => void confirmAll()}>
+        Подтвердить все готовые ({progress?.talks.filter(t => t.bulk_reviewable).length ?? 0})
+      </button>
+      {notice && <p role="status">{notice}</p>}
+      {(error || loadError) && <p role="alert">{error || loadError}</p>}
       {progress && !progress.processing_started && (
-        <p className="notice">Обработка ещё не запущена: подтвердите привязки на вкладке «Материалы».</p>
+        <p className="notice">Обработка ещё не запущена: подтвердите доклады на предыдущем этапе.</p>
       )}
       {progress?.processing_started && !progress.talks.length && (
         <p className="notice">
@@ -101,22 +78,25 @@ export function Processing(
       )}
       {progress?.processing_started && !!progress.talks.length
         && progress.talks.every((talk) => talk.status === 'draft' || talk.status === 'insufficient_data') && (
-        <p className="notice">Ни к одному докладу не привязаны материалы: подтвердите привязки на вкладке «Материалы».</p>
+        <p className="notice">Ни к одному докладу не привязаны материалы: подтвердите доклады на предыдущем этапе.</p>
       )}
       {progress && (
         <>
           <div className="kv">
             <div><b>Файлы</b>{progress.files}</div>
             <div><b>Сводки</b>{ready} из {progress.talks.length}</div>
+            {!!cards && <div><b>Только карточка</b>{cards}</div>}
           </div>
           <div className="row">
             <div className="progressbar" aria-hidden="true">
-              <span style={{ width: `${progress.talks.length ? (100 * ready) / progress.talks.length : 0}%` }} />
+              <span style={{ width: `${progress.talks.length ? (100 * (ready + cards)) / progress.talks.length : 0}%` }} />
             </div>
-            <small>Сводки готовы у {ready} из {progress.talks.length} докладов. Обновляется каждые 5 с.</small>
+            <small>
+              Сводки готовы у {ready} из {progress.talks.length} докладов{cards ? `, только карточка — у ${cards}` : ''}. Обновляется каждые 5 с.
+            </small>
           </div>
           <div className="table-wrap">
-          <table>
+          <table className="processing-table">
             <thead>
               <tr>
                 <th scope="col">Доклад</th>
@@ -129,11 +109,12 @@ export function Processing(
               {progress.talks.map((talk) => {
                 const job = jobLabel(talk);
                 return (
-                  <tr key={talk.id}>
+                  <Fragment key={talk.id}><tr>
                     <th scope="row">{talk.section} · {talk.order}. {talk.title ?? 'Без названия'}</th>
                     <td>
-                      <span className={`pill ${statusTone[talk.status] ?? ''}`}>{talkStatuses[talk.status] ?? talk.status}</span>
-                      {talk.summary_status === 'needs_attention' && <><br /><small>Сводка требует внимания</small></>}
+                      <span className={`pill ${statusTone[talk.status] ?? ''}`}>{talk.card_only && talk.status === 'processed' ? 'Карточка готова' : talkStatuses[talk.status] ?? talk.status}</span>
+                      {talk.card_only && <><br /><span className="pill">только карточка</span></>}
+                      {talk.summary_status === 'needs_attention' && !talk.card_only && <><br /><small>Сводка требует внимания</small></>}
                     </td>
                     <td>
                       {job ? (
@@ -145,12 +126,12 @@ export function Processing(
                       {talk.error && <><br /><small>{talk.error}</small></>}
                     </td>
                     <td className="row">
-                      <button disabled={talk.summary_number === null} onClick={() => onOpen(talk)}>
+                      <button disabled={talk.summary_number === null || talk.card_only} onClick={() => onOpen(talk)}>
                         Открыть сводку
                       </button>
                       {talk.job === 'failed' && <button onClick={() => void retry(talk)}>Повторить</button>}
                     </td>
-                  </tr>
+                  </tr>{talk.screening && <tr><td colSpan={4}><Interest key={talk.screening.version} talkId={talk.id} value={talk.screening} refresh={refresh} /></td></tr>}</Fragment>
                 );
               })}
             </tbody>

@@ -52,15 +52,22 @@ class Section(ContractModel):
 
 
 class Speaker(ContractModel):
-    """Докладчик или соавтор. Порядок — порядок в списке доклада."""
+    """Докладчик или соавтор. Порядок — порядок в списке доклада.
+
+    affiliation — организация или несколько через «;»; contacts — e-mail, телефоны, сайты
+    автора в том виде, в каком они указаны в материалах."""
 
     name: NonEmptyStr
     affiliation: NonEmptyStr | None = None
     role: PersonRole = PersonRole.SPEAKER
+    contacts: list[NonEmptyStr] = Field(default_factory=list)
 
 
 class Talk(ContractModel):
-    """Доклад реестра. Название и докладчики в справку идут отсюда, а не из ответа модели."""
+    """Доклад реестра. Название и докладчики в справку идут отсюда, а не из ответа модели.
+
+    Карточка доклада — тема, авторы, организации и контакты. organizations и contacts —
+    сведения, которые не удалось отнести к конкретному автору."""
 
     id: UUID
     section_id: UUID
@@ -69,6 +76,10 @@ class Talk(ContractModel):
     date: dt.date | None
     status: TalkStatus
     speakers: list[Speaker]
+    organizations: list[NonEmptyStr] = Field(default_factory=list)
+    contacts: list[NonEmptyStr] = Field(default_factory=list)
+    # Доклад не интересен отделам или так решил оператор: в справке только карточка.
+    card_only: bool = False
 
     @model_validator(mode="after")
     def _insufficient_needs_title(self) -> Self:

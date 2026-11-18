@@ -1,0 +1,12 @@
+{
+  "sourceCommit": "f07a0d07e08c413b30c383bab37a4920ed861c00",
+  "files": {
+    "README.md": "5cbde20de0f4ad58c8f08546e2bf6309f00416e4c573051d6d6ad672e2d92662",
+    "docs/architecture.md": "0a9d4691a8b9997c51eb282ac03728139ab66e9f9556a75bff556bfaac3bc5f2",
+    "docs/api.md": "dba101b63ed42d07b1c571c490c10e09dedf55260ac1b699ca010dd62aaf7aae",
+    "docs/workflow.md": "27266b643c3a6662227d59aaba394aecd3959af69aef936a1b2db58f0aa58574",
+    "docs/offline.md": "5bae1e3470efd16bf2790eeddbb97c6d04e32fb5d199d54b61b25731f81b12dc",
+    "docs/acceptance.md": "17174d7f873ee68d59dfcbef18428c026763ecf9da9696bc28825e2083aad84c",
+    "docs/ollama.md": "aeb6a251a08b210a0677b0dd2ebde9c7d99aa73d8f26fae7626ff17301460dff"
+  }
+}

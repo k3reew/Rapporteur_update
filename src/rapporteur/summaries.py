@@ -21,6 +21,7 @@ from rapporteur.contracts import (
 )
 from rapporteur.contracts.base import NonEmptyStr
 from rapporteur.contracts.claims import ClaimKey
+from rapporteur.contracts.entities import Speaker
 from rapporteur.contracts.enums import ClaimStatus, SummaryStatus, TalkStatus
 from rapporteur.errors import NotFoundError, UserError
 
@@ -54,6 +55,9 @@ class TalkSummaryView(BaseModel):
     pack: TalkFragmentPack
     talk_title: str | None
     talk_status: TalkStatus
+    speakers: list[Speaker] = Field(default_factory=list)
+    conference_id: str = ""
+    job: str | None = None
 
 
 def _talk(conn: sqlite3.Connection, talk_id: str) -> db.Row:
@@ -75,11 +79,16 @@ def _current(conn: sqlite3.Connection, talk_id: str) -> db.Row:
 def view(conn: sqlite3.Connection, talk_id: str) -> TalkSummaryView:
     talk = _talk(conn, talk_id)
     row = _current(conn, talk_id)
+    section = db.one(conn, "SELECT conference_id FROM sections WHERE id=?", talk["section_id"])
+    assert section is not None
     return TalkSummaryView(
         summary=Summary.model_validate_json(row["summary"]),
         pack=TalkFragmentPack.model_validate_json(row["pack"]),
         talk_title=talk["title"],
         talk_status=talk["status"],
+        speakers=db.talk(talk).speakers,
+        conference_id=section["conference_id"],
+        job=talk["job"],
     )
 
 
@@ -155,6 +164,8 @@ def edit(conn: sqlite3.Connection, talk_id: str, data: SummaryEdit) -> None:
 def review(conn: sqlite3.Connection, talk_id: str, data: SummaryReview) -> None:
     """Человек проверил сводку: утверждения из её текста подтверждены, доклад проверен."""
     talk, row = _locked(conn, talk_id, data.version)
+    if talk["job"] in ("queued", "running"):
+        raise UserError("Дождитесь завершения обработки", 409)
     status = TalkStatus(talk["status"])
     if not can_transition(status, TalkStatus.REVIEWED):
         raise UserError(f"Доклад в статусе {status.value} нельзя отметить проверенным")
@@ -178,3 +189,41 @@ def review(conn: sqlite3.Connection, talk_id: str, data: SummaryReview) -> None:
         },
     )
     conn.execute("UPDATE talks SET status = ? WHERE id = ?", (TalkStatus.REVIEWED.value, talk_id))
+
+
+class BulkItem(BaseModel):
+    talk_id: str
+    version: PositiveInt
+
+
+class BulkReview(BaseModel):
+    items: list[BulkItem] = Field(max_length=500)
+
+
+def bulk_review(conn: sqlite3.Connection, conference_id: str, data: BulkReview) -> dict[str, Any]:
+    from rapporteur.materials import require_conference
+
+    require_conference(conn, conference_id)
+    allowed = {r["id"] for r in db.conference_talks(conn, conference_id)}
+    if len({i.talk_id for i in data.items}) != len(data.items) or any(
+        i.talk_id not in allowed for i in data.items
+    ):
+        raise UserError("Повторяющийся доклад или доклад другой конференции")
+    confirmed, skipped = [], []
+    for item in data.items:
+        try:
+            talk, row = _locked(conn, item.talk_id, item.version)
+            summary = Summary.model_validate_json(row["summary"])
+            if (
+                talk["status"] != "processed"
+                or talk["job"] in ("queued", "running")
+                or summary.status is not SummaryStatus.READY
+                or not summary.sentences
+                or any(c.status is ClaimStatus.NEEDS_HUMAN for c in summary.claims)
+            ):
+                raise UserError("Доклад требует индивидуальной проверки или ещё обрабатывается")
+            review(conn, item.talk_id, SummaryReview(version=item.version))
+            confirmed.append(item.talk_id)
+        except UserError as error:
+            skipped.append({"talk_id": item.talk_id, "reason": error.message})
+    return {"confirmed": confirmed, "skipped": skipped}

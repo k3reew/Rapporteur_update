@@ -44,8 +44,19 @@ Word меняет прямые кавычки на типографские, doc
 
 Краткое содержание докладов
 {%p for talk in talks %}
-{{ loop.index }}. {{ talk.title | ёлочки }} ({{ talk.speakers | join(", ") }})
+{{ loop.index }}. {{ talk.title | ёлочки }}
+{%p if talk.authors %}
+{{ "Автор" if talk.authors | length == 1 else "Авторы" }}: {{ talk.authors | join(", ") }}
+{%p endif %}
+{%p if talk.organizations %}
+Организации: {{ talk.organizations | join("; ") }}
+{%p endif %}
+{%p if talk.contacts %}
+Контакты: {{ talk.contacts | join("; ") }}
+{%p endif %}
+{%p if talk.summary %}
 {{ talk.summary | типографика }}
+{%p endif %}
 {%p if talk.conclusions %}
 Основные выводы:
 {%p for conclusion in talk.conclusions %}

@@ -2,7 +2,7 @@
 # Этап получает профиль целиком в конфиге, поэтому смена модели или параметров меняет ключ кэша.
 # prompt_version выбирает файлы prompts/<шаг>/<версия>.md.
 #
-# Целевой профиль сервера (qwen3.6:27b-bf16) появится после замеров P0-03.
+# Профиль server выбирается через RAPPORTEUR_PROFILE в Compose; local — для разработки.
 default: local
 profiles:
   # Машина разработки: RTX 3060 12 ГБ, проверка механизма, а не качества (docs/benchmarks/).
@@ -16,8 +16,8 @@ profiles:
       reasoning: true
       max_tokens: 12000
       context_tokens: 32768
-    prompt_version: v1
-    stages: [facts, summary]
+    prompt_version: v4
+    stages: [facts, facts-review, summary, critic]
 
   # То же без рассуждения: в 10–13 раз быстрее на машине разработки. spec §6.7 требует
   # рассуждение на шаге А, поэтому профиль только для отладки цепочки.
@@ -31,5 +31,19 @@ profiles:
       reasoning: false
       max_tokens: 6000
       context_tokens: 32768
-    prompt_version: v1
-    stages: [facts, summary]
+    prompt_version: v4
+    stages: [facts, facts-review, summary, critic]
+
+  # Сервер: одна A100 40 ГБ, текст + изображения. Digest берется из локального манифеста.
+  - name: server
+    engine: ollama
+    model: qwen3.5:27b
+    weights_revision: local-manifest
+    quantization: q4_K_M
+    generation:
+      temperature: 0.1
+      reasoning: true
+      max_tokens: 12000
+      context_tokens: 32768
+    prompt_version: v4
+    stages: [facts, facts-review, summary, critic, vision, segmentation, recommendations]

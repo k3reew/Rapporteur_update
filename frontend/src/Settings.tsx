@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
-import { request } from './Materials';
+import { request } from './api';
+import { useResource } from './useResource';
+import { useUnsavedChanges } from './useUnsavedChanges';
 import type { Theme } from './theme';
 
 type SystemInfo = {
@@ -8,6 +10,7 @@ type SystemInfo = {
   ollama_url: string;
   ollama_available: boolean;
   ollama_models: string[];
+  asr_enabled: boolean;
   profiles: { name: string; model: string; reasoning: boolean; prompt_version: string; default: boolean }[];
   templates: { name: string; version: string }[];
   queue: Partial<Record<'queued' | 'running' | 'failed', number>>;
@@ -42,6 +45,7 @@ function ModelCard() {
   const [busy, setBusy] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  useUnsavedChanges(!!state && (model !== state.current.model || reasoning !== state.current.reasoning));
 
   function show(value: ModelState) {
     setState(value);
@@ -52,7 +56,7 @@ function ModelCard() {
   useEffect(() => {
     const controller = new AbortController();
     void request('/api/v1/model', { signal: controller.signal })
-      .then(async (response) => show(await response.json()))
+      .then(async (response) => { const value = await response.json(); if (!controller.signal.aborted) show(value); })
       .catch((reason: Error) => {
         if (!controller.signal.aborted) setError(reason.message);
       });
@@ -149,23 +153,12 @@ function ModelCard() {
 }
 
 export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Theme) => void }) {
-  const [info, setInfo] = useState<SystemInfo>();
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void request('/api/v1/system', { signal: controller.signal })
-      .then(async (response) => setInfo(await response.json()))
-      .catch((reason: Error) => {
-        if (!controller.signal.aborted) setError(reason.message);
-      });
-    return () => controller.abort();
-  }, []);
+  const { data: info, error } = useResource<SystemInfo>('/api/v1/system');
 
   return (
     <section aria-labelledby="settings-title">
       <div className="card">
-        <h2 id="settings-title">Управление</h2>
+        <h2 id="settings-title">Настройки</h2>
         <fieldset>
           <legend>Тема оформления</legend>
           <div className="row">
@@ -183,8 +176,8 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
       <ModelCard />
 
       {info && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Установка</h3>
+        <details className="card system-details"><summary>Состояние сервиса и технические сведения</summary>
+          <h3>Установка</h3>
           <div className="kv">
             <div><b>Версия</b>{info.version}</div>
             <div>
@@ -192,6 +185,12 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
               {info.ollama_available
                 ? <span className="pill ok">доступна</span>
                 : <span className="pill bad">недоступна</span>}
+            </div>
+            <div>
+              <b>Распознавание речи</b>
+              {info.asr_enabled
+                ? <span className="pill ok">включено</span>
+                : <span className="pill warn">выключено, записи не расшифровываются</span>}
             </div>
             <div><b>В очереди</b>{info.queue.queued ?? 0}</div>
             <div><b>Обрабатывается</b>{info.queue.running ?? 0}</div>
@@ -225,11 +224,11 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
           ) : <p className="muted">Файл профилей недоступен.</p>}
           <p className="muted">
             Профиль по умолчанию задаётся в profiles.yaml; смена профиля перезапускает шаги сводки.
-            Доклады с ошибкой повторяются на вкладке «Обработка» конференции.
+            Доклады с ошибкой повторяются на этапе «Проверка» конференции.
           </p>
           <h3>Бланки справки</h3>
           <ul>{info.templates.map((item) => <li key={item.name}>{item.name} — версия {item.version}</li>)}</ul>
-        </div>
+        </details>
       )}
     </section>
   );

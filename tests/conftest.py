@@ -130,6 +130,16 @@ CONTENT_SLIDE = SlideSpec(
 ParseSlides = Callable[..., SlidesArtifact]
 
 
+@pytest.fixture(autouse=True)
+def summary_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Обработка в тестах читает summary.yaml фикстур: вымышленные ответы модели написаны
+    до правила сокращений (LRU, LFU без расшифровки). Настройки поставки проверяет
+    test_summary_policy, правило сокращений — его отдельные тесты."""
+    from rapporteur import settings
+
+    monkeypatch.setattr(settings, "SUMMARY_FILE", Path(__file__).parent / "fixtures/summary.yaml")
+
+
 @pytest.fixture
 def storage(tmp_path: Path) -> Storage:
     return Storage(tmp_path / "data")

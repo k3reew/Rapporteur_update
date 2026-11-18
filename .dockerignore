@@ -6,6 +6,7 @@
 !prompts/
 !templates/
 !profiles.yaml
+!summary.yaml
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/index.html
@@ -14,3 +15,5 @@
 !frontend/eslint.config.js
 !frontend/src/
 **/__pycache__
+
+!scripts/

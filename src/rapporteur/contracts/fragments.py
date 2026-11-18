@@ -19,17 +19,18 @@ from rapporteur.contracts.base import (
 from rapporteur.contracts.enums import FragmentKind, PackBlock, TextOrigin
 
 _LABEL_PATTERN = (
-    r"^(?:[SV](?:[1-9][0-9]*\.)?[1-9][0-9]*"
+    r"^(?:[SVD](?:[1-9][0-9]*\.)?[1-9][0-9]*"
     r"|T(?:[1-9][0-9]*\.)?[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"|N[1-9][0-9]*)$"
 )
-_LABEL_PARTS = re.compile(r"^(?P<prefix>[STNV])(?:(?P<source>\d+)\.)?(?P<place>.+)$")
+_LABEL_PARTS = re.compile(r"^(?P<prefix>[STNVD])(?:(?P<source>\d+)\.)?(?P<place>.+)$")
 
 # Метка: S12, S2.12 — слайд; T00:12:34, T2.00:12:34 — стенограмма; N3 — заметка; V12 — описание VLM.
 Label = Annotated[str, StringConstraints(pattern=_LABEL_PATTERN)]
 
 _PREFIX_BY_KIND = {
     FragmentKind.SLIDE: "S",
+    FragmentKind.DOCUMENT: "D",
     FragmentKind.SLIDE_DESCRIPTION: "V",
     FragmentKind.TRANSCRIPT: "T",
     FragmentKind.NOTE: "N",
@@ -74,6 +75,7 @@ Locator = Annotated[PageLocator | TimeLocator | LinesLocator, Field(discriminato
 
 _LOCATOR_BY_KIND: dict[FragmentKind, tuple[type[ContractModel], ...]] = {
     FragmentKind.SLIDE: (PageLocator,),
+    FragmentKind.DOCUMENT: (PageLocator,),
     FragmentKind.SLIDE_DESCRIPTION: (PageLocator,),
     FragmentKind.TRANSCRIPT: (TimeLocator,),
     FragmentKind.NOTE: (LinesLocator,),

@@ -44,6 +44,8 @@ class FileKind(StrEnum):
     VIDEO = "video"
     NOTES = "notes"
     PROGRAM = "program"
+    DOCUMENT = "document"
+    IMAGE = "image"
 
 
 class SegmentKind(StrEnum):
@@ -58,10 +60,12 @@ class FragmentKind(StrEnum):
     NOTE = "note"
     PROGRAM = "program"
     SLIDE_DESCRIPTION = "slide_description"
+    DOCUMENT = "document"
 
 
 class TextOrigin(StrEnum):
     EXTRACTED = "extracted"
+    OCR = "ocr"
     ASR = "asr"
     VLM = "vlm"
     TERM_FIX = "term_fix"
@@ -119,6 +123,12 @@ class CheckName(StrEnum):
     NUMBERS_IN_SOURCES = "numbers_in_sources"
     FORBIDDEN_PHRASES = "forbidden_phrases"
     CRITIC = "critic"
+    # Критик v3+: текст понятен читателю, не видевшему доклада.
+    READER_CONTEXT = "reader_context"
+    # Обязательные утверждения summary.yaml (выводы, результаты) отражены в тексте.
+    COVERAGE = "coverage"
+    # Сокращения расшифрованы при первом упоминании (summarize/terms.py).
+    ABBREVIATIONS = "abbreviations"
 
 
 class InferenceEngine(StrEnum):

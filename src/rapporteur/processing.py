@@ -4,8 +4,8 @@
 и проходит цепочку spec §6: разбор презентаций и заметок → пакет фрагментов → факты (LLM) →
 сверка цитат → сводка (LLM). Результаты шагов кэшируются на томе (spec §3, п. 6), поэтому
 повтор после сбоя или перепривязки не обращается к модели заново, если входы не изменились.
-Обработка одного доклада за раз: GPU одна на всех, Ollama всё равно выполняет запросы
-по очереди (ADR-010).
+Доклады обрабатываются последовательно. Ollama и ASR закреплены за независимыми GPU;
+очередь и частичный кэш сохраняются между перезапусками.
 """
 
 import logging
@@ -17,7 +17,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
-from rapporteur import db, model_choice
+from rapporteur import (
+    db,
+    departments,
+    interest,
+    materials,
+    model_choice,
+    preparation,
+    report_jobs,
+    screening,
+)
 from rapporteur.contracts import (
     FactsArtifact,
     ModelProfile,
@@ -28,7 +37,7 @@ from rapporteur.contracts import (
     can_transition,
 )
 from rapporteur.contracts.enums import FileKind, TalkStatus
-from rapporteur.errors import FailureCode, StageError
+from rapporteur.errors import FailureCode, StageError, UserError
 from rapporteur.ingest import notes as notes_parser
 from rapporteur.ingest import slides as slides_parser
 from rapporteur.ingest.limits import NotesConfig, PresentationConfig
@@ -36,6 +45,7 @@ from rapporteur.llm.client import LlmClient
 from rapporteur.storage import Storage, blob_key, cache_key
 from rapporteur.summarize import facts as facts_step
 from rapporteur.summarize import summary as summary_step
+from rapporteur.summarize.checks import load_checks
 from rapporteur.summarize.pack import PackSource, build_pack
 from rapporteur.summarize.quotes import QuoteConfig
 from rapporteur.summarize.verify import verify_facts
@@ -50,11 +60,17 @@ ClientFactory = Callable[[ModelProfile], LlmClient]
 
 
 def enqueue(conn: sqlite3.Connection, talk_ids: list[str]) -> None:
-    """Повторная постановка во время обработки допустима: доклад пройдёт цепочку ещё раз."""
-    conn.executemany(
-        "UPDATE talks SET job = 'queued', step = NULL, error = NULL, queued_at = ? WHERE id = ?",
-        [(db.now(), talk_id) for talk_id in talk_ids],
-    )
+    """Повторная постановка во время обработки допустима: доклад пройдёт цепочку ещё раз.
+    Обработка ждёт итога отбора: сводки для интересного отделам доклада или карточки для
+    остальных (interest.py)."""
+    departments.require_regulations(conn)
+    for talk_id in talk_ids:
+        screening.queue(conn, talk_id)
+        decided = interest.route(conn, talk_id) is not None
+        conn.execute(
+            "UPDATE talks SET job=?, step=?, error=NULL, queued_at=? WHERE id=?",
+            ("queued" if decided else None, None if decided else "screening", db.now(), talk_id),
+        )
 
 
 def enqueue_ready(conn: sqlite3.Connection, conference_id: str) -> int:
@@ -82,6 +98,7 @@ class _Talk:
     id: str
     conference_id: str
     files: list[db.Row]
+    revision: int
 
 
 class Processor:
@@ -96,6 +113,12 @@ class Processor:
     def start(self) -> None:
         # Доклады, прерванные остановкой приложения, обрабатываются заново.
         with self.database.tx() as conn:
+            conn.execute("UPDATE recommendation_jobs SET job='queued' WHERE job='running'")
+            conn.execute("UPDATE talk_screenings SET job='queued' WHERE job='running'")
+            conn.execute(
+                "UPDATE report_jobs SET status='queued',step='queued' WHERE status='running'"
+            )
+            conn.execute("UPDATE preparations SET job = 'queued' WHERE job = 'running'")
             conn.execute("UPDATE talks SET job = 'queued', step = NULL WHERE job = 'running'")
         self._thread = threading.Thread(target=self._loop, name="processing", daemon=True)
         self._thread.start()
@@ -122,41 +145,91 @@ class Processor:
 
     def run_once(self) -> bool:
         """Обрабатывает следующий доклад из очереди; False, если очередь пуста."""
+        if report_jobs.run_once(self.database, self.storage):
+            return True
+        if self._prepare_once():
+            return True
+        screened = screening.run_once(self.database, self.storage, self.client, self._screen_pack)
+        if screened is not None:
+            with self.database.tx() as conn:
+                if interest.route(conn, screened) is not None:
+                    enqueue(conn, [screened])
+                elif error := screening.view(conn, screened)["error"]:
+                    conn.execute(
+                        "UPDATE talks SET job='failed',step='screening',error=? WHERE id=?",
+                        (error, screened),
+                    )
         talk = self._take()
         if talk is None:
-            return False
+            if screened is not None:
+                return True
+            return departments.run_once(self.database, self.client)
         log.info("Обработка доклада %s", talk.id)
         try:
             summary, pack = self._process(talk)
         except StageError as error:
             log.warning("Доклад %s: %s", talk.id, error.code.value)
-            self._finish(talk.id, "failed", f"{error.code.value}: {error.message}")
+            self._finish(talk.id, "failed", f"{error.code.value}: {error.message}", talk.revision)
         except Exception:
             log.exception("Доклад %s: внутренняя ошибка", talk.id)
-            self._finish(talk.id, "failed", "internal_error: внутренняя ошибка, см. журнал")
+            self._finish(
+                talk.id, "failed", "internal_error: внутренняя ошибка, см. журнал", talk.revision
+            )
         else:
-            self._save(talk.id, summary, pack)
+            if summary is None:
+                self._save_card(talk.id, talk.revision)
+            else:
+                self._save(talk.id, summary, pack, talk.revision)
         return True
+
+    def _screen_pack(self, talk_id: str) -> TalkFragmentPack:
+        with self.database.read() as conn:
+            talk = self._load_talk(conn, talk_id)
+        return self._pack(talk)
+
+    def _load_talk(self, conn: sqlite3.Connection, talk_id: str) -> _Talk:
+        row = db.one(
+            conn,
+            "SELECT talks.id, talks.input_revision, sections.conference_id "
+            "FROM talks JOIN sections ON sections.id=talks.section_id WHERE talks.id=?",
+            talk_id,
+        )
+        if row is None:
+            raise ValueError("Доклад не найден")
+        files = conn.execute(
+            "SELECT files.*, NULL AS start_ms, NULL AS end_ms, NULL AS "
+            "page_start, NULL AS page_end "
+            "FROM files WHERE talk_id = ? AND confirmed = 1 "
+            "AND NOT EXISTS (SELECT 1 FROM material_links WHERE file_id=files.id) "
+            "UNION ALL SELECT files.*, material_links.start_ms, material_links.end_ms, "
+            "material_links.page_start, material_links.page_end FROM material_links "
+            "JOIN files ON files.id=material_links.file_id WHERE material_links.talk_id=? "
+            "ORDER BY relative_path",
+            (talk_id, talk_id),
+        ).fetchall()
+        return _Talk(row["id"], row["conference_id"], files, row["input_revision"])
 
     def _take(self) -> _Talk | None:
         with self.database.tx() as conn:
-            row = db.one(
-                conn,
-                "SELECT talks.id, sections.conference_id FROM talks "
-                "JOIN sections ON sections.id = talks.section_id "
-                "WHERE talks.job = 'queued' ORDER BY talks.queued_at LIMIT 1",
-            )
-            if row is None:
-                return None
-            conn.execute(
-                "UPDATE talks SET job = 'running', step = 'parse', error = NULL WHERE id = ?",
-                (row["id"],),
-            )
-            files = conn.execute(
-                "SELECT * FROM files WHERE talk_id = ? AND confirmed = 1 ORDER BY relative_path",
-                (row["id"],),
+            rows = conn.execute(
+                "SELECT id FROM talks WHERE job='queued' ORDER BY queued_at"
             ).fetchall()
-        return _Talk(row["id"], row["conference_id"], files)
+            for row in rows:
+                if interest.route(conn, row["id"]) is None:
+                    try:
+                        enqueue(conn, [row["id"]])
+                    except UserError as error:
+                        conn.execute(
+                            "UPDATE talks SET job='failed',error=? WHERE id=?",
+                            (str(error), row["id"]),
+                        )
+                    continue
+                conn.execute(
+                    "UPDATE talks SET job='running',step='parse',error=NULL WHERE id=?",
+                    (row["id"],),
+                )
+                return self._load_talk(conn, row["id"])
+        return None
 
     def _step(self, talk_id: str, step: str) -> None:
         with self.database.tx() as conn:
@@ -164,19 +237,30 @@ class Processor:
                 "UPDATE talks SET step = ? WHERE id = ? AND job = 'running'", (step, talk_id)
             )
 
-    def _finish(self, talk_id: str, job: str, error: str | None = None) -> None:
+    def _finish(
+        self, talk_id: str, job: str | None, error: str | None = None, revision: int | None = None
+    ) -> None:
         # Если доклад поставили заново во время обработки, он остаётся в очереди.
         with self.database.tx() as conn:
+            current = db.one(conn, "SELECT input_revision, status FROM talks WHERE id=?", talk_id)
+            if current and revision is not None and current["input_revision"] != revision:
+                job = (
+                    "queued" if current["status"] not in ("insufficient_data", "not_held") else None
+                )
+                error = None
             conn.execute(
                 "UPDATE talks SET job = ?, step = NULL, error = ? WHERE id = ? AND job = 'running'",
                 (job, error, talk_id),
             )
 
-    def _process(self, talk: _Talk) -> tuple[Summary, TalkFragmentPack]:
+    def _process(self, talk: _Talk) -> tuple[Summary | None, TalkFragmentPack]:
+        """Сводка доклада; None — докладу достаточно карточки (interest.py)."""
         pack = self._pack(talk)
         # Модель — выбранная на странице «Управление» или профиль по умолчанию.
-        with self.database.tx() as conn:
+        with self.database.read() as conn:
             profile = model_choice.active_profile(conn)
+            if interest.route(conn, talk.id) is interest.Route.CARD:
+                return None, pack
 
         self._step(talk.id, "facts")
         facts_config = facts_step.FactsConfig(profile=profile)
@@ -186,14 +270,16 @@ class Processor:
         facts = self.storage.cached(
             f"cache/facts/{facts_key}.json",
             FactsArtifact,
-            lambda: facts_step.extract_facts(self.client(profile), pack, facts_config),
+            lambda: facts_step.extract_facts(
+                self.client(profile), pack, facts_config, self.storage
+            ),
         )
 
         self._step(talk.id, "verify")
         claims = verify_facts(facts.facts, pack, QuoteConfig(), id_seed=facts_key)
 
         self._step(talk.id, "summary")
-        summary_config = summary_step.SummaryConfig(profile=profile)
+        summary_config = summary_step.SummaryConfig(profile=profile, checks=load_checks())
         summary_key = cache_key(
             "summary", summary_step.VERSION, facts_key, summary_config.model_dump()
         )
@@ -218,23 +304,107 @@ class Processor:
     def _pack(self, talk: _Talk) -> TalkFragmentPack:
         presentations: list[PackSource] = []
         notes: list[PackSource] = []
-        recordings = 0
+        transcripts: list[PackSource] = []
+        asr_skipped = False
+        with self.database.read() as conn:
+            profile = model_choice.active_profile(conn)
         for file in talk.files:
             source = UUID(file["id"])
-            if file["kind"] == FileKind.PRESENTATION.value:
-                presentations.append(PackSource(source, self._slides(file["sha256"]).fragments))
+            key = preparation.prepared_key(file, profile.model_dump_json())
+            if self.storage.exists(key):
+                fragments = preparation.Prepared.model_validate_json(
+                    self.storage.get(key)
+                ).fragments
+            elif file["kind"] == FileKind.PRESENTATION.value:
+                fragments = self._slides(file["sha256"]).fragments
             elif file["kind"] == FileKind.NOTES.value:
-                notes.append(PackSource(source, self._notes(file["sha256"]).fragments))
-            elif file["kind"] in _RECORDINGS:
-                # Распознавание речи и разбиение записей — Ф2–Ф3 (spec §6.3–6.5).
-                recordings += 1
-        pack = build_pack(UUID(talk.conference_id), UUID(talk.id), presentations, notes)
+                fragments = self._notes(file["sha256"]).fragments
+            else:
+                prepared = preparation.extract(file, self.storage, self.client(profile), profile)
+                fragments = prepared.fragments
+                asr_skipped |= preparation.ASR_DISABLED in prepared.warnings
+            link = preparation.Link(
+                file_id=file["id"],
+                start_ms=file["start_ms"],
+                end_ms=file["end_ms"],
+                page_start=file["page_start"],
+                page_end=file["page_end"],
+            )
+            fragments = preparation.slice_fragments(fragments, link)
+            destination = (
+                transcripts
+                if file["kind"] in _RECORDINGS
+                else notes
+                if file["kind"] == FileKind.NOTES
+                else presentations
+            )
+            destination.append(PackSource(source, fragments))
+        pack = build_pack(
+            UUID(talk.conference_id), UUID(talk.id), presentations, notes, transcripts
+        )
         if not pack.fragments:
-            message = "В материалах доклада нет текста"
-            if recordings:
-                message += ": распознавание записей появится в Ф2"
-            raise StageError(FailureCode.NO_SOURCES, message)
+            raise StageError(
+                FailureCode.NO_SOURCES,
+                "В материалах доклада нет текста или читаемых изображений"
+                + ("; распознавание речи выключено, запись не расшифрована" if asr_skipped else ""),
+            )
+        if asr_skipped:
+            log.warning("Доклад %s: запись пропущена, распознавание речи выключено", talk.id)
         return pack
+
+    def _prepare_once(self) -> bool:
+        with self.database.tx() as conn:
+            row = db.one(conn, "SELECT * FROM preparations WHERE job='queued' LIMIT 1")
+            if row is None:
+                return False
+            conference_id, version = row["conference_id"], row["version"]
+            try:
+                departments.require_regulations(conn)
+            except UserError as error:
+                conn.execute(
+                    "UPDATE preparations SET job='failed',error=? "
+                    "WHERE conference_id=? AND version=?",
+                    (error.message, conference_id, version),
+                )
+                return True
+            conn.execute(
+                "UPDATE preparations SET job='running', error=NULL WHERE conference_id=?",
+                (conference_id,),
+            )
+            files = conn.execute(
+                "SELECT * FROM files WHERE conference_id=? ORDER BY relative_path", (conference_id,)
+            ).fetchall()
+            existing = materials.review(conn, conference_id)
+            profile = model_choice.active_profile(conn)
+        try:
+            client = self.client(profile)
+            extracted = {
+                file["id"]: preparation.extract(file, self.storage, client, profile)
+                for file in files
+            }
+            proposal = preparation.propose(
+                files, extracted, existing, client, profile, self.storage
+            )
+        except Exception as error:
+            log.exception("Подготовка конференции %s", conference_id)
+            with self.database.tx() as conn:
+                conn.execute(
+                    "UPDATE preparations SET job='failed', error=? WHERE "
+                    "conference_id=? AND version=?",
+                    (str(error)[:1000], conference_id, version),
+                )
+        else:
+            with self.database.tx() as conn:
+                conn.execute(
+                    "UPDATE preparations SET job='done', proposal=? WHERE "
+                    "conference_id=? AND version=?",
+                    (
+                        db.dumps([p.model_dump(mode="json") for p in proposal]),
+                        conference_id,
+                        version,
+                    ),
+                )
+        return True
 
     def _slides(self, sha: str) -> SlidesArtifact:
         key = slides_cache_key(sha)
@@ -257,13 +427,42 @@ class Processor:
             lambda: notes_parser.parse_notes(self.storage.get(blob_key(sha)), sha, config),
         )
 
-    def _save(self, talk_id: str, summary: Summary, pack: TalkFragmentPack) -> None:
+    def _current(self, conn: sqlite3.Connection, talk_id: str, revision: int) -> db.Row | None:
+        """Доклад, если результат обработки ещё к нему относится; иначе — повтор очереди."""
+        talk = db.one(conn, "SELECT status, input_revision, job FROM talks WHERE id = ?", talk_id)
+        if talk is None or talk["job"] != "running":
+            return None  # Доклад удалили или поставили заново, пока шла обработка.
+        if talk["input_revision"] != revision:
+            job = "queued" if talk["status"] not in ("insufficient_data", "not_held") else None
+            conn.execute("UPDATE talks SET job=?, step=NULL WHERE id=?", (job, talk_id))
+            return None
+        return talk
+
+    def _save_card(self, talk_id: str, revision: int) -> None:
+        """Доклад без сводки: карточка подтверждена на этапе «Доклады», в справку он идёт
+        темой, авторами, организациями и контактами."""
+        with self.database.tx() as conn:
+            talk = self._current(conn, talk_id, revision)
+            if talk is None:
+                return
+            if can_transition(TalkStatus(talk["status"]), TalkStatus.PROCESSED):
+                conn.execute(
+                    "UPDATE talks SET status = ? WHERE id = ?",
+                    (TalkStatus.PROCESSED.value, talk_id),
+                )
+            conn.execute(
+                "UPDATE talks SET card_only = 1, job = 'done', step = NULL, error = NULL "
+                "WHERE id = ?",
+                (talk_id,),
+            )
+
+    def _save(self, talk_id: str, summary: Summary, pack: TalkFragmentPack, revision: int) -> None:
         """Новая машинная сводка становится очередной версией и требует проверки человеком.
         Тот же результат из кэша повторно не записывается."""
         with self.database.tx() as conn:
-            talk = db.one(conn, "SELECT status FROM talks WHERE id = ?", talk_id)
+            talk = self._current(conn, talk_id, revision)
             if talk is None:
-                return  # Доклад удалили, пока шла обработка.
+                return
             known = db.one(
                 conn,
                 "SELECT 1 FROM summaries WHERE talk_id = ? AND json_extract(summary, '$.id') = ?",
@@ -293,7 +492,7 @@ class Processor:
                         (TalkStatus.PROCESSED.value, talk_id),
                     )
             conn.execute(
-                "UPDATE talks SET job = 'done', step = NULL, error = NULL "
+                "UPDATE talks SET card_only = 0, job = 'done', step = NULL, error = NULL "
                 "WHERE id = ? AND job = 'running'",
                 (talk_id,),
             )

@@ -1,6 +1,6 @@
 # Стартовый бланк справки (spec §6.9). Значения подставляет код, а не модель (принцип 2).
 # Бланк использует только переменные из этого списка: иначе load_template отклонит его.
-version: starter-1
+version: starter-2
 document: report.docx
 variables:
   title:
@@ -41,4 +41,6 @@ variables:
     required: true
     description: >-
       Доклады справки по порядку. Поля доклада: title, speakers, affiliations,
-      section_title, summary, conclusions (ReportTalk в contracts/).
+      section_title, summary, conclusions и карточка authors, organizations,
+      contacts (ReportTalk в contracts/). У доклада только с карточкой
+      (card_only) summary пусто, conclusions — пустой список.
