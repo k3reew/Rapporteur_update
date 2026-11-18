@@ -109,3 +109,7 @@ Python 3.12, FastAPI, Pydantic, SQLite, React, TypeScript и Vite. Обрабо�
 - Команды. [Makefile](Makefile)
 - Сервисы. [compose.yaml](compose.yaml)
 - Локальный протокол. [docs/benchmarks/2026-11-14-redesign.md](docs/benchmarks/2026-11-14-redesign.md)
+
+## Продолжение разработки
+
+[HANDOFF.md](HANDOFF.md) содержит состояние объединённой разработки, исправления аудита, команды проверки и стартовый запрос для нового чата. [Протокол исправлений](docs/benchmarks/2026-11-18-audit-fixes.md) фиксирует условия локальной проверки.

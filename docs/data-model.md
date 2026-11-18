@@ -8,6 +8,8 @@
 
 ## Контекст
 
+Текущая версия миграций SQLite — 5. После добавления полей карточки (v3) и `card_only` (v4), v5 один раз повышает версии существующих предложений подготовки, чтобы черновики прежней установки не могли перезаписать ручные поля. Структуру таблиц этот шаг не меняет.
+
 Конференция содержит секции, доклады и материалы. Материал принадлежит конференции, а связь с докладом задаётся целым файлом или записью `material_links`. Сводка относится к докладу, справка — к конференции. Положение отдела имеет собственную историю версий.
 
 В SQLite часть структур хранится JSON-текстом. На границе API и предметных функций Pydantic проверяет контракты. SQL-ограничения обеспечивают ключи и внешние связи, а ограничения диапазонов и ссылок в JSON проверяет код.
@@ -16,7 +18,7 @@
 
 Таблицы ниже воспроизводят PRAGMA SQLite. `None` в колонке DEFAULT означает отсутствие объявленного значения по умолчанию. Флаг NOT NULL приводится буквально, включая особенности SQLite для TEXT PRIMARY KEY. Валидация API дополнительно ограничивает входные значения.
 
-Таблицы ниже получены из временной SQLite после штатного создания схемы версии 1.
+Таблицы ниже сверены с PRAGMA SQLite после штатных миграций до версии 5, 18 ноября 2026.
 
 ### `conferences`
 
@@ -202,6 +204,185 @@
 
 `speakers` хранит JSON-список авторов: `name`, `role` (`speaker` или `coauthor`), `affiliation` и `contacts`. `organizations` и `contacts` доклада — сведения карточки, не отнесённые к конкретному автору (миграция v3). `card_only` — итог последней обработки: доклад без интереса отделов получил только карточку (миграция v4, `interest.py`).
 
+### `conferences`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `title` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `start_date` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `end_date` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `place` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `organizer` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `processing_started` | `INTEGER` | NOT NULL | - | `0` |
+| `created_at` | `TEXT` | NOT NULL | - | `None` |
+
+### `departments`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | NOT NULL | 1 | `None` |
+| `version` | `INTEGER` | NOT NULL | 2 | `None` |
+| `name` | `TEXT` | NOT NULL | - | `None` |
+| `original_name` | `TEXT` | NOT NULL | - | `None` |
+| `sha256` | `TEXT` | NOT NULL | - | `None` |
+| `pages` | `TEXT` | NOT NULL | - | `None` |
+| `created_at` | `TEXT` | NOT NULL | - | `None` |
+
+### `files`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `conference_id` | `TEXT` | NOT NULL | - | `None` |
+| `sha256` | `TEXT` | NOT NULL | - | `None` |
+| `original_name` | `TEXT` | NOT NULL | - | `None` |
+| `relative_path` | `TEXT` | NOT NULL | - | `None` |
+| `kind` | `TEXT` | NOT NULL | - | `None` |
+| `media_type` | `TEXT` | NOT NULL | - | `None` |
+| `size_bytes` | `INTEGER` | NOT NULL | - | `None` |
+| `duration_ms` | `INTEGER` | Допускается NULL по схеме | - | `None` |
+| `encoding` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `title_candidates` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `warning` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `talk_id` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `confirmed` | `INTEGER` | NOT NULL | - | `0` |
+| `confidence` | `REAL` | Допускается NULL по схеме | - | `None` |
+
+### `material_links`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `file_id` | `TEXT` | NOT NULL | - | `None` |
+| `talk_id` | `TEXT` | NOT NULL | - | `None` |
+| `start_ms` | `INTEGER` | Допускается NULL по схеме | - | `None` |
+| `end_ms` | `INTEGER` | Допускается NULL по схеме | - | `None` |
+| `page_start` | `INTEGER` | Допускается NULL по схеме | - | `None` |
+| `page_end` | `INTEGER` | Допускается NULL по схеме | - | `None` |
+
+### `preparations`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `conference_id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `version` | `INTEGER` | NOT NULL | - | `1` |
+| `job` | `TEXT` | NOT NULL | - | `None` |
+| `error` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `proposal` | `TEXT` | NOT NULL | - | `'[]'` |
+
+### `recommendation_jobs`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `talk_id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `job` | `TEXT` | NOT NULL | - | `None` |
+| `error` | `TEXT` | Допускается NULL по схеме | - | `None` |
+
+### `recommendations`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `talk_id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `summary_version` | `INTEGER` | NOT NULL | - | `None` |
+| `department_revisions` | `TEXT` | NOT NULL | - | `None` |
+| `version` | `INTEGER` | NOT NULL | - | `None` |
+| `items` | `TEXT` | NOT NULL | - | `None` |
+| `reviewed` | `INTEGER` | NOT NULL | - | `0` |
+
+### `report_jobs`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `conference_id` | `TEXT` | NOT NULL | - | `None` |
+| `idempotency_key` | `TEXT` | NOT NULL | - | `None` |
+| `request_hash` | `TEXT` | NOT NULL | - | `None` |
+| `snapshot` | `TEXT` | NOT NULL | - | `None` |
+| `status` | `TEXT` | NOT NULL | - | `None` |
+| `step` | `TEXT` | NOT NULL | - | `None` |
+| `error` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `attempt` | `INTEGER` | NOT NULL | - | `0` |
+| `report_version_id` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `created_at` | `TEXT` | NOT NULL | - | `None` |
+| `updated_at` | `TEXT` | NOT NULL | - | `None` |
+
+### `report_versions`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `conference_id` | `TEXT` | NOT NULL | - | `None` |
+| `number` | `INTEGER` | NOT NULL | - | `None` |
+| `input` | `TEXT` | NOT NULL | - | `None` |
+| `variables` | `TEXT` | NOT NULL | - | `None` |
+| `files` | `TEXT` | NOT NULL | - | `None` |
+| `warnings` | `TEXT` | NOT NULL | - | `None` |
+| `created_at` | `TEXT` | NOT NULL | - | `None` |
+
+### `sections`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `conference_id` | `TEXT` | NOT NULL | - | `None` |
+| `title` | `TEXT` | NOT NULL | - | `None` |
+| `date` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `position` | `INTEGER` | NOT NULL | - | `None` |
+
+### `settings`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `key` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `value` | `TEXT` | NOT NULL | - | `None` |
+
+### `summaries`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `talk_id` | `TEXT` | NOT NULL | 1 | `None` |
+| `number` | `INTEGER` | NOT NULL | 2 | `None` |
+| `summary` | `TEXT` | NOT NULL | - | `None` |
+| `pack` | `TEXT` | NOT NULL | - | `None` |
+| `created_at` | `TEXT` | NOT NULL | - | `None` |
+
+### `talk_screenings`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `talk_id` | `TEXT` | NOT NULL | 1 | `None` |
+| `version` | `INTEGER` | NOT NULL | 2 | `None` |
+| `input_revision` | `INTEGER` | NOT NULL | - | `None` |
+| `department_revisions` | `TEXT` | NOT NULL | - | `None` |
+| `profile` | `TEXT` | NOT NULL | - | `None` |
+| `job` | `TEXT` | NOT NULL | - | `None` |
+| `result` | `TEXT` | NOT NULL | - | `'[]'` |
+| `error` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `manual` | `INTEGER` | NOT NULL | - | `0` |
+| `created_at` | `TEXT` | NOT NULL | - | `None` |
+
+### `talks`
+
+| Поле | Тип | Обязательность | Первичный ключ | Значение по умолчанию |
+| --- | --- | --- | --- | --- |
+| `id` | `TEXT` | Допускается NULL по схеме | 1 | `None` |
+| `section_id` | `TEXT` | NOT NULL | - | `None` |
+| `position` | `INTEGER` | NOT NULL | - | `None` |
+| `title` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `date` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `status` | `TEXT` | NOT NULL | - | `'draft'` |
+| `speakers` | `TEXT` | NOT NULL | - | `'[]'` |
+| `import_folder` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `job` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `step` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `error` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `queued_at` | `TEXT` | Допускается NULL по схеме | - | `None` |
+| `input_revision` | `INTEGER` | NOT NULL | - | `0` |
+| `organizations` | `TEXT` | NOT NULL | - | `'[]'` |
+| `contacts` | `TEXT` | NOT NULL | - | `'[]'` |
+| `card_only` | `INTEGER` | NOT NULL | - | `0` |
+
 ## Связи и состояния
 
 Связи раскрываются на двух уровнях. Обычные связи conference/section/talk/file обеспечены внешними ключами SQLite. Рекомендации ссылаются на отделы и факты внутри JSON и проверяются функцией `departments.validate`.
@@ -218,6 +399,8 @@ erDiagram
     conferences ||--o| preparations : prepares
     talks ||--o| recommendations : recommends
     talks ||--o| recommendation_jobs : queues
+    talks ||--o{ talk_screenings : screens
+    conferences ||--o{ report_jobs : queues
 ```
 
 ### Независимые состояния
@@ -291,7 +474,7 @@ stateDiagram-v2
 
 При создании Database включается WAL, выполняется базовая схема и проверяется `PRAGMA user_version`. Для версии ниже 1 SQLite backup сохраняет текущую базу вместе с зафиксированным WAL. Затем транзакция добавляет `input_revision`, интервальные связи, подготовку, отделы и рекомендации. Успешная миграция устанавливает `user_version=1`.
 
-Начиная с 0.3.0 шаги схемы перечислены в `_MIGRATIONS`, перед каждым шагом N сохраняется `rapporteur.db.before-vN.bak`. Миграция v2 создаёт `talk_screenings` и `report_jobs`. Миграция v3 добавляет в `talks` списки `organizations` и `contacts` карточки доклада. Миграция v4 добавляет `card_only`. Каждый шаг выполняется в своей транзакции и устанавливает `user_version` своего номера. Повторный старт пропускает уже выполненные шаги. Прерывание внутри транзакции откатывает изменения. Фикстура старой установки проверяет открытие ручного реестра, сводок, разбиения и скачивание старых справок с исходными SHA-256.
+Начиная с 0.3.0 шаги схемы перечислены в `_MIGRATIONS`, перед каждым шагом N сохраняется `rapporteur.db.before-vN.bak`. Миграция v2 создаёт `talk_screenings` и `report_jobs`. Миграция v3 добавляет в `talks` списки `organizations` и `contacts` карточки доклада. Миграция v4 добавляет `card_only`, v5 повышает версии существующих preparations для защиты от старых черновиков. Каждый шаг выполняется в своей транзакции и устанавливает `user_version` своего номера. Повторный старт пропускает уже выполненные шаги. Прерывание внутри транзакции откатывает изменения. Фикстура старой установки проверяет открытие ручного реестра, сводок, разбиения и скачивание старых справок с исходными SHA-256.
 
 ## Связанные документы
 
