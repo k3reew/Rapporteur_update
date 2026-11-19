@@ -34,7 +34,8 @@ const version = {
   warnings: ['Сводка не проверена человеком: «Доклад»'],
 };
 
-test('предупреждает о датах и собирает справку с подтверждением непроверенных', async () => {
+test.each([true, false])('предупреждает о датах и собирает справку (randomUUID доступен: %s)', async (hasRandomUUID) => {
+  if (!hasRandomUUID) vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
   let submitted = false;
   const api = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/progress')) return Response.json(progress);
@@ -77,6 +78,38 @@ test('собирает только выбранные доклады', async ()
   await screen.findByText('Сборка поставлена в очередь. Можно переходить к другим разделам.');
   const body = api.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body;
   expect(JSON.parse(body as string).talk_ids).toEqual(['talk']);
+});
+
+test('по HTTP повторяет запрос с тем же ключом, а изменённый состав отправляет с новым', async () => {
+  vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+  const submitted: { idempotency_key: string; talk_ids: string[] }[] = [];
+  const api = async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/progress')) return Response.json({ ...progress, talks: [...progress.talks, { ...progress.talks[0], id: 'two', title: 'Второй' }] });
+    if (url.endsWith('/report-jobs')) {
+      if (init?.method !== 'POST') return Response.json([]);
+      submitted.push(JSON.parse(init.body as string));
+      return submitted.length === 1
+        ? Response.json({ message: 'Временный сбой' }, { status: 503 })
+        : Response.json({ id: 'job' }, { status: 202 });
+    }
+    if (url.endsWith('/reports')) return Response.json([]);
+    return Response.json(conference);
+  };
+  vi.stubGlobal('fetch', api);
+  render(<ReportPanel conferenceId="conference" />);
+  const second = await screen.findByRole('checkbox', { name: 'Второй' });
+  const build = screen.getByRole('button', { name: 'Собрать справку' });
+  fireEvent.click(build);
+  await screen.findByRole('alert');
+  fireEvent.click(build);
+  await screen.findByText('Сборка поставлена в очередь. Можно переходить к другим разделам.');
+  expect(submitted[0].idempotency_key.length).toBeGreaterThan(0);
+  expect(submitted[1].idempotency_key).toBe(submitted[0].idempotency_key);
+  fireEvent.click(second);
+  fireEvent.click(build);
+  await screen.findByText('Сборка поставлена в очередь. Можно переходить к другим разделам.');
+  expect(submitted[2].talk_ids).toEqual(['talk']);
+  expect(submitted[2].idempotency_key).not.toBe(submitted[0].idempotency_key);
 });
 
 test('восстанавливает неудачное задание после открытия страницы и повторяет его', async () => {

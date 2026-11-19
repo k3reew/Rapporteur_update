@@ -109,10 +109,12 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
 
   function build() {
     const body = JSON.stringify({ unreviewed_confirmed: confirmed, talk_ids: selected });
-    if (submission.current.body !== body || jobs.some(job => job.id === submission.current.jobId && job.status === 'done')) {
-      submission.current = { body, key: crypto.randomUUID(), jobId: '' };
-    }
     void run('Постановка в очередь…', async () => {
+      if (submission.current.body !== body || jobs.some(job => job.id === submission.current.jobId && job.status === 'done')) {
+        // getRandomValues works over LAN HTTP, unlike randomUUID (secure contexts only).
+        const key = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+        submission.current = { body, key, jobId: '' };
+      }
       const response = await request(`${base}/report-jobs`, { method: 'POST', headers: json,
         body: JSON.stringify({ ...JSON.parse(body), idempotency_key: submission.current.key }),
       });
