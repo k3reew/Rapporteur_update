@@ -24,3 +24,24 @@ test('показывает автоматический выбор после з
   fireEvent.click(screen.getByText('Есть интерес отделов'));
   expect((screen.getByLabelText('Отдел') as HTMLInputElement).checked).toBe(true);
 });
+
+test('уверенность модели — отдельная заметная плашка у отдела и в свёрнутой строке', () => {
+  const quote = { label: 'S2', quote: 'Средняя задержка чтения достигала 18 мс' };
+  const { container } = render(<Interest talkId="t" refresh={() => {}} value={{ version: 1, state: 'relevant', eligible: true, stale: false, manual: false, error: null, department_ids: ['it'], items: [
+    { department_id: 'agro', department_name: 'Отдел агрономии', status: 'not_relevant', interest: 5, reason: 'Связи нет', evidence: [], paragraphs: [] },
+    { department_id: 'it', department_name: 'Отдел ИТ', status: 'relevant', interest: 85, reason: 'Задержка запросов к СУБД', evidence: [quote], paragraphs: [] },
+  ] }} />);
+  const summary = container.querySelector('summary');
+  expect(summary?.textContent).toBe('Есть интерес отделов85 % Отдел ИТ');
+  expect(summary?.querySelector('.score.ok')?.textContent).toBe('85 %');
+  const scores = [...container.querySelectorAll('.interest-item .score')].map(item => [item.textContent, item.className]);
+  expect(scores).toEqual([['5 %', 'score bad'], ['85 %', 'score ok']]);
+  expect(screen.getByText('Цитаты')).toBeDefined();
+});
+
+test('решение без процентов предлагает пересчитать отбор', () => {
+  render(<Interest talkId="t" refresh={() => {}} value={{ version: 1, state: 'not_relevant', eligible: false, stale: false, manual: false, error: null, department_ids: [], items: [
+    { department_id: 'it', department_name: 'Отдел ИТ', status: 'not_relevant', reason: 'Прежнее длинное обоснование', evidence: [], paragraphs: [] },
+  ] }} />);
+  expect(screen.getByText(/Процент уверенности появится после/)).toBeDefined();
+});

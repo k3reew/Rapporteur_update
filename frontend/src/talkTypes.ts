@@ -6,7 +6,8 @@ export type Screening = {
   manual: boolean;
   error: string | null;
   department_ids: string[];
-  items: { department_id: string; department_name: string; status: string; reason: string; evidence: { label: string; quote: string }[]; paragraphs: { label: string; quote: string }[] }[];
+  /** interest — уверенность модели, что доклад интересен отделу, %; null — решение без модели. */
+  items: { department_id: string; department_name: string; status: string; interest?: number | null; reason: string; evidence: { label: string; quote: string }[]; paragraphs: { label: string; quote: string }[] }[];
 };
 /** paused — приостановлено после перезапуска приложения до команды оператора. */
 type Job = 'queued' | 'running' | 'done' | 'failed' | 'paused';

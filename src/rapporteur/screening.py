@@ -1,4 +1,10 @@
-"""Versioned preliminary department interest, before facts and summaries are generated."""
+"""Versioned preliminary department interest, before facts and summaries are generated.
+
+Модель для каждого отдела отвечает коротко: уверенность в процентах, что доклад интересен
+отделу (interest), одно предложение пояснения и по одной дословной цитате доклада и
+положения для высокой уверенности. Решение по порогам принимает код: от RELEVANT_FROM —
+интерес есть, до NOT_RELEVANT_UPTO — интереса нет, между ними — решение оператора.
+"""
 
 import json
 import logging
@@ -18,7 +24,15 @@ from rapporteur.storage import Storage, cache_key
 from rapporteur.summarize.quotes import QuoteConfig, match_quote
 
 log = logging.getLogger("rapporteur.screening")
-VERSION = "1.0.0"
+VERSION = "2.0.0"
+# Пороги уверенности модели, %: от RELEVANT_FROM — интерес есть, до NOT_RELEVANT_UPTO
+# включительно — интереса нет, между ними решает оператор.
+RELEVANT_FROM = 70
+NOT_RELEVANT_UPTO = 30
+# Пояснение просится до _REASON_ASKED символов; схема допускает запас до _REASON_LENGTH,
+# потому что Ollama обрывает ответ ровно на пределе схемы, в том числе посреди слова.
+_REASON_ASKED = 120
+_REASON_LENGTH = 200
 
 
 class Quote(BaseModel):
@@ -27,9 +41,37 @@ class Quote(BaseModel):
     quote: str = Field(min_length=10, max_length=240)
 
 
+class InterestAnswer(BaseModel):
+    """Ответ модели по одному отделу: короткий, без развёрнутого обоснования."""
+
+    model_config = ConfigDict(extra="forbid")
+    interest: int = Field(ge=0, le=100)
+    reason: str = Field(min_length=1, max_length=_REASON_LENGTH)
+    evidence: list[Quote] = Field(max_length=1)
+    paragraphs: list[Quote] = Field(max_length=1)
+
+    @model_validator(mode="after")
+    def supported_interest(self) -> "InterestAnswer":
+        if self.interest >= RELEVANT_FROM and (not self.evidence or not self.paragraphs):
+            raise ValueError(
+                f"Для уверенности от {RELEVANT_FROM} % нужны цитаты доклада и положения"
+            )
+        return self
+
+
+def status_of(interest: int) -> Literal["relevant", "not_relevant", "uncertain"]:
+    if interest >= RELEVANT_FROM:
+        return "relevant"
+    if interest <= NOT_RELEVANT_UPTO:
+        return "not_relevant"
+    return "uncertain"
+
+
 class Decision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["relevant", "not_relevant", "uncertain"]
+    # Уверенность модели, что доклад интересен отделу, %; None — решение без модели.
+    interest: int | None = Field(default=None, ge=0, le=100)
     reason: str = Field(min_length=1, max_length=600)
     evidence: list[Quote] = Field(max_length=3)
     paragraphs: list[Quote] = Field(max_length=3)
@@ -203,13 +245,13 @@ def _classify(
 ) -> Decision:
     source_text = {item["label"]: item["text"] for item in sources}
     regulation_text = {item["label"]: item["text"] for item in regulations}
-    schema = Decision.model_json_schema()
+    schema = InterestAnswer.model_json_schema()
     for name, texts in (("evidence", source_text), ("paragraphs", regulation_text)):
         item = Quote.model_json_schema()
         item["properties"]["label"]["enum"] = list(texts)
         schema["properties"][name]["items"] = item
 
-    def check(value: Decision) -> list[str]:
+    def check(value: InterestAnswer) -> list[str]:
         problems = []
         for quotes, texts in ((value.evidence, source_text), (value.paragraphs, regulation_text)):
             for quote in quotes:
@@ -221,27 +263,43 @@ def _classify(
                     problems.append("Не найдена цитата: " + quote.label)
         return problems
 
-    result = json_task(
+    answer = json_task(
         client,
         profile,
-        "Определи конкретную связь темы доклада с обязанностями отдела из положения. "
-        "Совпадения общих слов недостаточно. relevant требует цитат обеих сторон. "
-        "При неоднозначности верни uncertain, при отсутствии связи not_relevant. "
-        "Это предварительный отбор, не итоговая рекомендация. Пояснение по-русски.",
+        "Оцени, интересен ли доклад отделу по его обязанностям из положения. "
+        "interest — уверенность в процентах от 0 до 100, что доклад интересен отделу: "
+        f"от {RELEVANT_FROM} — тема доклада прямо относится к конкретной обязанности отдела, "
+        f"до {NOT_RELEVANT_UPTO} — связи нет. Совпадения общих слов недостаточно. "
+        f"reason — одно короткое предложение до {_REASON_ASKED} символов: какая "
+        "обязанность отдела связана с докладом или почему связи нет, без пересказа доклада. "
+        f"При interest от {RELEVANT_FROM} приведи одну дословную цитату доклада в evidence "
+        "и одну дословную цитату положения в paragraphs, иначе оставь списки пустыми. "
+        "Это предварительный отбор, не итоговая рекомендация. Ответ по-русски.",
         db.dumps({"sources": sources, "regulations": regulations}),
-        Decision,
+        InterestAnswer,
         task=task,
         schema=schema,
         check=check,
     )
-    if result.status == "relevant" and all(item.label.startswith("V") for item in result.evidence):
-        return Decision(
-            status="uncertain",
-            reason="Связь основана только на модельном описании изображения.",
-            evidence=result.evidence,
-            paragraphs=result.paragraphs,
-        )
-    return result
+    status = status_of(answer.interest)
+    reason = _whole_words(answer.reason)
+    if status == "relevant" and all(item.label.startswith("V") for item in answer.evidence):
+        status, reason = "uncertain", "Связь видна только в модельном описании изображения."
+    return Decision(
+        status=status,
+        interest=answer.interest,
+        reason=reason,
+        evidence=answer.evidence,
+        paragraphs=answer.paragraphs,
+    )
+
+
+def _whole_words(reason: str) -> str:
+    """Пояснение, оборванное на пределе схемы, укорачивается до целого слова."""
+    if len(reason) < _REASON_LENGTH:
+        return reason
+    cut = reason[: reason.rfind(" ")].rstrip(" ,;:—-") if " " in reason else reason
+    return cut + "…"
 
 
 def run_once(
@@ -336,8 +394,10 @@ def run_once(
                 if decisions and decisions[-1].status == "relevant":
                     break
             priority = {"relevant": 0, "uncertain": 1, "not_relevant": 2}
+            # Самое сильное решение по отделу: интерес, затем неопределённость, затем отказ;
+            # внутри одного решения — наибольшая уверенность.
             chosen = (
-                min(decisions, key=lambda d: priority[d.status])
+                min(decisions, key=lambda d: (priority[d.status], -(d.interest or 0)))
                 if decisions
                 else Decision(
                     status="uncertain",

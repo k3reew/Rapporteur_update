@@ -26,9 +26,9 @@ class Classifier(WorkflowClient):
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         schema: dict[str, Any] = request.schema or {}
-        if schema.get("title") == "Decision" and self.status != "relevant":
+        if schema.get("title") == "InterestAnswer" and self.status != "relevant":
             answer = {
-                "status": self.status,
+                "interest": {"not_relevant": 10, "uncertain": 50}[self.status],
                 "reason": "Вымышленное решение отбора",
                 "evidence": [],
                 "paragraphs": [],

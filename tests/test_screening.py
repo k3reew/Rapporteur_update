@@ -51,15 +51,22 @@ def add_regulation(database: db.Database, version: int = 1) -> str:
 
 
 def decision(status: str = "relevant") -> str:
+    """Ответ модели отбора: уверенность в процентах, по которой код выбирает решение."""
+    interest = {"relevant": 85, "uncertain": 50, "not_relevant": 10}[status]
     return json.dumps(
         {
-            "status": status,
+            "interest": interest,
             "reason": "Работа со снижением задержки чтения",
             "evidence": [{"label": "S2", "quote": "снизить задержку чтения"}],
             "paragraphs": [{"label": "p1.1", "quote": "методы снижения задержки чтения"}],
         }
         if status == "relevant"
-        else {"status": status, "reason": "Связь не установлена", "evidence": [], "paragraphs": []}
+        else {
+            "interest": interest,
+            "reason": "Связь не установлена",
+            "evidence": [],
+            "paragraphs": [],
+        }
     )
 
 
@@ -286,3 +293,93 @@ def test_changing_purpose_requires_regulations(tmp_path: Path) -> None:
         result = client.put(f"/api/v1/files/{fid}/purpose", json={"purpose": "program"})
         assert result.status_code == 409
         assert result.json()["code"] == "departments_required"
+
+
+@pytest.mark.parametrize(
+    ("interest", "status"),
+    [
+        (100, "relevant"),
+        (70, "relevant"),
+        (69, "uncertain"),
+        (31, "uncertain"),
+        (30, "not_relevant"),
+    ],
+)
+def test_interest_percent_decides_by_thresholds(interest: int, status: str) -> None:
+    from rapporteur import screening
+
+    assert screening.status_of(interest) == status
+
+
+def test_model_answers_briefly_with_department_and_percent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Модель называет уверенность в процентах и коротко поясняет. Высокая уверенность без
+    цитат возвращается на исправление."""
+    from rapporteur import screening
+
+    database, storage, _, talk = setup_talk(tmp_path, monkeypatch)
+    add_regulation(database)
+    with database.tx() as conn:
+        processing.enqueue(conn, [talk])
+    unsupported = json.dumps(
+        {"interest": 85, "reason": "Задержка чтения", "evidence": [], "paragraphs": []}
+    )
+    client = ScriptedClient([unsupported, decision("relevant")])
+    source = pack().model_copy(update={"talk_id": UUID(talk)})
+    assert screening.run_once(database, storage, lambda _: client, lambda _: source) == talk
+
+    schema = client.requests[0].schema or {}
+    assert schema["title"] == "InterestAnswer"
+    assert schema["properties"]["reason"]["maxLength"] == 200
+    assert "до 120 символов" in client.requests[0].messages[0].content
+    assert schema["properties"]["evidence"]["maxItems"] == 1
+    assert "уверенность в процентах" in client.requests[0].messages[0].content
+    assert "Для уверенности от 70 % нужны цитаты" in client.requests[1].messages[-1].content
+    with database.read() as conn:
+        view = screening.view(conn, talk)
+    assert view["state"] == "relevant"
+    item = view["items"][0]
+    assert (item["department_name"], item["status"], item["interest"]) == (
+        "Отдел баз данных",
+        "relevant",
+        85,
+    )
+    assert len(item["evidence"]) == len(item["paragraphs"]) == 1
+
+
+def test_high_interest_from_image_description_only_needs_the_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rapporteur import screening
+
+    client = ScriptedClient(
+        [
+            json.dumps(
+                {
+                    "interest": 90,
+                    "reason": "На схеме кэш перед базой данных",
+                    "evidence": [{"label": "V1", "quote": "схема кэша перед базой данных"}],
+                    "paragraphs": [{"label": "p1", "quote": "методы снижения задержки чтения"}],
+                }
+            )
+        ]
+    )
+    decided = screening._classify(
+        client,
+        PROFILE,
+        [{"label": "V1", "text": "Описание: схема кэша перед базой данных."}],
+        [{"label": "p1", "text": "Отдел изучает методы снижения задержки чтения."}],
+        "Отбор",
+    )
+    assert (decided.status, decided.interest) == ("uncertain", 90)
+    assert "изображения" in decided.reason
+
+
+def test_reason_cut_at_the_schema_limit_ends_with_a_whole_word() -> None:
+    from rapporteur import screening
+
+    cut = ("Доклад посвящён оптимизации СУБД и кэшированию запросов, " * 4)[:200]
+    assert cut.endswith("оптимизации С")
+    assert screening._whole_words(cut).endswith("оптимизации…")
+    assert screening._whole_words("Связи нет.") == "Связи нет."
