@@ -147,3 +147,19 @@ test('доклад без интереса отделов выбирается �
   expect(screen.getByText('· только карточка')).toBeDefined();
   expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /Ждёт отбора/ }).disabled).toBe(true);
 });
+
+test('приостановленная после перезапуска сборка продолжается по кнопке', async () => {
+  const api = vi.fn(async (url: string, init?: RequestInit) => {
+    void init;
+    if (url.endsWith('/progress')) return Response.json(progress);
+    if (url.endsWith('/retry')) return Response.json({ id: 'job' }, { status: 202 });
+    if (url.endsWith('/report-jobs')) return Response.json([{ id: 'job', status: 'paused', step: 'paused', error: null, report_version_id: null }]);
+    if (url.endsWith('/reports')) return Response.json([]);
+    return Response.json(conference);
+  });
+  vi.stubGlobal('fetch', api);
+  render(<ReportPanel conferenceId="conference" />);
+  expect(await screen.findByText(/Сборка приостановлена после перезапуска/)).toBeDefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Продолжить сборку' }));
+  await vi.waitFor(() => expect(api.mock.calls.some(([url, init]) => url === '/api/v1/report-jobs/job/retry' && init?.method === 'POST')).toBe(true));
+});

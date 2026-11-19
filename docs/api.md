@@ -751,7 +751,7 @@ HTTP 202 означает принятие фоновой работы. Гото
 | `order` | `integer` | да | - |
 | `title` | `string / null` | да | - |
 | `status` | `TalkStatus` | да | - |
-| `job` | `queued, running, done, failed / null` | да | - |
+| `job` | `queued, running, done, failed, paused / null` | да | - |
 | `step` | `string / null` | да | - |
 | `error` | `string / null` | да | - |
 | `summary_number` | `integer / null` | да | - |

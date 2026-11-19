@@ -4300,7 +4300,8 @@
                   "queued",
                   "running",
                   "done",
-                  "failed"
+                  "failed",
+                  "paused"
                 ]
               },
               {

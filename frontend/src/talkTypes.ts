@@ -8,7 +8,8 @@ export type Screening = {
   department_ids: string[];
   items: { department_id: string; department_name: string; status: string; reason: string; evidence: { label: string; quote: string }[]; paragraphs: { label: string; quote: string }[] }[];
 };
-type Job = 'queued' | 'running' | 'done' | 'failed';
+/** paused — приостановлено после перезапуска приложения до команды оператора. */
+type Job = 'queued' | 'running' | 'done' | 'failed' | 'paused';
 export type TalkProgress = {
   id: string;
   section: string;

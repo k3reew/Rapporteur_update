@@ -68,6 +68,7 @@ export function Recommendations({ talkId }: { talkId: string }) {
   return <section className="card"><h3>Интерес отделов</h3>
     <button disabled={busy || running || !!draft} onClick={() => void act(false)}>Рассчитать рекомендации</button>
     {running && <p role="status">Расчет выполняется…</p>}
+    {result?.job?.job === 'paused' && <p className="notice">Расчёт приостановлен после перезапуска приложения. Нажмите «Рассчитать рекомендации», чтобы продолжить.</p>}
     {(error || loadError || result?.job?.error) && <p role="alert">{error || loadError || result?.job?.error}</p>}
     {result?.stale && <p role="alert">Сводка или положения изменились. Рассчитайте рекомендации заново.</p>}
     {!!result?.version && !items.length && <p>Подходящих отделов не найдено.</p>}

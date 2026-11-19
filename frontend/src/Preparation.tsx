@@ -73,6 +73,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
   return <section className="workflow-page" aria-label="Подготовка докладов" aria-busy={busy || running}>
     <h2>Проверьте предложенные доклады</h2>
     <p className="muted">Уточните темы, авторов и связанные материалы. Для редактирования откройте доклад.</p>
+    {state?.job === 'paused' && <div className="empty-state"><p>Подготовка приостановлена после перезапуска приложения.</p><button disabled={busy || !files.length} onClick={() => void act(false)}>Продолжить подготовку</button></div>}
     {(state?.job === null || state?.job === 'failed') && !legacy && <div className="empty-state"><p>Подготовьте доклады из загруженных материалов.</p><button disabled={busy || !files.length} onClick={() => void act(false)}>Подготовить доклады</button></div>}
     <details className="manual-talks" open={legacy || manualOpen} onToggle={event => setManualOpen(event.currentTarget.open)}><summary>{legacy ? 'Ручной реестр докладов' : 'Добавить доклад вручную и настроить привязки'}</summary><LegacyTalks conferenceId={conferenceId} onStarted={onStarted} enabled={legacy || manualOpen} /></details>
     {running && <p role="status">Подготовка выполняется. Можно закрыть страницу и вернуться позже.</p>}
