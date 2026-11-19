@@ -21,7 +21,8 @@ test('показывает автоматический выбор после з
   const value = { version: 1, state: 'queued', eligible: false, stale: false, manual: false, error: null, department_ids: [], items: [] };
   const { rerender } = render(<Interest talkId="t" refresh={() => {}} value={value} />);
   rerender(<Interest talkId="t" refresh={() => {}} value={{ ...value, state: 'relevant', eligible: true, department_ids: ['d'], items: [{ department_id: 'd', department_name: 'Отдел', status: 'relevant', reason: 'Связь', evidence: [], paragraphs: [] }] }} />);
-  fireEvent.click(screen.getByText('Есть интерес отделов'));
+  // Решение модели до подтверждения оператором — только предложение.
+  fireEvent.click(screen.getByText('Модель: есть интерес — подтвердите решение'));
   expect((screen.getByLabelText('Отдел') as HTMLInputElement).checked).toBe(true);
 });
 
@@ -32,7 +33,8 @@ test('уверенность модели — отдельная заметна�
     { department_id: 'it', department_name: 'Отдел ИТ', status: 'relevant', interest: 85, reason: 'Задержка запросов к СУБД', evidence: [quote], paragraphs: [] },
   ] }} />);
   const summary = container.querySelector('summary');
-  expect(summary?.textContent).toBe('Есть интерес отделов85 % Отдел ИТ');
+  expect(summary?.textContent).toBe('Модель: есть интерес — подтвердите решение85 % Отдел ИТ');
+  expect(screen.getByText(/Модель только предлагает решение и может ошибаться/)).toBeDefined();
   expect(summary?.querySelector('.score.ok')?.textContent).toBe('85 %');
   const scores = [...container.querySelectorAll('.interest-item .score')].map(item => [item.textContent, item.className]);
   expect(scores).toEqual([['5 %', 'score bad'], ['85 %', 'score ok']]);
