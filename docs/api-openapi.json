@@ -3086,6 +3086,22 @@
           "default": {
             "type": "boolean",
             "title": "Default"
+          },
+          "available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available"
+          },
+          "used": {
+            "type": "boolean",
+            "title": "Used",
+            "default": false
           }
         },
         "type": "object",
@@ -4175,6 +4191,17 @@
             },
             "type": "array",
             "title": "Profiles"
+          },
+          "profile_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Note"
           },
           "templates": {
             "items": {
