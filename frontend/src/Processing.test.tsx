@@ -44,7 +44,7 @@ test('доклад без интереса отделов получает то�
   const buttons = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Открыть сводку' });
   expect(buttons.map(button => button.disabled)).toEqual([true, false]);
 
-  fireEvent.click(screen.getByText('Есть интерес отделов: Отдел'));
+  fireEvent.click(screen.getByText('Есть интерес отделов'));
   // У каждого доклада своя кнопка, вторая — у «Сжатия».
   fireEvent.click(screen.getAllByRole('button', { name: 'Только карточка' })[1]);
   await vi.waitFor(() => expect(puts).toEqual([['/api/v1/talks/t2/screening', { version: 1, department_ids: [] }]]));

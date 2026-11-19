@@ -245,6 +245,13 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
 .interest-details { margin-top: .65rem; font-weight: 400; font-size: .9rem; max-width: 65ch; }
 .interest-details p { margin-block: .5rem; }
 .interest-details blockquote { margin: .6rem 0; padding-inline: .8rem; border-inline-start: 1px solid var(--border); }
+/* Уверенность отбора: отдельная крупная плашка, цвет — решение по порогам screening.py. */
+.score { display: inline-block; min-width: 3.4rem; padding: .1rem .45rem; border-radius: 4px; background: var(--pill-bg); font-size: 1rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.score.ok { color: var(--ok); }
+.score.warn { color: var(--warn); }
+.score.bad { color: var(--bad); }
+.interest-leader { display: inline-flex; align-items: center; gap: .35rem; margin-inline-start: .6rem; }
+.interest-item { display: flex; align-items: flex-start; gap: .6rem; margin-block: .6rem; }
 .summary-prose { max-width: 75ch; }
 .summary-prose p { margin-block: 1rem; }
 .summary-prose .chip { font-size: .72rem; padding: 0 .25rem; vertical-align: baseline; }
