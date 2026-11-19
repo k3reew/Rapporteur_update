@@ -22,6 +22,17 @@ from rapporteur.llm.prompts import Prompt
 # Оценка оптимистичная и отсекает только заведомое переполнение; точную даёт ответ модели.
 _CHARS_PER_TOKEN = 4
 _MAX_PROBLEMS = 8
+# Повтор с той же температурой и тем же seed часто воспроизводит ту же ошибку: каждая
+# следующая попытка немного разнообразнее. Первый ответ не меняется, кэш тоже.
+_RETRY_STEP = 0.25
+_RETRY_LIMIT = 0.7
+
+
+def retry_temperature(base: float, attempt: int) -> float:
+    """Температура попытки: первая — как в профиле, затем выше на _RETRY_STEP до предела."""
+    if attempt <= 1:
+        return base
+    return round(max(base, min(_RETRY_LIMIT, base + _RETRY_STEP * (attempt - 1))), 2)
 
 
 @dataclass(frozen=True)
@@ -63,7 +74,7 @@ def ask_structured[T: BaseModel](
                 messages=tuple(history),
                 schema=schema,
                 think=think,
-                temperature=generation.temperature,
+                temperature=retry_temperature(generation.temperature, attempt),
                 max_tokens=generation.max_tokens,
                 context_tokens=generation.context_tokens,
                 seed=seed,

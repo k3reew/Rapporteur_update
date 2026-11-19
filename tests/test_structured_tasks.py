@@ -93,3 +93,32 @@ def test_large_candidate_registry_is_chunked_with_absolute_indices() -> None:
     assert len(batches) > 1
     assert [c["index"] for batch in batches for c in batch] == list(range(100))
     assert all(len(json.dumps(batch, ensure_ascii=False)) <= 4000 for batch in batches)
+
+
+def test_invalid_answers_are_explained_to_the_model_and_in_the_error() -> None:
+    """Модель получает поле и причину без служебного текста Pydantic, каждый повтор немного
+    разнообразнее, итоговая ошибка называет, что не прошло в каждой попытке."""
+    wrong = '{"title": null, "speakers": [], "talk_index": 7, "confidence": 2, "reason": "x"}'
+    client = ScriptedClient([wrong, wrong, wrong])
+    with pytest.raises(StageError) as error:
+        json_task(client, PROFILE, "Сопоставь.", "{}", MaterialMatch, task="Тема и авторы a.pptx")
+    assert error.value.code is FailureCode.LLM_INVALID_OUTPUT
+    assert "Тема и авторы a.pptx: модель трижды вернула неверную структуру" in error.value.message
+    assert "попытка 1: confidence:" in error.value.message
+    assert "попытка 3: confidence:" in error.value.message
+    repair = client.requests[1].messages[-1].content
+    assert "- confidence:" in repair and "pydantic.dev" not in repair
+    assert [request.temperature for request in client.requests] == [0.1, 0.35, 0.6]
+
+
+def test_structured_repair_raises_temperature_only_on_retries() -> None:
+    from rapporteur.contracts import FactsDraft
+    from rapporteur.summarize.facts import FactsConfig, extract_facts
+
+    from .fictional_talk import facts_answer, pack
+
+    client = ScriptedClient(["не JSON", facts_answer()])
+    extract_facts(client, pack(), FactsConfig(profile=PROFILE))
+    base = PROFILE.generation.temperature
+    assert [request.temperature for request in client.requests] == [base, base + 0.25]
+    assert FactsDraft.model_validate_json(facts_answer())
