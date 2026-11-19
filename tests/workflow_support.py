@@ -38,11 +38,11 @@ class WorkflowClient(ScriptedClient):
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         schema: dict[str, Any] = request.schema or {}
-        if schema.get("title") == "Decision":
+        if schema.get("title") == "InterestAnswer":
             data = json.loads(request.messages[1].content)
             source, regulation = data["sources"][0], data["regulations"][0]
             response = {
-                "status": "relevant",
+                "interest": 90,
                 "reason": "Связь в вымышленном сценарии",
                 "evidence": [{"label": source["label"], "quote": source["text"][:200]}],
                 "paragraphs": [{"label": regulation["label"], "quote": regulation["text"][:200]}],
