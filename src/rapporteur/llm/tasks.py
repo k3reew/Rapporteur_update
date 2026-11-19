@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 from rapporteur.contracts import ModelProfile
 from rapporteur.errors import FailureCode, StageError
 from rapporteur.llm.client import ChatRequest, LlmClient, Message
-from rapporteur.llm.structured import _check_budget
+from rapporteur.llm.structured import _MAX_PROBLEMS, _check_budget, _describe, retry_temperature
 
 
 def json_task[T: BaseModel](
@@ -36,6 +36,7 @@ def json_task[T: BaseModel](
     schema = model.model_json_schema() if schema is None else schema
     limit = min(profile.generation.max_tokens, 6000)
     compact = False
+    log: list[str] = []
     for attempt in range(1, 4):
         _check_budget(
             messages,
@@ -49,7 +50,7 @@ def json_task[T: BaseModel](
                 messages=messages,
                 schema=schema,
                 think=False,
-                temperature=0.1,
+                temperature=retry_temperature(0.1, attempt),
                 max_tokens=limit,
                 context_tokens=profile.generation.context_tokens,
             )
@@ -75,18 +76,35 @@ def json_task[T: BaseModel](
             continue
         if answer.prompt_tokens + answer.completion_tokens >= profile.generation.context_tokens:
             raise StageError(FailureCode.CONTEXT_OVERFLOW, "Запрос исчерпал контекст модели")
-        try:
-            value = model.model_validate_json(answer.content)
-            problems = check(value) if check else []
-            if not problems:
-                return value
-            problem = "; ".join(problems)[:1500]
-        except (ValidationError, json.JSONDecodeError) as error:
-            problem = str(error)[:1500]
+        problems = _problems(answer.content, model, check)
+        if isinstance(problems, BaseModel):
+            return problems
+        log.append(f"попытка {attempt}: " + "; ".join(problems))
         messages += (
             Message("assistant", answer.content),
-            Message("user", "Исправь JSON по схеме: " + problem),
+            Message(
+                "user",
+                "Ответ не прошёл проверку. Исправь перечисленное и верни полный JSON по схеме, "
+                "остальные сведения сохрани:\n" + "\n".join(f"- {item}" for item in problems),
+            ),
         )
     raise StageError(
-        FailureCode.LLM_INVALID_OUTPUT, f"{task}: модель трижды вернула неверную структуру"
+        FailureCode.LLM_INVALID_OUTPUT,
+        f"{task}: модель трижды вернула неверную структуру ({profile.model}): "
+        + " | ".join(log)[:1500],
     )
+
+
+def _problems[T: BaseModel](
+    content: str, model: type[T], check: Callable[[T], list[str]] | None
+) -> T | list[str]:
+    """Принятый ответ или понятные модели и оператору замечания: поле и что с ним не так,
+    без служебного текста Pydantic."""
+    try:
+        value = model.model_validate_json(content)
+    except json.JSONDecodeError as error:
+        return [f"ответ не является JSON: {error.msg}"]
+    except ValidationError as error:
+        return [_describe(item) for item in error.errors()[:_MAX_PROBLEMS]]
+    problems = check(value) if check else []
+    return problems[:_MAX_PROBLEMS] or value

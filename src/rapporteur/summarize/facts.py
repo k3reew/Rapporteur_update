@@ -6,6 +6,7 @@
 """
 
 import json
+import logging
 from collections.abc import Iterator
 from copy import deepcopy
 from dataclasses import dataclass
@@ -33,10 +34,14 @@ from rapporteur.storage import Storage, cache_key
 from rapporteur.summarize.pack import bounded_fragment, context_fragments
 
 # Версия шага входит в ключ кэша.
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 STEP = "facts"
+log = logging.getLogger("rapporteur.facts")
 
 _FACT_LIMITS = {"methods": 3, "results": 5, "conclusions": 3, "listener_remarks": 2}
+_SPEAKER_FIELDS = ("methods", "results", "conclusions")
+# Метки заметок слушателей (summarize/pack.py): N1, N2…
+_NOTE = "N"
 
 _HEADINGS = {
     FragmentKind.SLIDE: "Слайды",
@@ -171,6 +176,7 @@ def extract_facts(
         seed=config.seed,
         check=lambda facts: _facts_problems(facts, pack),
         schema=_facts_schema(pack),
+        prepare=normalize_facts,
     )
     if edition(profile.prompt_version) >= 2:
         reviewed = _review_facts(client, pack, config, result.value.model_dump_json())
@@ -185,13 +191,34 @@ def extract_facts(
 
 
 def _facts_schema(pack: TalkFragmentPack) -> dict[str, Any]:
+    """Схема ответа для грамматики Ollama. Метки опор разведены по полям: реплики слушателей
+    ссылаются только на заметки N, утверждения докладчика — на остальные фрагменты. Иначе
+    модель кладёт вопросы из зала со ссылкой на стенограмму в listener_remarks, контракт
+    отвергает ответ, и шаг падает после всех исправлений."""
+    labels = list(pack.by_label())
+    notes = [label for label in labels if label.startswith(_NOTE)]
+    speech = [label for label in labels if not label.startswith(_NOTE)] or labels
     schema = FactsDraft.model_json_schema()
-    schema["$defs"]["EvidenceDraft"]["properties"]["label"]["enum"] = list(pack.by_label())
+    definitions = schema["$defs"]
+    definitions["EvidenceDraft"]["properties"]["label"]["enum"] = speech
     for field, limit in _FACT_LIMITS.items():
         schema["properties"][field]["maxItems"] = limit
-    schema["$defs"]["FactDraft"]["properties"]["text"]["maxLength"] = 350
-    schema["$defs"]["FactDraft"]["properties"]["evidence"]["maxItems"] = 2
-    schema["$defs"]["EvidenceDraft"]["properties"]["quote"]["maxLength"] = 240
+    definitions["FactDraft"]["properties"]["text"]["maxLength"] = 350
+    definitions["FactDraft"]["properties"]["evidence"]["maxItems"] = 2
+    definitions["EvidenceDraft"]["properties"]["quote"]["maxLength"] = 240
+    if notes:
+        note = deepcopy(definitions["EvidenceDraft"])
+        note["title"] = "NoteEvidenceDraft"
+        note["properties"]["label"]["enum"] = notes
+        remark = deepcopy(definitions["FactDraft"])
+        remark["title"] = "ListenerRemarkDraft"
+        remark["properties"]["evidence"]["items"] = {"$ref": "#/$defs/NoteEvidenceDraft"}
+        definitions["NoteEvidenceDraft"] = note
+        definitions["ListenerRemarkDraft"] = remark
+        schema["properties"]["listener_remarks"]["items"] = {"$ref": "#/$defs/ListenerRemarkDraft"}
+    else:
+        # Заметок слушателей нет: реплик слушателей быть не может.
+        schema["properties"]["listener_remarks"]["maxItems"] = 0
     definitions = schema.pop("$defs")
     absent = deepcopy(schema)
     present = deepcopy(schema)
@@ -200,6 +227,51 @@ def _facts_schema(pack: TalkFragmentPack) -> dict[str, Any]:
     present["properties"]["conclusions"]["minItems"] = 1
     present["properties"]["conclusions_absent_reason"] = {"type": "null"}
     return {"title": schema["title"], "$defs": definitions, "oneOf": [absent, present]}
+
+
+def normalize_facts(raw: Any) -> Any:
+    """Страховка на случай, если грамматика не применилась: то, что код исправляет
+    однозначно, исправляется до проверки контракта, а не отправляет ответ на повтор.
+
+    Опоры на заметки N убираются из утверждений докладчика, опоры не на заметки — из
+    реплик слушателей; утверждение без оставшихся опор отбрасывается. Причина отсутствия
+    выводов согласуется со списком выводов."""
+    if not isinstance(raw, dict):
+        return raw
+    value = dict(raw)
+    dropped = 0
+
+    def keep(fact: Any, notes: bool) -> Any:
+        nonlocal dropped
+        if not isinstance(fact, dict) or not isinstance(fact.get("evidence"), list):
+            return fact
+        evidence = [
+            item
+            for item in fact["evidence"]
+            if not isinstance(item, dict) or str(item.get("label", "")).startswith(_NOTE) == notes
+        ]
+        if len(evidence) == len(fact["evidence"]):
+            return fact
+        if not evidence:
+            dropped += 1
+            return None
+        return {**fact, "evidence": evidence}
+
+    for field, notes in (*((name, False) for name in _SPEAKER_FIELDS), ("listener_remarks", True)):
+        items = value.get(field)
+        if isinstance(items, list):
+            value[field] = [fact for item in items if (fact := keep(item, notes)) is not None]
+    if isinstance(value.get("problem"), dict):
+        value["problem"] = keep(value["problem"], False)
+    conclusions = value.get("conclusions")
+    if isinstance(conclusions, list):
+        if conclusions:
+            value["conclusions_absent_reason"] = None
+        elif not value.get("conclusions_absent_reason"):
+            value["conclusions_absent_reason"] = "Явные выводы автора в материалах не найдены"
+    if dropped:
+        log.info("Факты: отброшено %s утверждений с опорами не своего вида", dropped)
+    return value
 
 
 def _facts_problems(facts: FactsDraft, pack: TalkFragmentPack) -> list[str]:
@@ -253,6 +325,7 @@ def _review_facts(
         seed=config.seed,
         check=lambda facts: _facts_problems(facts, pack),
         schema=_facts_schema(pack),
+        prepare=normalize_facts,
     )
     return FactsArtifact(
         talk_id=pack.talk_id,

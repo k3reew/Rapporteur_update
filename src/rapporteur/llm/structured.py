@@ -22,6 +22,17 @@ from rapporteur.llm.prompts import Prompt
 # Оценка оптимистичная и отсекает только заведомое переполнение; точную даёт ответ модели.
 _CHARS_PER_TOKEN = 4
 _MAX_PROBLEMS = 8
+# Повтор с той же температурой и тем же seed часто воспроизводит ту же ошибку: каждая
+# следующая попытка немного разнообразнее. Первый ответ не меняется, кэш тоже.
+_RETRY_STEP = 0.25
+_RETRY_LIMIT = 0.7
+
+
+def retry_temperature(base: float, attempt: int) -> float:
+    """Температура попытки: первая — как в профиле, затем выше на _RETRY_STEP до предела."""
+    if attempt <= 1:
+        return base
+    return round(max(base, min(_RETRY_LIMIT, base + _RETRY_STEP * (attempt - 1))), 2)
 
 
 @dataclass(frozen=True)
@@ -45,7 +56,10 @@ def ask_structured[T: BaseModel](
     seed: int | None,
     check: Callable[[T], list[str]] | None = None,
     schema: dict[str, Any] | None = None,
+    prepare: Callable[[Any], Any] | None = None,
 ) -> Structured[T]:
+    """prepare исправляет разобранный JSON до проверки контракта: однозначные нарушения
+    исправляет код, а не повторный запрос к модели."""
     schema = output.model_json_schema() if schema is None else schema
     generation = profile.generation
     history = list(messages)
@@ -60,7 +74,7 @@ def ask_structured[T: BaseModel](
                 messages=tuple(history),
                 schema=schema,
                 think=think,
-                temperature=generation.temperature,
+                temperature=retry_temperature(generation.temperature, attempt),
                 max_tokens=generation.max_tokens,
                 context_tokens=generation.context_tokens,
                 seed=seed,
@@ -78,7 +92,7 @@ def ask_structured[T: BaseModel](
                 FailureCode.CONTEXT_OVERFLOW,
                 f"Запрос и ответ заняли весь контекст {generation.context_tokens} токенов",
             )
-        value, problems = _parse(response.content, output, check)
+        value, problems = _parse(response.content, output, check, prepare)
         history.append(Message("assistant", response.content))
         if value is not None:
             return Structured(value, attempt, responses, tuple(history))
@@ -104,12 +118,17 @@ def _check_budget(
 
 
 def _parse[T: BaseModel](
-    content: str, output: type[T], check: Callable[[T], list[str]] | None
+    content: str,
+    output: type[T],
+    check: Callable[[T], list[str]] | None,
+    prepare: Callable[[Any], Any] | None = None,
 ) -> tuple[T | None, list[str]]:
     try:
         raw = json.loads(content)
     except json.JSONDecodeError as error:
         return None, [f"ответ не является JSON: {error.msg}"]
+    if prepare is not None:
+        raw = prepare(raw)
     try:
         value = output.model_validate(raw)
     except ValidationError as error:
