@@ -41,9 +41,10 @@ def test_existing_installation_keeps_registry_sources_and_issued_reports(tmp_pat
                 assert hashlib.sha256(response.content).hexdigest() == file["sha256"]
 
 
-def test_restart_requeues_all_interrupted_job_types(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_restart_pauses_unfinished_jobs_until_the_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Перенесённое или прерванное хранилище: после старта модель ничего не делает сама."""
     from rapporteur import db
     from rapporteur.llm.client import ScriptedClient
     from rapporteur.processing import Processor
@@ -57,21 +58,25 @@ def test_restart_requeues_all_interrupted_job_types(
         conn.execute(
             "UPDATE talks SET job='running',step='facts' WHERE id=?", (fixture["manual_talk"],)
         )
-        conn.execute("UPDATE preparations SET job='running'")
+        conn.execute("UPDATE preparations SET job='queued'")
         conn.execute("UPDATE recommendation_jobs SET job='running'")
     processor = Processor(database, Storage(tmp_path), lambda _: ScriptedClient([]))
-    # Inspect the restored queue before it starts consuming jobs.
+    # Состояние очереди проверяется до того, как цикл начнёт её разбирать.
     monkeypatch.setattr(processor, "_loop", lambda: None)
-    processor.start()
+    with caplog.at_level("INFO", logger="rapporteur.processing"):
+        processor.start()
     processor.stop()
+    assert "После перезапуска приостановлены незавершённые задания" in caplog.text
     with database.read() as conn:
         talk = conn.execute(
             "SELECT job,step FROM talks WHERE id=?", (fixture["manual_talk"],)
         ).fetchone()
-        assert tuple(talk) == ("queued", None)
+        assert tuple(talk) == ("paused", None)
         for table in ("preparations", "recommendation_jobs"):
             jobs = conn.execute(f"SELECT DISTINCT job FROM {table}").fetchall()
-            assert [row["job"] for row in jobs] == ["queued"]
+            assert [row["job"] for row in jobs] == ["paused"]
+    # Очередь пуста: ScriptedClient без ответов упал бы при обращении к модели.
+    assert not processor.run_once()
 
 
 def test_upgrade_invalidates_locally_edited_preparation_drafts(tmp_path: Path) -> None:

@@ -5,7 +5,8 @@
 сверка цитат → сводка (LLM). Результаты шагов кэшируются на томе (spec §3, п. 6), поэтому
 повтор после сбоя или перепривязки не обращается к модели заново, если входы не изменились.
 Доклады обрабатываются последовательно. Ollama и ASR закреплены за независимыми GPU;
-очередь и частичный кэш сохраняются между перезапусками.
+частичный кэш сохраняется между перезапусками. Незавершённые после перезапуска задания
+приостанавливаются (pause_unfinished): модель не начинает работу без команды оператора.
 """
 
 import logging
@@ -93,6 +94,32 @@ def slide_image_key(sha256: str, slide_no: int) -> str:
     return f"slides/{slides_cache_key(sha256)}/slide-{slide_no:03}.png"
 
 
+# Задания всех очередей, которые после перезапуска ждут команды оператора.
+PAUSED = "paused"
+_PAUSE = (
+    ("подготовка", "UPDATE preparations SET job='paused' WHERE job IN ('queued','running')"),
+    ("отбор", "UPDATE talk_screenings SET job='paused' WHERE job IN ('queued','running')"),
+    ("доклады", "UPDATE talks SET job='paused', step=NULL WHERE job IN ('queued','running')"),
+    (
+        "рекомендации",
+        "UPDATE recommendation_jobs SET job='paused' WHERE job IN ('queued','running')",
+    ),
+    (
+        "справки",
+        "UPDATE report_jobs SET status='paused', step='paused' "
+        "WHERE status IN ('queued','running')",
+    ),
+)
+
+
+def pause_unfinished(conn: sqlite3.Connection) -> dict[str, int]:
+    """Прерванные остановкой и ожидавшие в очереди задания приостанавливаются. Иначе после
+    перезапуска, в том числе на перенесённом хранилище, модель начала бы работу, которую
+    в этом запуске никто не запрашивал. Оператор продолжает их в интерфейсе: «Продолжить»,
+    «Подготовить заново», «Рассчитать рекомендации», «Продолжить сборку»."""
+    return {name: conn.execute(sql).rowcount for name, sql in _PAUSE}
+
+
 @dataclass(frozen=True)
 class _Talk:
     id: str
@@ -111,15 +138,16 @@ class Processor:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        # Доклады, прерванные остановкой приложения, обрабатываются заново.
         with self.database.tx() as conn:
-            conn.execute("UPDATE recommendation_jobs SET job='queued' WHERE job='running'")
-            conn.execute("UPDATE talk_screenings SET job='queued' WHERE job='running'")
-            conn.execute(
-                "UPDATE report_jobs SET status='queued',step='queued' WHERE status='running'"
+            paused = pause_unfinished(conn)
+        if any(paused.values()):
+            log.warning(
+                "После перезапуска приостановлены незавершённые задания: %s. "
+                "Модель не работает, пока оператор не продолжит их в интерфейсе.",
+                ", ".join(f"{name} — {count}" for name, count in paused.items() if count),
             )
-            conn.execute("UPDATE preparations SET job = 'queued' WHERE job = 'running'")
-            conn.execute("UPDATE talks SET job = 'queued', step = NULL WHERE job = 'running'")
+        else:
+            log.info("Незавершённых заданий нет, очередь пуста")
         self._thread = threading.Thread(target=self._loop, name="processing", daemon=True)
         self._thread.start()
 
@@ -371,6 +399,7 @@ class Processor:
                 "UPDATE preparations SET job='running', error=NULL WHERE conference_id=?",
                 (conference_id,),
             )
+            log.info("Подготовка конференции %s, версия %s", conference_id, version)
             files = conn.execute(
                 "SELECT * FROM files WHERE conference_id=? ORDER BY relative_path", (conference_id,)
             ).fetchall()

@@ -120,7 +120,15 @@ def view(conn: sqlite3.Connection, talk_id: str) -> dict[str, Any]:
 def queue(conn: sqlite3.Connection, talk_id: str, *, force: bool = False) -> None:
     departments.require_regulations(conn)
     current = view(conn, talk_id)
-    if current["version"] and not current["stale"] and not current["error"] and not force:
+    # Приостановленный после перезапуска отбор продолжается новой версией (processing.py).
+    paused = current["state"] == "paused"
+    if (
+        current["version"]
+        and not current["stale"]
+        and not current["error"]
+        and not paused
+        and not force
+    ):
         return
     revision, deps, profile = _snapshot(conn, talk_id)
     conn.execute(
@@ -257,6 +265,7 @@ def run_once(
             "UPDATE talk_screenings SET job='running' WHERE talk_id=? AND version=?",
             (talk_id, version),
         )
+        log.info("Отбор по интересу отделов: доклад %s, версия %s", talk_id, version)
         profile = ModelProfile.model_validate_json(row["profile"])
     try:
         with database.read() as conn:

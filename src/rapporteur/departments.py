@@ -1,6 +1,7 @@
 """Versioned department regulations and evidence-linked recommendations."""
 
 import json
+import logging
 import sqlite3
 from collections.abc import Callable
 from typing import Any
@@ -13,6 +14,8 @@ from rapporteur.contracts.enums import ClaimStatus
 from rapporteur.errors import UserError
 from rapporteur.llm.client import LlmClient
 from rapporteur.llm.tasks import json_task
+
+log = logging.getLogger("rapporteur.departments")
 
 
 class Recommendation(BaseModel):
@@ -134,6 +137,7 @@ def run_once(database: db.Database, factory: Callable[[ModelProfile], LlmClient]
             return False
         talk_id = job["talk_id"]
         conn.execute("UPDATE recommendation_jobs SET job='running' WHERE talk_id=?", (talk_id,))
+        log.info("Рекомендации отделам: доклад %s", talk_id)
         summary_row = db.one(
             conn, "SELECT * FROM summaries WHERE talk_id=? ORDER BY number DESC LIMIT 1", talk_id
         )

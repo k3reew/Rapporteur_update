@@ -135,7 +135,7 @@ def test_request_identifier_is_returned_on_failure(web: tuple[TestClient, Script
     assert response.json()["request_id"] == "operator-42"
 
 
-def test_running_report_is_recovered_once_after_restart(
+def test_running_report_waits_after_restart_and_continues_on_request(
     web: tuple[TestClient, ScriptedClient],
 ) -> None:
     import time
@@ -151,6 +151,12 @@ def test_running_report_is_recovered_once_after_restart(
     worker = Processor(state.database, state.storage, lambda _: scripted)
     worker.start()
     try:
+        # После перезапуска сборка приостановлена и сама не продолжается.
+        assert not worker.run_once()
+        paused = client.get(f"/api/v1/report-jobs/{job['id']}").json()
+        assert (paused["status"], paused["step"]) == ("paused", "paused")
+        assert client.post(f"/api/v1/report-jobs/{job['id']}/retry").status_code == 202
+        worker.wake()
         for _ in range(300):
             value = client.get(f"/api/v1/report-jobs/{job['id']}").json()
             if value["status"] in ("done", "failed"):
