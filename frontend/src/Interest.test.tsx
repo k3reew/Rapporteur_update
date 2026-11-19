@@ -21,6 +21,18 @@ test('показывает автоматический выбор после з
   const value = { version: 1, state: 'queued', eligible: false, stale: false, manual: false, error: null, department_ids: [], items: [] };
   const { rerender } = render(<Interest talkId="t" refresh={() => {}} value={value} />);
   rerender(<Interest talkId="t" refresh={() => {}} value={{ ...value, state: 'relevant', eligible: true, department_ids: ['d'], items: [{ department_id: 'd', department_name: 'Отдел', status: 'relevant', reason: 'Связь', evidence: [], paragraphs: [] }] }} />);
-  fireEvent.click(screen.getByText('Есть интерес отделов'));
+  fireEvent.click(screen.getByText('Есть интерес отделов: Отдел'));
   expect((screen.getByLabelText('Отдел') as HTMLInputElement).checked).toBe(true);
+});
+
+test('называет отдел и уверенность модели в процентах, цитаты свёрнуты', () => {
+  const quote = { label: 'S2', quote: 'Средняя задержка чтения достигала 18 мс' };
+  render(<Interest talkId="t" refresh={() => {}} value={{ version: 1, state: 'relevant', eligible: true, stale: false, manual: false, error: null, department_ids: ['it'], items: [
+    { department_id: 'it', department_name: 'Отдел ИТ', status: 'relevant', interest: 85, reason: 'Задержка запросов к СУБД', evidence: [quote], paragraphs: [] },
+    { department_id: 'agro', department_name: 'Отдел агрономии', status: 'not_relevant', interest: 5, reason: 'Связи нет', evidence: [], paragraphs: [] },
+  ] }} />);
+  expect(screen.getByText('Есть интерес отделов: Отдел ИТ — 85 %')).toBeDefined();
+  expect(screen.getByText('5 % · не интересен')).toBeDefined();
+  expect(screen.getByText('85 % · интересен')).toBeDefined();
+  expect(screen.getByText('Цитаты')).toBeDefined();
 });
