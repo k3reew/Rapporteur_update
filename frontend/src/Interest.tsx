@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { request } from './api';
-import type { Screening } from './talkTypes';
+import { awaitsOperator, type Screening } from './talkTypes';
 
+// Решение модели до подтверждения оператором: обработка ждёт (interest.py).
+const proposals: Record<string, string> = { relevant: 'Модель: есть интерес — подтвердите решение', not_relevant: 'Модель: интереса нет — подтвердите решение', uncertain: 'Интерес требует решения' };
 const labels: Record<string, string> = { not_started: 'Отбор ещё не выполнен', queued: 'Отбор в очереди', running: 'Определяется интерес отделов', relevant: 'Есть интерес отделов', not_relevant: 'Интерес не найден — только карточка', uncertain: 'Интерес требует решения', stale: 'Отбор устарел', paused: 'Отбор приостановлен после перезапуска' };
 
 const verdicts: Record<string, string> = { relevant: 'интересен', uncertain: 'нужно решение', not_relevant: 'не интересен' };
@@ -46,10 +48,12 @@ export function Interest({ talkId, value, refresh }: { talkId: string; value: Sc
   const editable = value.version > 0 && !['queued', 'running', 'stale'].includes(value.state);
   const shown = ['relevant', 'uncertain', 'not_relevant'].includes(value.state) && !value.manual ? leaders(value) : [];
   const unscored = !value.manual && !value.error && value.items.length > 0 && !value.items.some(scored);
-  return <details className="interest-details"><summary><span>{labels[value.state] ?? value.state}</span>
+  const awaiting = awaitsOperator(value);
+  return <details className="interest-details" open={awaiting || undefined}><summary><span className={awaiting ? 'text-warn' : undefined}>{(awaiting ? proposals[value.state] : undefined) ?? labels[value.state] ?? value.state}</span>
     {shown.map(item => <span key={item.department_id} className="interest-leader"><Score item={item} /> {item.department_name}</span>)}</summary>
     {value.stale && <p className="notice">Изменились материалы, положения или модель. Пересчитайте отбор.</p>}
     {value.manual && <p className="muted">Решение оператора</p>}
+    {awaiting && <p className="notice">Модель только предлагает решение и может ошибаться. Сводка или карточка формируются после вашего решения: отметьте отделы и нажмите «Подтвердить интерес» либо нажмите «Только карточка».</p>}
     {unscored && <p className="muted">Процент уверенности появится после «Пересчитать интерес отделов»: это решение получено прежней версией отбора.</p>}
     {value.items.map(item => <div key={item.department_id} className="interest-item">
       <Score item={item} />

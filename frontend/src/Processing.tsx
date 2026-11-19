@@ -5,6 +5,7 @@ import { request } from './api';
 import { useResource } from './useResource';
 import { statusTone, talkStatuses } from './status';
 
+import { awaitsOperator } from './talkTypes';
 import type { Progress, TalkProgress } from './talkTypes';
 
 const steps: Record<string, string> = {
@@ -17,6 +18,7 @@ const steps: Record<string, string> = {
 const POLL_MS = 5000;
 
 function jobLabel(talk: TalkProgress) {
+  if (!talk.job && talk.step === 'screening' && awaitsOperator(talk.screening)) return ['ждёт решения оператора', 'warn'];
   switch (talk.job) {
     case 'queued': return ['в очереди', ''];
     case 'running': return [talk.step ? steps[talk.step] : 'идёт', 'info'];
@@ -59,6 +61,7 @@ export function Processing(
   }
   const ready = progress?.talks.filter((talk) => talk.summary_number !== null && !talk.card_only).length ?? 0;
   const cards = progress?.talks.filter((talk) => talk.card_only && talk.job === 'done').length ?? 0;
+  const awaiting = progress?.talks.filter((talk) => awaitsOperator(talk.screening)).length ?? 0;
   return (
     <section className="card" aria-labelledby="processing-title">
       <h2 id="processing-title">Проверка докладов</h2><p className="muted">Дождитесь обработки, проверьте сводки и подтвердите результаты.</p>
@@ -87,6 +90,7 @@ export function Processing(
             <div><b>Файлы</b>{progress.files}</div>
             <div><b>Сводки</b>{ready} из {progress.talks.length}</div>
             {!!cards && <div><b>Только карточка</b>{cards}</div>}
+            {!!awaiting && <div><b>Ждут решения по отбору</b>{awaiting}</div>}
           </div>
           <div className="row">
             <div className="progressbar" aria-hidden="true">

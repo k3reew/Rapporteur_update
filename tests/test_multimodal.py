@@ -34,7 +34,7 @@ from rapporteur.reports import _sources
 from rapporteur.settings import TEMPLATES_DIR
 
 from .fictional_talk import SLIDES, facts_answer, summary_answer, supported_summary_answer
-from .workflow_support import WorkflowClient, seed_regulation
+from .workflow_support import WorkflowClient, operator_confirms_screening, seed_regulation
 
 
 @pytest.fixture
@@ -52,6 +52,7 @@ def web(
     scripted = WorkflowClient([])
     application = create_app(tmp_path, client=lambda _: scripted, process=False)
     seed_regulation(application.state.database)
+    operator_confirms_screening(monkeypatch)
     with TestClient(application) as client:
         yield client, scripted
 

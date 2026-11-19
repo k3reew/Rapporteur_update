@@ -150,7 +150,8 @@ def view(conn: sqlite3.Connection, talk_id: str) -> dict[str, Any]:
     return {
         "version": row["version"],
         "state": state,
-        "eligible": state == "relevant",
+        # Допуск к полной обработке: интерес, подтверждённый оператором (interest.py).
+        "eligible": state == "relevant" and bool(row["manual"]),
         "stale": stale,
         "items": items,
         "department_ids": selected,

@@ -27,7 +27,7 @@ from rapporteur.storage import blob_key
 
 from .conftest import SlideSpec, make_pptx
 from .fictional_talk import NOTE, SLIDES, facts_answer, summary_answer, supported_summary_answer
-from .workflow_support import WorkflowClient, seed_regulation
+from .workflow_support import WorkflowClient, operator_confirms_screening, seed_regulation
 
 
 class Fixture:
@@ -79,6 +79,7 @@ def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fixture]:
     scripted = WorkflowClient([])
     application = create_app(tmp_path, client=lambda _profile: scripted, process=False)
     seed_regulation(application.state.database)
+    operator_confirms_screening(monkeypatch)
     with TestClient(application) as client:
         yield Fixture(client, scripted, tmp_path)
 

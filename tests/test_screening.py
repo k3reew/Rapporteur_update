@@ -93,13 +93,13 @@ def test_enqueue_requires_usable_regulations(
 
 
 @pytest.mark.parametrize(
-    "status,eligible,queued",
-    # Без интереса отделов доклад обрабатывается до карточки, без фактов и сводки
-    # (interest.py); неопределённый ждёт решения оператора.
-    [("relevant", True, True), ("not_relevant", False, True), ("uncertain", False, False)],
+    ("status", "department_ids"),
+    # Решение модели только предлагается: обработка начинается после подтверждения
+    # оператором — интерес отделов даёт сводку, пустой список — карточку (interest.py).
+    [("relevant", ["databases"]), ("not_relevant", []), ("uncertain", ["databases"])],
 )
-def test_interest_selects_only_supported_relevant_talks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str, eligible: bool, queued: bool
+def test_model_decision_waits_for_the_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str, department_ids: list[str]
 ) -> None:
     from rapporteur import screening
 
@@ -114,11 +114,19 @@ def test_interest_selects_only_supported_relevant_talks(
     source = pack().model_copy(update={"talk_id": UUID(talk)})
     assert screening.run_once(database, storage, lambda _: client, lambda _: source) == talk
     with database.tx() as conn:
-        assert screening.view(conn, talk)["eligible"] is eligible
+        view = screening.view(conn, talk)
+        assert (view["state"], view["manual"], view["eligible"]) == (status, False, False)
+        processing.enqueue(conn, [talk])
+        row = db.one(conn, "SELECT job, step FROM talks WHERE id=?", talk)
+        assert row is not None and (row["job"], row["step"]) == (None, "screening")
+
+        screening.review(
+            conn, talk, screening.Review(version=view["version"], department_ids=department_ids)
+        )
+        assert screening.view(conn, talk)["eligible"] is bool(department_ids)
         processing.enqueue(conn, [talk])
         row = db.one(conn, "SELECT job FROM talks WHERE id=?", talk)
-        assert row is not None
-        assert (row["job"] == "queued") is queued
+        assert row is not None and row["job"] == "queued"
 
 
 def test_regulation_change_invalidates_screening_and_manual_review(
@@ -205,6 +213,7 @@ def test_screening_cache_and_input_revision(
 def test_filtered_talk_gets_card_without_facts_or_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from rapporteur import screening
     from rapporteur.processing import Processor
 
     database, storage, _, talk = setup_talk(tmp_path, monkeypatch)
@@ -215,6 +224,15 @@ def test_filtered_talk_gets_card_without_facts_or_summary(
     monkeypatch.setattr(worker, "_screen_pack", lambda _: source)
     monkeypatch.setattr(worker, "_pack", lambda _: source)
     with database.tx() as conn:
+        processing.enqueue(conn, [talk])
+    assert worker.run_once()
+    # Решение модели «не интересен» ждёт оператора: карточка ещё не сделана.
+    assert not worker.run_once()
+    with database.tx() as conn:
+        row = db.one(conn, "SELECT job, card_only FROM talks WHERE id=?", talk)
+        assert row is not None and (row["job"], row["card_only"]) == (None, 0)
+        version = screening.view(conn, talk)["version"]
+        screening.review(conn, talk, screening.Review(version=version, department_ids=[]))
         processing.enqueue(conn, [talk])
     assert worker.run_once()
     assert not worker.run_once()

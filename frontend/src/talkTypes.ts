@@ -1,3 +1,8 @@
+/** Решение модели, которое оператор ещё не подтвердил: обработка ждёт (interest.py). */
+export function awaitsOperator(value: Screening | undefined) {
+  return !!value && !value.manual && ['relevant', 'not_relevant', 'uncertain'].includes(value.state);
+}
+
 export type Screening = {
   version: number;
   state: string;
