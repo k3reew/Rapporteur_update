@@ -53,8 +53,51 @@ def test_fact_schema_limits_evidence_to_actual_source_labels() -> None:
     client = ScriptedClient([facts_answer()])
     extract_facts(client, pack(), FactsConfig(profile=PROFILE))
     assert client.requests[0].schema is not None
-    labels = client.requests[0].schema["$defs"]["EvidenceDraft"]["properties"]["label"]
-    assert labels["enum"] == ["S1", "S2", "S3", "S4", "S5", "N1"]
+    definitions = client.requests[0].schema["$defs"]
+    # Утверждения докладчика — на слайды и речь, реплики слушателей — только на заметки.
+    assert definitions["EvidenceDraft"]["properties"]["label"]["enum"] == [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+    ]
+    assert definitions["NoteEvidenceDraft"]["properties"]["label"]["enum"] == ["N1"]
+    remark = definitions["ListenerRemarkDraft"]["properties"]["evidence"]["items"]
+    assert remark == {"$ref": "#/$defs/NoteEvidenceDraft"}
+
+
+def test_listener_remarks_are_impossible_without_notes() -> None:
+    from rapporteur.summarize.facts import _facts_schema
+    from rapporteur.summarize.pack import PackSource, build_pack
+
+    from .fictional_talk import CONFERENCE, DECK, SLIDES, TALK, slide_draft
+
+    source = build_pack(
+        CONFERENCE, TALK, [PackSource(DECK, [slide_draft(n, t) for n, t in enumerate(SLIDES, 1)])]
+    )
+    schema = _facts_schema(source)
+    assert all(
+        branch["properties"]["listener_remarks"]["maxItems"] == 0 for branch in schema["oneOf"]
+    )
+    assert "NoteEvidenceDraft" not in schema["$defs"]
+
+
+def test_answer_with_misplaced_note_evidence_is_repaired_by_code() -> None:
+    """Вопрос из зала со ссылкой на слайд в listener_remarks и заметка в результатах больше не
+    отправляют ответ на повтор: код убирает неверные опоры до проверки контракта."""
+    answer = json.loads(facts_answer())
+    answer["listener_remarks"].append(
+        {"text": "Слушатель спросил о стоимости", "evidence": [{"label": "S2", "quote": "x"}]}
+    )
+    answer["results"].append(
+        {"text": "Задержка выросла", "evidence": [{"label": "N1", "quote": "задержка выросла"}]}
+    )
+    client = ScriptedClient([json.dumps(answer, ensure_ascii=False)])
+    result = extract_facts(client, pack(), FactsConfig(profile=PROFILE))
+    assert len(client.requests) == 1 and result.attempts == 1
+    assert "Слушатель спросил о стоимости" not in [f.text for f in result.facts.listener_remarks]
+    assert "Задержка выросла" not in [f.text for f in result.facts.results]
 
 
 def test_v2_fact_review_keeps_ideal_outcome_as_a_proposal() -> None:

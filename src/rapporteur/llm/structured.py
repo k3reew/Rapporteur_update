@@ -45,7 +45,10 @@ def ask_structured[T: BaseModel](
     seed: int | None,
     check: Callable[[T], list[str]] | None = None,
     schema: dict[str, Any] | None = None,
+    prepare: Callable[[Any], Any] | None = None,
 ) -> Structured[T]:
+    """prepare исправляет разобранный JSON до проверки контракта: однозначные нарушения
+    исправляет код, а не повторный запрос к модели."""
     schema = output.model_json_schema() if schema is None else schema
     generation = profile.generation
     history = list(messages)
@@ -78,7 +81,7 @@ def ask_structured[T: BaseModel](
                 FailureCode.CONTEXT_OVERFLOW,
                 f"Запрос и ответ заняли весь контекст {generation.context_tokens} токенов",
             )
-        value, problems = _parse(response.content, output, check)
+        value, problems = _parse(response.content, output, check, prepare)
         history.append(Message("assistant", response.content))
         if value is not None:
             return Structured(value, attempt, responses, tuple(history))
@@ -104,12 +107,17 @@ def _check_budget(
 
 
 def _parse[T: BaseModel](
-    content: str, output: type[T], check: Callable[[T], list[str]] | None
+    content: str,
+    output: type[T],
+    check: Callable[[T], list[str]] | None,
+    prepare: Callable[[Any], Any] | None = None,
 ) -> tuple[T | None, list[str]]:
     try:
         raw = json.loads(content)
     except json.JSONDecodeError as error:
         return None, [f"ответ не является JSON: {error.msg}"]
+    if prepare is not None:
+        raw = prepare(raw)
     try:
         value = output.model_validate(raw)
     except ValidationError as error:
