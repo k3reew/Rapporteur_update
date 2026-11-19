@@ -7,8 +7,10 @@
 """
 
 import json
+import logging
 import sqlite3
 import urllib.request
+from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict
 
@@ -16,7 +18,9 @@ from rapporteur import db
 from rapporteur.contracts import ModelProfile
 from rapporteur.contracts.base import NonEmptyStr
 from rapporteur.errors import UserError
-from rapporteur.llm.profiles import load_profile
+from rapporteur.llm.profiles import load_profile, local_models
+
+log = logging.getLogger("rapporteur.model_choice")
 
 _KEY = "model"
 # Возможность модели в ответе Ollama /api/tags: у неё есть режим рассуждения (think).
@@ -95,6 +99,11 @@ def active_profile(conn: sqlite3.Connection) -> ModelProfile:
     choice = stored(conn)
     if choice is None:
         return base
+    present = local_models()
+    if present and choice.model not in present:
+        # Выбранную модель удалили из каталога или хранилище перенесли на другую машину.
+        _missing_choice(choice.model, base.model)
+        return base
     return base.model_copy(
         update={
             "name": choice.model,
@@ -103,6 +112,15 @@ def active_profile(conn: sqlite3.Connection) -> ModelProfile:
             "quantization": choice.quantization,
             "generation": base.generation.model_copy(update={"reasoning": choice.reasoning}),
         }
+    )
+
+
+@lru_cache(maxsize=32)
+def _missing_choice(chosen: str, used: str) -> None:
+    log.warning(
+        "Выбранной на странице «Управление» модели %s нет в каталоге моделей; используется %s",
+        chosen,
+        used,
     )
 
 

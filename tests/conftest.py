@@ -140,6 +140,16 @@ def summary_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "SUMMARY_FILE", Path(__file__).parent / "fixtures/summary.yaml")
 
 
+@pytest.fixture(autouse=True)
+def no_model_catalog(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Каталог моделей Ollama пуст, пока тест не подключит свой: выбор профиля не зависит
+    от моделей на машине разработчика (llm/profiles.py)."""
+    monkeypatch.setenv("OLLAMA_MODELS_PATH", str(tmp_path_factory.mktemp("no-models")))
+    monkeypatch.delenv("RAPPORTEUR_PROFILE", raising=False)
+
+
 @pytest.fixture
 def storage(tmp_path: Path) -> Storage:
     return Storage(tmp_path / "data")

@@ -29,8 +29,9 @@ esac
 models=$(value OLLAMA_MODELS_DIR ./models/ollama)
 speech=${ASR_MODELS_DIR:-$(value ASR_MODELS_DIR ./models/asr)}
 profile=$(value RAPPORTEUR_PROFILE server)
+# Модели профиля нет — приложение возьмёт профиль с имеющейся моделью (llm/profiles.py).
 if [[ "$profile" == server && ! -f "$models/manifests/registry.ollama.ai/library/qwen3.5/27b" && ! -f "$models/manifests-v2/registry.ollama.ai/library/qwen3.5/27b" ]]; then
-  echo 'Для профиля server нужен полный каталог qwen3.5:27b: выполните make prepare'; exit 1
+  echo 'Модели qwen3.5:27b профиля server нет в каталоге: приложение возьмёт профиль с имеющейся моделью, см. «Управление» и журнал app. Для 27b: make prepare'
 fi
 [[ -d "$models/blobs" ]] || { echo "Нет весов Ollama в $models: выполните make prepare на машине с интернетом"; exit 1; }
 [[ -d "$models/manifests" || -d "$models/manifests-v2" ]] || { echo 'Нет манифестов Ollama'; exit 1; }

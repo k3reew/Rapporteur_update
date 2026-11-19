@@ -11,7 +11,8 @@ type SystemInfo = {
   ollama_available: boolean;
   ollama_models: string[];
   asr_enabled: boolean;
-  profiles: { name: string; model: string; reasoning: boolean; prompt_version: string; default: boolean }[];
+  profiles: { name: string; model: string; reasoning: boolean; prompt_version: string; default: boolean; available?: boolean | null; used?: boolean }[];
+  profile_note?: string | null;
   templates: { name: string; version: string }[];
   queue: Partial<Record<'queued' | 'running' | 'failed' | 'paused', number>>;
 };
@@ -203,6 +204,7 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
             </p>
           )}
           <h3>Профили моделей</h3>
+          {info.profile_note && <p className="notice" role="status">{info.profile_note}</p>}
           {info.profiles.length ? (
             <div className="table-wrap">
               <table>
@@ -212,9 +214,10 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
                     <tr key={profile.name}>
                       <th scope="row">
                         {profile.name}{' '}
-                        {profile.default && <span className="pill info">по умолчанию</span>}
+                        {profile.default && <span className="pill info">по умолчанию</span>}{' '}
+                        {profile.used && <span className="pill ok">используется</span>}
                       </th>
-                      <td>{profile.model}</td>
+                      <td>{profile.model}{profile.available === false && <> <span className="pill warn">нет в каталоге моделей</span></>}</td>
                       <td>{profile.reasoning ? 'да' : 'нет'}</td>
                       <td>{profile.prompt_version}</td>
                     </tr>

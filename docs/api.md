@@ -458,6 +458,8 @@ HTTP 202 означает принятие фоновой работы. Гото
 | `reasoning` | `boolean` | да | - |
 | `prompt_version` | `string` | да | - |
 | `default` | `boolean` | да | - |
+| `available` | `boolean / null` | нет | модель есть в каталоге моделей; null — каталог не подключён |
+| `used` | `boolean` | нет | default=false; профиль, по которому работает приложение |
 
 ### `Progress`
 
@@ -719,6 +721,7 @@ HTTP 202 означает принятие фоновой работы. Гото
 | `ollama_available` | `boolean` | да | - |
 | `ollama_models` | `массив string` | да | - |
 | `profiles` | `массив ProfileInfo` | да | - |
+| `profile_note` | `string / null` | нет | почему используется не заданный профиль |
 | `templates` | `массив TemplateInfo` | да | - |
 | `queue` | `object` | да | - |
 
