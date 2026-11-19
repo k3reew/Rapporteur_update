@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { request } from './api';
 import type { Screening } from './talkTypes';
 
-const labels: Record<string, string> = { not_started: 'Отбор ещё не выполнен', queued: 'Отбор в очереди', running: 'Определяется интерес отделов', relevant: 'Есть интерес отделов', not_relevant: 'Интерес не найден — только карточка', uncertain: 'Интерес требует решения', stale: 'Отбор устарел' };
+const labels: Record<string, string> = { not_started: 'Отбор ещё не выполнен', queued: 'Отбор в очереди', running: 'Определяется интерес отделов', relevant: 'Есть интерес отделов', not_relevant: 'Интерес не найден — только карточка', uncertain: 'Интерес требует решения', stale: 'Отбор устарел', paused: 'Отбор приостановлен после перезапуска' };
 
 export function Interest({ talkId, value, refresh }: { talkId: string; value: Screening; refresh: () => void }) {
   const [choice, setChoice] = useState<string[] | null>(null);

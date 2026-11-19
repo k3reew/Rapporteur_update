@@ -182,8 +182,9 @@ def enqueue(
 
 def retry(conn: sqlite3.Connection, job_id: str) -> dict[str, Any]:
     current = view(conn, job_id)
-    if current["status"] != "failed":
-        raise UserError("Повтор доступен для неудачного задания.", 409)
+    # Приостановленное после перезапуска задание продолжается тем же снимком (processing.py).
+    if current["status"] not in ("failed", "paused"):
+        raise UserError("Повтор доступен для неудачного или приостановленного задания.", 409)
     conn.execute(
         "UPDATE report_jobs SET status='queued',step='queued',error=NULL,updated_at=? WHERE id=?",
         (db.now(), job_id),
@@ -204,6 +205,7 @@ def run_once(database: db.Database, storage: Storage) -> bool:
             "status='running',step='docx',attempt=?,error=NULL,updated_at=? WHERE id=?",
             (attempt, db.now(), job_id),
         )
+        log.info("Выпуск справки: задание %s, попытка %s", job_id, attempt)
     try:
         snapshot = Snapshot.model_validate_json(row["snapshot"])
         if sha256_hex(storage.get(snapshot.template_key)) != snapshot.template_sha256:

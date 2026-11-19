@@ -22,6 +22,7 @@ function jobLabel(talk: TalkProgress) {
     case 'running': return [talk.step ? steps[talk.step] : 'идёт', 'info'];
     case 'done': return ['готово', 'ok'];
     case 'failed': return ['ошибка', 'bad'];
+    case 'paused': return ['приостановлено', 'warn'];
     default: return null;
   }
 }
@@ -130,6 +131,7 @@ export function Processing(
                         Открыть сводку
                       </button>
                       {talk.job === 'failed' && <button onClick={() => void retry(talk)}>Повторить</button>}
+                      {(talk.job === 'paused' || talk.screening?.state === 'paused') && <button onClick={() => void retry(talk)}>Продолжить</button>}
                     </td>
                   </tr>{talk.screening && <tr><td colSpan={4}><Interest key={talk.screening.version} talkId={talk.id} value={talk.screening} refresh={refresh} /></td></tr>}</Fragment>
                 );

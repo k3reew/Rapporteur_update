@@ -29,8 +29,9 @@ class TalkProgress(BaseModel):
     order: int
     title: str | None
     status: TalkStatus
-    # queued, running, done или failed; step — текущий шаг: parse, facts, verify, summary.
-    job: Literal["queued", "running", "done", "failed"] | None
+    # queued, running, done, failed или paused — приостановлено после перезапуска до команды
+    # оператора; step — текущий шаг: screening, parse, facts, verify, summary.
+    job: Literal["queued", "running", "done", "failed", "paused"] | None
     step: str | None
     error: str | None
     summary_number: int | None

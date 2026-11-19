@@ -14,8 +14,8 @@ type ReportVersion = {
   variables: { talks_count: number };
   warnings: string[];
 };
-type ReportJob = { id: string; status: 'queued' | 'running' | 'done' | 'failed'; step: string; error: string | null; report_version_id: string | null };
-const jobSteps: Record<string, string> = { queued: 'В очереди', running: 'Подготовка', docx: 'Документ DOCX', md: 'Текст Markdown', pdf: 'Документ PDF', done: 'Готово', failed: 'Ошибка' };
+type ReportJob = { id: string; status: 'queued' | 'running' | 'done' | 'failed' | 'paused'; step: string; error: string | null; report_version_id: string | null };
+const jobSteps: Record<string, string> = { queued: 'В очереди', running: 'Подготовка', docx: 'Документ DOCX', md: 'Текст Markdown', pdf: 'Документ PDF', done: 'Готово', failed: 'Ошибка', paused: 'ждёт команды оператора' };
 const json = { 'Content-Type': 'application/json' };
 const formats: Record<string, string> = { docx: 'DOCX', md: 'Markdown', pdf: 'PDF' };
 
@@ -181,9 +181,10 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
           </label>
         </div>
         {!!jobs.length && <section aria-label="Задания выпуска"><h3>Задания выпуска</h3>
-          {jobs.map(job => <details key={job.id} open={job.status === 'failed'}><summary>{job.status === 'done' ? 'Справка собрана' : job.status === 'failed' ? 'Сборка не завершена' : 'Справка собирается'} · {jobSteps[job.step] ?? job.step}</summary>
+          {jobs.map(job => <details key={job.id} open={job.status === 'failed' || job.status === 'paused'}><summary>{job.status === 'done' ? 'Справка собрана' : job.status === 'failed' ? 'Сборка не завершена' : job.status === 'paused' ? 'Сборка приостановлена после перезапуска' : 'Справка собирается'} · {jobSteps[job.step] ?? job.step}</summary>
             <p className="muted">Задание {job.id}</p>{job.error && <p role="alert">{job.error}</p>}
             {job.status === 'failed' && <button disabled={!!busy} onClick={() => retry(job)}>Повторить сборку</button>}
+            {job.status === 'paused' && <button disabled={!!busy} onClick={() => retry(job)}>Продолжить сборку</button>}
           </details>)}
         </section>}
         <h3>Версии</h3>

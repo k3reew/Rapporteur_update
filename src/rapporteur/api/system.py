@@ -86,7 +86,7 @@ def system(request: Request) -> SystemInfo:
             row["job"]: row["count"]
             for row in conn.execute(
                 "SELECT job, count(*) AS count FROM talks "
-                "WHERE job IN ('queued', 'running', 'failed') GROUP BY job"
+                "WHERE job IN ('queued', 'running', 'failed', 'paused') GROUP BY job"
             )
         }
     models = model_choice.installed_models(settings.OLLAMA_URL)

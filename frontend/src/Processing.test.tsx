@@ -49,3 +49,26 @@ test('доклад без интереса отделов получает то�
   fireEvent.click(screen.getAllByRole('button', { name: 'Только карточка' })[1]);
   await vi.waitFor(() => expect(puts).toEqual([['/api/v1/talks/t2/screening', { version: 1, department_ids: [] }]]));
 });
+
+test('приостановленный после перезапуска доклад продолжается по кнопке', async () => {
+  const posts: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') { posts.push(url); return new Response(null, { status: 202 }); }
+    return Response.json({
+      processing_started: true,
+      files: 1,
+      talks: [
+        { ...talk, title: 'Кэширование', job: 'paused' },
+        { ...talk, id: 't2', order: 2, title: 'Сжатие', job: null, screening: screening('paused', []) },
+      ],
+    });
+  }));
+  render(<Processing conferenceId="c" onOpen={() => {}} />);
+
+  expect(await screen.findByText('приостановлено')).toBeDefined();
+  expect(screen.getByText('Отбор приостановлен после перезапуска')).toBeDefined();
+  const buttons = screen.getAllByRole('button', { name: 'Продолжить' });
+  expect(buttons).toHaveLength(2);
+  fireEvent.click(buttons[1]);
+  await vi.waitFor(() => expect(posts).toEqual(['/api/v1/talks/t2/retry']));
+});

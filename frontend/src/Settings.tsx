@@ -13,7 +13,7 @@ type SystemInfo = {
   asr_enabled: boolean;
   profiles: { name: string; model: string; reasoning: boolean; prompt_version: string; default: boolean }[];
   templates: { name: string; version: string }[];
-  queue: Partial<Record<'queued' | 'running' | 'failed', number>>;
+  queue: Partial<Record<'queued' | 'running' | 'failed' | 'paused', number>>;
 };
 
 type OllamaModel = {
@@ -195,6 +195,7 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
             <div><b>В очереди</b>{info.queue.queued ?? 0}</div>
             <div><b>Обрабатывается</b>{info.queue.running ?? 0}</div>
             <div><b>С ошибкой</b>{info.queue.failed ?? 0}</div>
+            <div><b>Приостановлено</b>{info.queue.paused ?? 0}</div>
           </div>
           {info.ollama_available && (
             <p className="muted">
