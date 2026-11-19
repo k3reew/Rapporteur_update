@@ -331,7 +331,8 @@ def test_model_answers_briefly_with_department_and_percent(
 
     schema = client.requests[0].schema or {}
     assert schema["title"] == "InterestAnswer"
-    assert schema["properties"]["reason"]["maxLength"] == 160
+    assert schema["properties"]["reason"]["maxLength"] == 200
+    assert "до 120 символов" in client.requests[0].messages[0].content
     assert schema["properties"]["evidence"]["maxItems"] == 1
     assert "уверенность в процентах" in client.requests[0].messages[0].content
     assert "Для уверенности от 70 % нужны цитаты" in client.requests[1].messages[-1].content
@@ -373,3 +374,12 @@ def test_high_interest_from_image_description_only_needs_the_operator(
     )
     assert (decided.status, decided.interest) == ("uncertain", 90)
     assert "изображения" in decided.reason
+
+
+def test_reason_cut_at_the_schema_limit_ends_with_a_whole_word() -> None:
+    from rapporteur import screening
+
+    cut = ("Доклад посвящён оптимизации СУБД и кэшированию запросов, " * 4)[:200]
+    assert cut.endswith("оптимизации С")
+    assert screening._whole_words(cut).endswith("оптимизации…")
+    assert screening._whole_words("Связи нет.") == "Связи нет."

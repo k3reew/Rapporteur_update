@@ -29,7 +29,10 @@ VERSION = "2.0.0"
 # включительно — интереса нет, между ними решает оператор.
 RELEVANT_FROM = 70
 NOT_RELEVANT_UPTO = 30
-_REASON_LENGTH = 160
+# Пояснение просится до _REASON_ASKED символов; схема допускает запас до _REASON_LENGTH,
+# потому что Ollama обрывает ответ ровно на пределе схемы, в том числе посреди слова.
+_REASON_ASKED = 120
+_REASON_LENGTH = 200
 
 
 class Quote(BaseModel):
@@ -259,7 +262,7 @@ def _classify(
         "interest — уверенность в процентах от 0 до 100, что доклад интересен отделу: "
         f"от {RELEVANT_FROM} — тема доклада прямо относится к конкретной обязанности отдела, "
         f"до {NOT_RELEVANT_UPTO} — связи нет. Совпадения общих слов недостаточно. "
-        f"reason — одно короткое предложение до {_REASON_LENGTH - 10} символов: какая "
+        f"reason — одно короткое предложение до {_REASON_ASKED} символов: какая "
         "обязанность отдела связана с докладом или почему связи нет, без пересказа доклада. "
         f"При interest от {RELEVANT_FROM} приведи одну дословную цитату доклада в evidence "
         "и одну дословную цитату положения в paragraphs, иначе оставь списки пустыми. "
@@ -271,7 +274,7 @@ def _classify(
         check=check,
     )
     status = status_of(answer.interest)
-    reason = answer.reason
+    reason = _whole_words(answer.reason)
     if status == "relevant" and all(item.label.startswith("V") for item in answer.evidence):
         status, reason = "uncertain", "Связь видна только в модельном описании изображения."
     return Decision(
@@ -281,6 +284,14 @@ def _classify(
         evidence=answer.evidence,
         paragraphs=answer.paragraphs,
     )
+
+
+def _whole_words(reason: str) -> str:
+    """Пояснение, оборванное на пределе схемы, укорачивается до целого слова."""
+    if len(reason) < _REASON_LENGTH:
+        return reason
+    cut = reason[: reason.rfind(" ")].rstrip(" ,;:—-") if " " in reason else reason
+    return cut + "…"
 
 
 def run_once(
