@@ -81,7 +81,17 @@ def run(client: TestClient) -> None:
         pass
 
 
-def test_talk_without_interest_gets_card_and_enters_the_report(
+def decide(client: TestClient, conference: str, talk_id: str, departments: list[str]) -> None:
+    """Кнопка этапа «Проверка»: «Подтвердить интерес» выбранных отделов или «Только карточка»."""
+    version = progress(client, conference)["screening"]["version"]  # type: ignore[index]
+    decided = client.put(
+        f"/api/v1/talks/{talk_id}/screening",
+        json={"version": version, "department_ids": departments},
+    )
+    assert decided.status_code == 200, decided.text
+
+
+def test_model_decision_waits_and_card_is_made_after_the_operator(
     web: tuple[TestClient, Classifier],
 ) -> None:
     client, scripted = web
@@ -95,10 +105,22 @@ def test_talk_without_interest_gets_card_and_enters_the_report(
     assert client.post(f"/api/v1/conferences/{conference}/processing").status_code == 202
     run(client)
 
+    # Модель решила «не интересен», но это лишь предложение: доклад ждёт оператора.
+    talk = progress(client, conference)
+    assert talk["screening"]["state"] == "not_relevant"  # type: ignore[index]
+    assert talk["screening"]["manual"] is False  # type: ignore[index]
+    assert (talk["job"], talk["step"], talk["card_only"], talk["reportable"]) == (
+        None,
+        "screening",
+        False,
+        False,
+    )
+
+    decide(client, conference, talk_id, [])
+    run(client)
     talk = progress(client, conference)
     # Факты и сводка не запрашивались: ScriptedClient без ответов упал бы.
     assert not scripted.requests
-    assert talk["screening"]["state"] == "not_relevant"  # type: ignore[index]
     assert (talk["job"], talk["status"], talk["card_only"], talk["reportable"]) == (
         "done",
         "processed",
@@ -152,11 +174,7 @@ def test_undecided_talk_waits_for_the_operator(web: tuple[TestClient, Classifier
     assert refused.status_code == 409 and refused.json()["code"] == "screening_required"
 
     # «Только карточка»: пустой список отделов.
-    version = talk["screening"]["version"]  # type: ignore[index]
-    decided = client.put(
-        f"/api/v1/talks/{talk_id}/screening", json={"version": version, "department_ids": []}
-    )
-    assert decided.status_code == 200, decided.text
+    decide(client, conference, talk_id, [])
     assert progress(client, conference)["job"] == "queued"
     run(client)
     talk = progress(client, conference)
@@ -169,15 +187,12 @@ def test_operator_interest_sends_card_talk_to_summary(web: tuple[TestClient, Cla
     conference, talk_id = bound_talk(client)
     client.post(f"/api/v1/conferences/{conference}/processing")
     run(client)
+    decide(client, conference, talk_id, [])
+    run(client)
     talk = progress(client, conference)
     assert talk["card_only"] is True
 
-    version = talk["screening"]["version"]  # type: ignore[index]
-    decided = client.put(
-        f"/api/v1/talks/{talk_id}/screening",
-        json={"version": version, "department_ids": [DEPARTMENT]},
-    )
-    assert decided.status_code == 200, decided.text
+    decide(client, conference, talk_id, [DEPARTMENT])
     talk = progress(client, conference)
     # До новой обработки карточка не соответствует отбору и в справку не выбирается.
     assert (talk["job"], talk["reportable"]) == ("queued", False)
@@ -196,7 +211,9 @@ def test_operator_interest_sends_card_talk_to_summary(web: tuple[TestClient, Cla
         ("not_started", None),
     ],
 )
-def test_screening_state_decides_summary_or_card(
+def test_operator_decision_decides_summary_or_card(
     state: str, expected: interest.Route | None
 ) -> None:
-    assert interest.decided({"state": state}) is expected
+    assert interest.decided({"state": state, "manual": True}) is expected
+    # Решение модели без подтверждения оператора ничего не запускает.
+    assert interest.decided({"state": state, "manual": False}) is None

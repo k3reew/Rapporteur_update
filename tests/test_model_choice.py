@@ -17,7 +17,7 @@ from rapporteur.contracts import ModelProfile
 from rapporteur.llm.client import ScriptedClient
 
 from .test_app import Fixture, processed_talk
-from .workflow_support import WorkflowClient, seed_regulation
+from .workflow_support import WorkflowClient, operator_confirms_screening, seed_regulation
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -83,6 +83,7 @@ def app(
 
     application = create_app(tmp_path, client=client, process=False)
     seed_regulation(application.state.database)
+    operator_confirms_screening(monkeypatch)
     with TestClient(application) as test_client:
         yield Fixture(test_client, scripted, tmp_path)
 
