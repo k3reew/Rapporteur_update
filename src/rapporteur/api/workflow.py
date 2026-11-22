@@ -163,6 +163,28 @@ def rescreen(request: Request, conn: Tx, conference_id: str) -> list[dict[str, o
     return conference_screening(conn, conference_id)
 
 
+@api.post("/talks/{talk_id}/screening", status_code=202)
+def rescreen_talk(request: Request, conn: Tx, talk_id: str) -> Response:
+    """Пересчёт интереса отделов одного доклада: новая версия отбора ставится в очередь,
+    остальные доклады конференции не затрагиваются. Требует положения и привязанных
+    материалов; при запущенной обработке доклад ждёт нового отбора (как после rescreen)."""
+    row = db.one(
+        conn,
+        "SELECT t.status, c.processing_started FROM talks t JOIN sections s ON "
+        "t.section_id=s.id JOIN conferences c ON c.id=s.conference_id WHERE t.id=?",
+        talk_id,
+    )
+    if row is None:
+        raise NotFoundError("Доклад не найден")
+    if row["status"] not in ("matched", "stale", "processed", "reviewed"):
+        raise UserError("Пересчитать отбор можно для докладов с привязанными материалами", 409)
+    screening.queue(conn, talk_id, force=True)
+    if row["processing_started"]:
+        conn.execute("UPDATE talks SET job=NULL,step='screening' WHERE id=?", (talk_id,))
+    _wake(request)
+    return Response(status_code=202)
+
+
 @api.put("/talks/{talk_id}/screening")
 def review_screening(
     request: Request, conn: Tx, talk_id: str, data: screening.Review

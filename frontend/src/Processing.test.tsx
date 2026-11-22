@@ -87,3 +87,35 @@ test('решение модели без подтверждения операт
   expect(screen.getByText('Модель: есть интерес — подтвердите решение')).toBeDefined();
   expect(screen.getByRole('button', { name: 'Подтвердить интерес' })).toBeDefined();
 });
+
+test('отбор отдельного доклада пересчитывается кнопкой в строке', async () => {
+  const posts: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') { posts.push(url); return new Response(null, { status: 202 }); }
+    return Response.json({
+      processing_started: true,
+      files: 1,
+      talks: [{ ...talk, title: 'Кэширование', job: 'done', screening: screening('stale', []) }],
+    });
+  }));
+  render(<Processing conferenceId="c" onOpen={() => {}} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Пересчитать отбор' }));
+  await vi.waitFor(() => expect(posts).toEqual(['/api/v1/talks/t1/screening']));
+});
+
+test('обработка запускается с экрана проверки, пока она не начата', async () => {
+  const posts: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') { posts.push(url); return Response.json({ processing_started: true, files: 1, talks: [] }); }
+    return Response.json({
+      processing_started: false,
+      files: 1,
+      talks: [{ ...talk, title: 'Кэширование', job: null }],
+    });
+  }));
+  render(<Processing conferenceId="c" onOpen={() => {}} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Запустить обработку' }));
+  await vi.waitFor(() => expect(posts).toEqual(['/api/v1/conferences/c/processing']));
+});
