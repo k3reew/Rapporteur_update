@@ -40,6 +40,7 @@
 | --- | --- |
 | `GET /conferences/{id}/screening` | Список решений с `talk_id`, `version`, `state`, `eligible`, `stale`, `items`, `department_ids`, `error`, `manual` |
 | `POST /conferences/{id}/screening` | Пересчитать отбор подходящих записей реестра, 202 |
+| `POST /talks/{id}/screening` | Пересчитать отбор одного доклада с материалами, 202 |
 | `PUT /talks/{id}/screening` | Решение оператора, тело `{"version": 1, "department_ids": ["id"]}`, 200. Пустой список означает «только карточка» |
 | `POST /conferences/{id}/report-jobs` | Поставить выпуск, тело `{"idempotency_key":"unique-key","talk_ids":["uuid"],"unreviewed_confirmed":false}`, 202 |
 | `GET /conferences/{id}/report-jobs` | История и восстановление активного задания |
