@@ -24,10 +24,20 @@ export function Departments() {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
+  async function remove(item: Department) {
+    if (!window.confirm(`Удалить отдел «${item.name}» со всеми версиями положения? Отбор и рекомендации по нему станут устаревшими. Отменить удаление нельзя.`)) return;
+    setBusy(true); setError('');
+    try {
+      await request(`/api/v1/departments/${item.id}`, { method: 'DELETE' });
+      setItems(await getJSON<Department[]>('/api/v1/departments'));
+      if (selected === item.id) { setSelected(''); setName(''); }
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
   return <section className="card"><h2>Отделы и положения</h2>
     <p className="muted">Положения помогают определить, каким отделам интересен доклад. Рекомендации проверяются вместе со сводкой.</p>
-    <details className="department-upload"><summary>Добавить отдел или обновить положение</summary><div className="fields">
     {(error || loadError) && <p role="alert">{error || loadError}</p>}
+    <details className="department-upload"><summary>Добавить отдел или обновить положение</summary><div className="fields">
     <label className="field">Отдел<select value={selected} onChange={e => {
       setSelected(e.target.value); setName(items.find(d => d.id === e.target.value)?.name ?? '');
     }}><option value="">Новый отдел</option>{items.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
@@ -39,6 +49,7 @@ export function Departments() {
     {data && !items.length && <p className="empty-state">Положения ещё не загружены. Добавьте первый отдел.</p>}
     <div className="department-list">{items.map(d => <details key={d.id}><summary>{d.name} · версия {d.version} · {d.original_name}</summary>
       {d.pages.map(p => <div key={p.page}><h3>Страница {p.page}</h3><pre style={{ whiteSpace: 'pre-wrap' }}>{p.text}</pre></div>)}
+      <div className="row"><button className="danger" disabled={busy} onClick={() => void remove(d)}>Удалить отдел</button></div>
     </details>)}</div>
   </section>;
 }

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from rapporteur import db, model_choice
 from rapporteur.contracts import ModelProfile, Summary
 from rapporteur.contracts.enums import ClaimStatus
-from rapporteur.errors import UserError
+from rapporteur.errors import NotFoundError, UserError
 from rapporteur.llm.client import LlmClient
 from rapporteur.llm.tasks import json_task
 
@@ -48,6 +48,15 @@ def latest(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 def revisions(conn: sqlite3.Connection) -> dict[str, int]:
     return {item["id"]: item["version"] for item in latest(conn)}
+
+
+def remove(conn: sqlite3.Connection, department_id: str) -> None:
+    """Отдел удаляется со всеми версиями положения. Хранимые ссылки на него в отборе и
+    рекомендациях устаревают сами: view() сравнивает сохранённые версии отделов с
+    текущими, а отсутствующий отдел больше не входит в этот словарь."""
+    if db.one(conn, "SELECT 1 FROM departments WHERE id=?", department_id) is None:
+        raise NotFoundError("Отдел не найден")
+    conn.execute("DELETE FROM departments WHERE id=?", (department_id,))
 
 
 def require_regulations(conn: sqlite3.Connection) -> list[dict[str, Any]]:

@@ -85,6 +85,12 @@ async def upload_department(
         raise UserError(error.message, 422) from error
 
 
+@api.delete("/departments/{department_id}", status_code=204)
+def delete_department(conn: Tx, department_id: str) -> Response:
+    departments.remove(conn, department_id)
+    return Response(status_code=204)
+
+
 @api.get("/talks/{talk_id}/recommendations")
 def get_recommendations(conn: ReadTx, talk_id: str) -> dict[str, object]:
     result = departments.view(conn, talk_id)
