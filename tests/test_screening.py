@@ -401,3 +401,42 @@ def test_reason_cut_at_the_schema_limit_ends_with_a_whole_word() -> None:
     assert cut.endswith("оптимизации С")
     assert screening._whole_words(cut).endswith("оптимизации…")
     assert screening._whole_words("Связи нет.") == "Связи нет."
+
+
+def test_rescreen_single_talk_queues_only_that_talk(tmp_path: Path) -> None:
+    from .workflow_support import seed_regulation
+
+    application = create_app(tmp_path, process=False)
+    seed_regulation(application.state.database)
+    with TestClient(application) as client:
+        cid = client.post("/api/v1/conferences", json={"title": "Пример"}).json()["id"]
+        base = f"/api/v1/conferences/{cid}"
+        for index, name in enumerate(("01_Первый", "02_Второй"), 1):
+            uploaded = client.post(
+                base + "/materials",
+                params={"path": f"{name}/речь.txt", "purpose": "document"},
+                content=f"Текст доклада {index} для разбора".encode(),
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            assert uploaded.status_code == 201, uploaded.text
+        talks = client.get(base + "/materials").json()["talks"]
+        first, second = talks[0]["id"], talks[1]["id"]
+        assert (
+            client.post(f"/api/v1/talks/{second}/screening").status_code == 409
+        )  # у доклада ещё нет привязанных материалов
+        materials = client.get(base + "/materials").json()
+        saved = client.put(
+            base + "/materials/bindings",
+            json={
+                "bindings": [
+                    {"source_file_id": file["source"]["id"], "talk_id": talk["id"]}
+                    for file, talk in zip(materials["files"], talks, strict=True)
+                ]
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        assert client.post(f"/api/v1/talks/{first}/screening").status_code == 202
+        screening_list = client.get(base + "/screening").json()
+        states = {item["talk_id"]: item["state"] for item in screening_list}
+        assert states == {first: "queued", second: "not_started"}
+        assert client.post("/api/v1/talks/missing/screening").status_code == 404
