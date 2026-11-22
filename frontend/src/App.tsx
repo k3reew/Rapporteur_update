@@ -126,7 +126,7 @@ export function App() {
             onPrepared={() => go({ page: 'conference', id: route.id, tab: 'talks' })}
           />
         )}
-        {route.page === 'conference' && route.tab === 'talks' && <Preparation key={route.id} conferenceId={route.id} onConfirmed={() => {}} onStarted={() => go({ page: 'conference', id: route.id, tab: 'review' })} />}
+        {route.page === 'conference' && route.tab === 'talks' && <Preparation key={route.id} conferenceId={route.id} onConfirmed={() => go({ page: 'conference', id: route.id, tab: 'review' })} onStarted={() => go({ page: 'conference', id: route.id, tab: 'review' })} />}
         {route.page === 'conference' && route.tab === 'review' && (
           <Processing
             key={route.id}

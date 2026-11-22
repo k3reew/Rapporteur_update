@@ -27,12 +27,30 @@ test('после подтверждения и сбоя запуска пред�
   }));
   const started = vi.fn();
   render(<Preparation conferenceId="c" onConfirmed={() => {}} onStarted={started} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Подтвердить и обработать' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Подтвердить' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Запустить обработку' }));
   await screen.findByText('Сервис занят');
   const retry = screen.getByRole('button', { name: 'Запустить обработку' });
-  expect(screen.queryByRole('button', { name: 'Подтвердить и обработать' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Подтвердить' })).toBeNull();
   fireEvent.click(retry);
   await waitFor(() => expect(started).toHaveBeenCalled());
+});
+
+test('подтверждение сохраняет разбиение и не запускает обработку', async () => {
+  const posts: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/departments')) return Response.json([{ pages: [{ text: 'Обязанности отдела' }] }]);
+    if (init?.method === 'POST') posts.push(url);
+    if (url.endsWith('/materials')) return Response.json({ files: [], talks: [], sections: [] });
+    return Response.json({ version: 1, job: 'done', error: null,
+      talks: [{ talk_id: null, title: 'Доклад', speakers: [], links: [{ file_id: 'f', start_ms: null, end_ms: null, page_start: null, page_end: null }], reason: '' }] });
+  }));
+  const confirmed = vi.fn();
+  render(<Preparation conferenceId="c" onConfirmed={confirmed} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Подтвердить' }));
+  await waitFor(() => expect(confirmed).toHaveBeenCalled());
+  expect(posts).toEqual([]);
+  expect(screen.queryByRole('button', { name: 'Запустить обработку' })).toBeNull();
 });
 
 test('частичная ошибка загрузки сохраняет успешные файлы и разрешает подготовку', async () => {
@@ -120,4 +138,21 @@ test('при отсутствии положения направляет в о�
   expect(link.getAttribute('href')).toBe('#/departments');
   expect((screen.getByRole('button', { name: 'Выбрать файлы' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: 'Подготовить доклады' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('развёрнутый доклад подсвечивается, помечается правкой и остаётся выделенным', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/materials')
+    ? { files: [], talks: [], sections: [] }
+    : { version: 1, job: 'done', error: null,
+        talks: [{ talk_id: null, title: 'Доклад', speakers: [], links: [{ file_id: 'f', start_ms: null, end_ms: null, page_start: null, page_end: null }], reason: '' }] })));
+  const { container } = render(<Preparation conferenceId="c" onConfirmed={() => {}} />);
+  await screen.findByText('Доклад');
+  const details = container.querySelector('details.talk-editor')!;
+  fireEvent.click(details.querySelector('summary')!);
+  await waitFor(() => expect(details.className).toContain('open'));
+  fireEvent.change(await screen.findByLabelText('Тема доклада 1'), { target: { value: 'Правка' } });
+  expect(screen.getByText('изменён')).toBeDefined();
+  fireEvent.click(details.querySelector('summary')!);
+  await waitFor(() => expect(details.querySelector('.edited-mark')).not.toBeNull());
+  expect(details.className).not.toContain('open');
 });

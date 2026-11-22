@@ -1,5 +1,3 @@
-import { Interest } from './Interest';
-import type { Screening } from './talkTypes';
 import { useState } from 'react';
 import { request } from './api';
 import { LegacyTalks } from './LegacyTalks';
@@ -20,8 +18,8 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
   const url = `/api/v1/conferences/${conferenceId}/preparation`;
   const { data: state, setData: setState, error: loadError, refresh } = useResource<State>(url, 5000);
   const { data: review, error: materialsError } = useResource<Review>(`/api/v1/conferences/${conferenceId}/materials`, 5000);
-  const { data: interests, refresh: refreshInterests } = useResource<({ talk_id: string } & Screening)[]>(`/api/v1/conferences/${conferenceId}/screening`, 5000);
   const [draft, setDraft] = useState<{ version: number; talks: Talk[] }>();
+  const [openTalks, setOpenTalks] = useState<ReadonlySet<number>>(new Set());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -32,6 +30,11 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
   }
   const talks = draft?.talks ?? state?.talks ?? [];
   const running = state?.job === 'queued' || state?.job === 'running';
+  const stateTalks = state?.talks ?? [];
+  /** Правленые доклады: черновик расходится с подтверждённым предложением сервера. */
+  const editedTalks = new Set<number>(
+    draft ? talks.flatMap((talk, index) => JSON.stringify(talk) === JSON.stringify(stateTalks[index]) ? [] : [index]) : []
+  );
   function update(index: number, changes: Partial<Talk>) {
     editTalks(talks.map((talk, position) => position === index ? { ...talk, ...changes } : talk));
   }
@@ -47,41 +50,70 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
       { ...talk, talk_id: null, title: `${talk.title} (часть 2, уточните тему)`, links: [{ ...link, start_ms: middle }] });
     editTalks(copy);
   }
-  async function startProcessing() {
-    await request(`/api/v1/conferences/${conferenceId}/processing`, { method: 'POST' });
-    allowNavigation();
-    onStarted?.();
+  /** Развёрнутый доклад выделяется цветом; название поднимается к верхней границе экрана. */
+  function toggleTalk(index: number, event: { currentTarget: HTMLDetailsElement }) {
+    const open = event.currentTarget.open;
+    setOpenTalks(previous => {
+      const next = new Set(previous);
+      if (open) next.add(index); else next.delete(index);
+      return next;
+    });
+    const element = event.currentTarget;
+    if (open && typeof element.scrollIntoView === 'function') {
+      const reduceMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      element.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    }
   }
-  async function act(confirm: boolean) {
+  async function reprepare() {
     setBusy(true); setError('');
     try {
-      if (confirm && (draft || state?.job !== 'confirmed')) {
-        const response = await request(url, { method: 'PUT', headers,
-          body: JSON.stringify({ version: draft?.version ?? state?.version, talks: talks.map(cleanCard) }) });
-        setState(await response.json()); setDraft(undefined); onConfirmed();
-      }
-      if (confirm) await startProcessing();
-      else {
-        setState(await (await request(url, { method: 'POST', headers })).json());
-        setDraft(undefined);
-      }
+      setState(await (await request(url, { method: 'POST', headers })).json());
+      setDraft(undefined); setOpenTalks(new Set());
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); }
+  }
+  /** «Подтвердить» сохраняет разбиение и переходит к проверке, обработку не запускает. */
+  async function save() {
+    setBusy(true); setError('');
+    try {
+      const response = await request(url, { method: 'PUT', headers,
+        body: JSON.stringify({ version: draft?.version ?? state?.version, talks: talks.map(cleanCard) }) });
+      setState(await response.json()); setDraft(undefined);
+      allowNavigation();
+      onConfirmed();
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function startProcessing() {
+    setBusy(true); setError('');
+    try {
+      await request(`/api/v1/conferences/${conferenceId}/processing`, { method: 'POST' });
+      allowNavigation();
+      onStarted?.();
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
   if (!state && !loadError) return <p className="loading">Загрузка докладов…</p>;
   const legacy = state?.job === null && !!review?.talks.length;
+  const talkInvalid = busy || running || !talks.length || talks.some(t => !t.links.length || !t.title.trim());
   return <section className="workflow-page" aria-label="Подготовка докладов" aria-busy={busy || running}>
     <h2>Проверьте предложенные доклады</h2>
     <p className="muted">Уточните темы, авторов и связанные материалы. Для редактирования откройте доклад.</p>
-    {state?.job === 'paused' && <div className="empty-state"><p>Подготовка приостановлена после перезапуска приложения.</p><button disabled={busy || !files.length} onClick={() => void act(false)}>Продолжить подготовку</button></div>}
-    {(state?.job === null || state?.job === 'failed') && !legacy && <div className="empty-state"><p>Подготовьте доклады из загруженных материалов.</p><button disabled={busy || !files.length} onClick={() => void act(false)}>Подготовить доклады</button></div>}
+    {state?.job === 'paused' && <div className="empty-state"><p>Подготовка приостановлена после перезапуска приложения.</p><button disabled={busy || !files.length} onClick={() => void reprepare()}>Продолжить подготовку</button></div>}
+    {(state?.job === null || state?.job === 'failed') && !legacy && <div className="empty-state"><p>Подготовьте доклады из загруженных материалов.</p><button disabled={busy || !files.length} onClick={() => void reprepare()}>Подготовить доклады</button></div>}
     <details className="manual-talks" open={legacy || manualOpen} onToggle={event => setManualOpen(event.currentTarget.open)}><summary>{legacy ? 'Ручной реестр докладов' : 'Добавить доклад вручную и настроить привязки'}</summary><LegacyTalks conferenceId={conferenceId} onStarted={onStarted} enabled={legacy || manualOpen} /></details>
     {running && <p role="status">Подготовка выполняется. Можно закрыть страницу и вернуться позже.</p>}
     {state?.warnings?.map(warning => <p key={warning} className="notice" role="status">{warning}</p>)}
     {(error || loadError || materialsError || state?.error) && <p role="alert">{error || loadError || materialsError || state?.error}</p>}
     {(state?.job === 'done' || state?.job === 'confirmed') && <>
       <p>Предложено докладов: {talks.length}. Время указано в секундах от начала оригинала.</p>
-      {talks.map((talk, index) => <details className="talk-editor" key={index}><summary><span><strong>{talk.title || 'Тема не указана'}</strong><small>{talk.speakers.map(s => s.name).join(', ') || 'Автор не установлен'} · материалов {talk.links.length}</small></span><span className="detail-action">Изменить</span></summary><fieldset className="talk-editor-body" disabled={busy || running}>
+      {talks.map((talk, index) => <details
+        className={`talk-editor${openTalks.has(index) ? ' open' : ''}`}
+        key={index}
+        onToggle={event => toggleTalk(index, event)}
+      ><summary><span><strong>{talk.title || 'Тема не указана'}</strong><small>{talk.speakers.map(s => s.name).join(', ') || 'Автор не установлен'} · материалов {talk.links.length}</small></span>
+        <span className="row">{editedTalks.has(index) && <span className="edited-mark" title="Карточка изменена: правки ещё не сохранены">изменён</span>}<span className="detail-action">Изменить</span></span></summary><fieldset className="talk-editor-body" disabled={busy || running}>
         <CardEditor card={talk} titleLabel={`Тема доклада ${index + 1}`} onChange={value => update(index, value)} />
         <small>{talk.reason}</small>
         {talk.links.map((link, position) => {
@@ -113,13 +145,14 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
           }}>Объединить со следующим</button>
           <button onClick={() => editTalks(talks.filter((_, i) => i !== index))}>Исключить из разбиения</button></div>
       </fieldset></details>)}
-      {state?.job === 'confirmed' && !!interests?.length && <section aria-label="Отбор докладов"><h3>Интерес отделов</h3>
-        {interests.map(item => <div key={item.talk_id}><b>{review?.talks.find(talk => talk.id === item.talk_id)?.title ?? 'Доклад'}</b><Interest key={item.version} talkId={item.talk_id} value={item} refresh={refreshInterests} /></div>)}
-      </section>}
-      <footer className="step-footer"><button className="link" disabled={busy || running || !!draft} onClick={() => void act(false)}>Подготовить заново</button>
-      <button className="primary" disabled={busy || running || !talks.length || talks.some(t => !t.links.length || !t.title.trim())}
-        onClick={() => void act(true)}>{state?.job === 'confirmed' && !draft ? 'Запустить обработку' : 'Подтвердить и обработать'}</button></footer>
-      {draft && <button disabled={busy} onClick={() => { setDraft(undefined); refresh(); }}>Отменить изменения</button>}
+      <footer className="step-footer"><button className="link" disabled={busy || running || !!draft} onClick={() => void reprepare()}>Подготовить заново</button>
+      <span className="row">
+        {(draft || state?.job !== 'confirmed') && <button className="primary" disabled={talkInvalid}
+          onClick={() => void save()}>Подтвердить</button>}
+        {state?.job === 'confirmed' && !draft && <button className="primary" disabled={busy || running}
+          onClick={() => void startProcessing()}>Запустить обработку</button>}
+      </span></footer>
+      {draft && <button disabled={busy} onClick={() => { setDraft(undefined); setOpenTalks(new Set()); refresh(); }}>Отменить изменения</button>}
     </>}
   </section>;
 }

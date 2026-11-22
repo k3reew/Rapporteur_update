@@ -68,7 +68,7 @@ test('редактирует временные границы предложе�
   vi.stubGlobal('fetch', api); const confirmed = vi.fn();
   render(<Preparation conferenceId="c" onConfirmed={confirmed} />);
   fireEvent.change(await screen.findByLabelText('Начало, с'), { target: { value: '1.5' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и обработать' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }));
   await waitFor(() => expect(confirmed).toHaveBeenCalled());
   const sent = api.mock.calls.find(([, init]) => init?.method === 'PUT');
   expect(JSON.parse(sent?.[1]?.body as string).talks[0].links[0].start_ms).toBe(1500);
