@@ -46,7 +46,7 @@ export function Interest({ talkId, value, refresh }: { talkId: string; value: Sc
     finally { setBusy(false); }
   }
   const editable = value.version > 0 && !['queued', 'running', 'stale'].includes(value.state);
-  const shown = ['relevant', 'uncertain', 'not_relevant'].includes(value.state) && !value.manual ? leaders(value) : [];
+  const shown = ['relevant', 'uncertain', 'not_relevant'].includes(value.state) ? leaders(value) : [];
   const unscored = !value.manual && !value.error && value.items.length > 0 && !value.items.some(scored);
   const awaiting = awaitsOperator(value);
   return <details className="interest-details" open={awaiting || undefined}><summary><span className={awaiting ? 'text-warn' : undefined}>{(awaiting ? proposals[value.state] : undefined) ?? labels[value.state] ?? value.state}</span>

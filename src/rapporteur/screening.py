@@ -195,20 +195,25 @@ def review(conn: sqlite3.Connection, talk_id: str, data: Review) -> None:
     selected = set(data.department_ids)
     if not selected <= {dep["id"] for dep in deps}:
         raise UserError("Выбран неизвестный отдел")
-    items = [
-        {
+    # Решение оператора заменяет только статусы: проценты и описания модели
+    # сохраняются, чтобы отбор можно было пересмотреть без пересчёта.
+    previous = {item["department_id"]: item for item in current["items"]}
+    items = []
+    for dep in deps:
+        old = previous.get(dep["id"], {})
+        item = {
             "department_id": dep["id"],
             "department_version": dep["version"],
             "department_name": dep["name"],
             "status": "relevant" if dep["id"] in selected else "not_relevant",
-            "reason": "Интерес подтверждён оператором"
-            if dep["id"] in selected
-            else "Исключён оператором",
-            "evidence": [],
-            "paragraphs": [],
+            "reason": old.get("reason")
+            or ("Интерес подтверждён оператором" if dep["id"] in selected else "Исключён оператором"),
+            "evidence": old.get("evidence", []),
+            "paragraphs": old.get("paragraphs", []),
         }
-        for dep in deps
-    ]
+        if old.get("interest") is not None:
+            item["interest"] = old["interest"]
+        items.append(item)
     revision, revisions, profile = _snapshot(conn, talk_id)
     conn.execute(
         "INSERT INTO "

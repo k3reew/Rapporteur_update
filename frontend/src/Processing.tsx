@@ -36,6 +36,7 @@ export function Processing(
   const [error, setError] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [starting, setStarting] = useState(false);
   async function retry(talk: TalkProgress) {
     try {
       await request(`/api/v1/talks/${talk.id}/retry`, { method: 'POST' });
@@ -43,6 +44,28 @@ export function Processing(
     } catch (reason) {
       setError((reason as Error).message);
     }
+  }
+
+  /** Пересчёт интереса отделов одного доклада: новая версия отбора ставится в очередь. */
+  async function rescreen(talk: TalkProgress) {
+    setError('');
+    try {
+      await request(`/api/v1/talks/${talk.id}/screening`, { method: 'POST' });
+      refresh();
+    } catch (reason) {
+      setError((reason as Error).message);
+    }
+  }
+
+  async function startProcessing() {
+    setStarting(true); setError('');
+    try {
+      await request(`/api/v1/conferences/${conferenceId}/processing`, { method: 'POST' });
+      refresh();
+    } catch (reason) {
+      setError((reason as Error).message);
+    }
+    finally { setStarting(false); }
   }
 
   async function confirmAll() {
@@ -72,7 +95,8 @@ export function Processing(
       {notice && <p role="status">{notice}</p>}
       {(error || loadError) && <p role="alert">{error || loadError}</p>}
       {progress && !progress.processing_started && (
-        <p className="notice">Обработка ещё не запущена: подтвердите доклады на предыдущем этапе.</p>
+        <div className="row"><p className="notice">Обработка ещё не запущена: подтвердите доклады на предыдущем этапе.</p>
+          {!!progress.talks.length && <button className="primary" disabled={starting} onClick={() => void startProcessing()}>Запустить обработку</button>}</div>
       )}
       {progress?.processing_started && !progress.talks.length && (
         <p className="notice">
@@ -114,7 +138,7 @@ export function Processing(
               {progress.talks.map((talk) => {
                 const job = jobLabel(talk);
                 return (
-                  <Fragment key={talk.id}><tr>
+                  <Fragment key={talk.id}><tr className="talk-row">
                     <th scope="row">{talk.section} · {talk.order}. {talk.title ?? 'Без названия'}</th>
                     <td>
                       <span className={`pill ${statusTone[talk.status] ?? ''}`}>{talk.card_only && talk.status === 'processed' ? 'Карточка готова' : talkStatuses[talk.status] ?? talk.status}</span>
@@ -136,8 +160,10 @@ export function Processing(
                       </button>
                       {talk.job === 'failed' && <button onClick={() => void retry(talk)}>Повторить</button>}
                       {(talk.job === 'paused' || talk.screening?.state === 'paused') && <button onClick={() => void retry(talk)}>Продолжить</button>}
+                      {talk.screening && !['queued', 'running'].includes(talk.screening.state)
+                        && <button onClick={() => void rescreen(talk)}>Пересчитать отбор</button>}
                     </td>
-                  </tr>{talk.screening && <tr><td colSpan={4}><Interest key={talk.screening.version} talkId={talk.id} value={talk.screening} refresh={refresh} /></td></tr>}</Fragment>
+                  </tr>{talk.screening && <tr className="interest-row"><td colSpan={4}><Interest key={talk.screening.version} talkId={talk.id} value={talk.screening} refresh={refresh} /></td></tr>}</Fragment>
                 );
               })}
             </tbody>
