@@ -142,11 +142,16 @@ legend { margin-bottom: 1rem; font-weight: 600; }
 .manual-talks { margin: 1.25rem 0; }
 .manual-talks > summary { color: var(--accent); font-size: .85rem; }
 .manual-talks > .card { padding-top: 1.5rem; }
-.talk-editor { border-bottom: 1px solid var(--border); }
+.talk-editor { padding: 0 1.25rem; border-bottom: 1px solid var(--border); }
 .talk-editor > summary { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; list-style: none; padding: 1.5rem 0; }
 .talk-editor summary strong { font-size: 1rem; font-weight: 600; }
 .detail-action { color: var(--accent); font-size: .85rem; }
 .talk-editor-body { padding: 0 0 1.5rem; max-width: 850px; }
+/* Развёрнутый доклад выделяется цветом и поднимается к верхней границе экрана;
+   у правленого доклада остаётся красная марка «изменён». */
+.talk-editor { scroll-margin-top: 1rem; transition: background-color .16s; }
+.talk-editor.open { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.edited-mark { padding: .15rem .7rem; background: var(--bad); color: #fff; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
 .source-binding { padding: 1rem 1.25rem; margin: 1.25rem 0; background: var(--subtle); }
 .binding-editor { margin-top: 1.5rem; }
 .binding-editor > summary { color: var(--accent); margin-bottom: 1rem; }
@@ -260,3 +265,8 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
 .processing-table th:first-child { width: 42%; }
 .processing-table .pill { white-space: normal; word-break: normal; }
 .processing-table .interest-details { max-width: 75ch; }
+/* Доклады отделены друг от друга заметной границей, а секция интереса отделов
+   примыкает к своему докладу без разрыва. */
+.processing-table tbody tr.talk-row > th,
+.processing-table tbody tr.talk-row > td { border-top: 2px solid var(--border); border-bottom: none; }
+.processing-table tbody tr.interest-row > td { border-top: none; border-bottom: 2px solid var(--border); padding-top: 0; }
