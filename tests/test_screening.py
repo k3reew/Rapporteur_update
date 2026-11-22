@@ -440,3 +440,18 @@ def test_rescreen_single_talk_queues_only_that_talk(tmp_path: Path) -> None:
         states = {item["talk_id"]: item["state"] for item in screening_list}
         assert states == {first: "queued", second: "not_started"}
         assert client.post("/api/v1/talks/missing/screening").status_code == 404
+
+
+def test_department_delete_removes_regulation(tmp_path: Path) -> None:
+    application = create_app(tmp_path, process=False)
+    with TestClient(application) as client:
+        dep = client.post(
+            "/api/v1/departments",
+            params={"name": "Отдел хранения", "filename": "положение.txt"},
+            content="Отдел отвечает за хранение материалов.".encode(),
+            headers={"Content-Type": "application/octet-stream"},
+        ).json()
+        assert client.get("/api/v1/departments").json()[0]["id"] == dep["id"]
+        assert client.delete(f"/api/v1/departments/{dep['id']}").status_code == 204
+        assert client.get("/api/v1/departments").json() == []
+        assert client.delete(f"/api/v1/departments/{dep['id']}").status_code == 404
