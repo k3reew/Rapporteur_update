@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+import re
 import sqlite3
 import time
 from collections import defaultdict
@@ -1034,7 +1035,7 @@ def propose(
                         section = matched.section
                     title = matched.title or title
                     speakers = [Speaker(name=name) for name in matched.speakers] or speakers
-                    text = " ".join(material_text.casefold().split())
+                    text = _normalized(material_text)
                     needs_review = (
                         matched.confidence < 0.85
                         or bool(title and " ".join(title.casefold().split()) not in text)
@@ -1046,27 +1047,24 @@ def propose(
                         and matched.talk_index < len(proposed)
                     ):
                         target = proposed[matched.talk_index]
-                        if target.section is None:
-                            target.section = section
-                        target.links.append(Link(file_id=file["id"]))
+                        targets = {
+                            m.talk_index
+                            for m in matches
+                            if m.confidence >= 0.85 and m.talk_index is not None
+                        }
+                        target_title = _normalized(target.title)
                         if (
-                            needs_review
-                            or _conflicting_talk(target, talk_id, speakers)
-                            or len(
-                                {
-                                    m.talk_index
-                                    for m in matches
-                                    if m.confidence >= 0.85 and m.talk_index is not None
-                                }
-                            )
-                            > 1
-                            or not title
-                            or title.casefold() != target.title.casefold()
+                            not needs_review
+                            and not _conflicting_talk(target, talk_id, speakers)
+                            and len(targets) == 1
+                            and target_title
+                            and re.search(rf"(?<!\w){re.escape(target_title)}(?!\w)", text)
                         ):
-                            target.reason = (
-                                f"Нужна проверка: связь с материалом {file['relative_path']}."
-                            )
-                        continue
+                            if target.section is None:
+                                target.section = section
+                            target.links.append(Link(file_id=file["id"]))
+                            continue
+                        needs_review = True
                 else:
                     source = " ".join(material_text.casefold().split())
                     speakers = [
@@ -1081,7 +1079,8 @@ def propose(
                 p
                 for p in proposed
                 if (
-                    p.title.casefold() == title.casefold()
+                    not needs_review
+                    and _normalized(p.title) == _normalized(title)
                     and not _conflicting_talk(p, talk_id, speakers)
                 )
                 or (talk_id is not None and p.talk_id == talk_id)

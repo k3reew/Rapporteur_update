@@ -156,6 +156,18 @@ def test_operator_groups_content_across_provisional_folders(tmp_path: Path) -> N
                     "role": "context",
                 }
             ),
+            *[
+                json.dumps(
+                    {
+                        "title": f"Доклад номер {number}",
+                        "speakers": [],
+                        "talk_index": 0,
+                        "confidence": 1,
+                        "reason": "Совпадение",
+                    }
+                )
+                for number in range(11)
+            ],
         ]
     )
     app = create_app(tmp_path, client=lambda _: llm, process=False)
@@ -171,10 +183,18 @@ def test_operator_groups_content_across_provisional_folders(tmp_path: Path) -> N
             },
         ).json()["id"]
         base = f"/api/v1/conferences/{cid}"
+        uploaded = {}
         for path, content in (
             ("01_Секция/01_Иванов/метод.txt", "Кэширование. Описание эксперимента LRU."),
-            ("02_Другая/02_Доклад/документ.txt", "Сравнение кэшей. Результаты эксперимента LRU."),
+            (
+                "02_Другая/02_Доклад/документ.txt",
+                "Сравнение кэшей. Приложение к докладу «Кэширование».",
+            ),
             ("03_Встреча/03_Открытие/слово.txt", "Приветствие. Организационное открытие."),
+            *(
+                (f"04_Исследования/{n:02}.txt", f"Доклад номер {n}. Изучение волн.")
+                for n in range(11)
+            ),
         ):
             upload = client.post(
                 base + "/materials",
@@ -183,10 +203,12 @@ def test_operator_groups_content_across_provisional_folders(tmp_path: Path) -> N
                 content=content.encode(),
             )
             assert upload.status_code == 201, upload.text
+            uploaded[path] = upload.json()["id"]
         assert client.post(base + "/preparation").status_code == 202
         assert app.state.processor.run_once()
         state = client.get(base + "/preparation").json()
         assert state["job"] == "done", state
-        assert len(state["talks"]) == 1
+        assert len(state["talks"]) == 12
         assert len(state["talks"][0]["links"]) == 2
-        assert state["context_file_ids"] == [upload.json()["id"]]
+        assert all(len(talk["links"]) == 1 for talk in state["talks"][1:])
+        assert state["context_file_ids"] == [uploaded["03_Встреча/03_Открытие/слово.txt"]]
