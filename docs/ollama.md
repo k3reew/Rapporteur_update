@@ -61,3 +61,33 @@ RAPPORTEUR_PROFILE=server
 - Чтение локального манифеста. [src/rapporteur/llm/profiles.py](../src/rapporteur/llm/profiles.py)
 - Список и сохранение модели. [src/rapporteur/model_choice.py](../src/rapporteur/model_choice.py)
 - Запросы к Ollama. [src/rapporteur/llm/client.py](../src/rapporteur/llm/client.py)
+## Ollama на хосте Docker Desktop
+
+Запустите Ollama на компьютере с Docker Desktop. Профиль `local` по умолчанию
+использует `qwen3.5:9b`. Для пробного запуска с меньшей моделью выполните
+`ollama pull qwen3.5:4b`, затем выберите её в «Настройках» приложения.
+
+В PowerShell из каталога исходников выполните команды. Порт 18764 и имя проекта выделены
+для локальной проверки. Материалы и база пишутся в каталог `storage` внутри этой копии.
+
+```powershell
+$env:INFERENCE_ENGINE = 'ollama'
+$env:OLLAMA_HOST_URL = 'http://host.docker.internal:11434'
+$env:RAPPORTEUR_PROFILE = 'local'
+$env:RAPPORTEUR_OLLAMA_APP_IMAGE = 'rapporteur:0.5.0-ollama-local'
+$env:WEB_PORT = '18764'
+New-Item -ItemType Directory -Path storage -Force | Out-Null
+docker compose -p rapporteur-ollama-local --profile host-ollama up --build -d --wait app-ollama-host
+```
+
+Откройте [страницу приложения](http://127.0.0.1:18764), затем «Настройки». Там появится
+статус Ollama и список установленных моделей. Если сервис недоступен, убедитесь, что
+`ollama list` работает на хосте. Адрес в `OLLAMA_HOST_URL` должен быть доступен из
+контейнера. Docker Desktop предоставляет для этого имя
+[`host.docker.internal`](https://docs.docker.com/desktop/features/networking/networking-how-tos/#connect-a-container-to-a-service-on-the-host).
+
+Для запуска через GNU Make задайте те же параметры в `.env`, добавьте
+`COMPOSE_PROJECT_NAME=rapporteur-ollama-local` и выполните `make up`. При
+`INFERENCE_ENGINE=ollama` непустой `OLLAMA_HOST_URL` выбирает Ollama на хосте.
+Без него `OLLAMA_NETWORK` выбирает Ollama в общей сети Docker, а без обоих параметров
+запускается Ollama из Compose. Для серверных режимов vLLM укажите `INFERENCE_ENGINE=vllm`.

@@ -19,6 +19,19 @@ def test_compose_keeps_inference_internal_and_has_no_speech_services() -> None:
     assert services["pull"]["deploy"] == {}
 
 
+def test_host_ollama_uses_only_app_storage_and_remote_endpoint() -> None:
+    compose = yaml.safe_load(Path("compose.yaml").read_text(encoding="utf-8"))
+    app = compose["services"]["app-ollama-host"]
+    assert app["profiles"] == ["host-ollama"]
+    assert app["environment"]["OLLAMA_URL"] == (
+        "${OLLAMA_HOST_URL:-http://host.docker.internal:11434}"
+    )
+    assert app["environment"]["RAPPORTEUR_PROFILE"] == "${RAPPORTEUR_PROFILE:-local}"
+    assert [volume["target"] for volume in app["volumes"]] == ["/data"]
+    assert "depends_on" not in app
+    assert "deploy" not in app
+
+
 def test_server_profile_uses_actual_manifest_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -122,15 +135,27 @@ def test_multipart_download_checks_ranges_and_assembled_hash(
 
 
 @pytest.mark.parametrize(
-    ("mode", "expected"),
+    ("options", "expected"),
     [
-        ("bf16", ["vllm"]),
-        ("gptq-single", ["vllm-gptq"]),
-        ("gptq-dual", ["vllm-gptq", "vllm-gptq-second"]),
+        (["INFERENCE_ENGINE=vllm", "VLLM_MODE=bf16"], ["app-vllm", "vllm"]),
+        (
+            ["INFERENCE_ENGINE=vllm", "VLLM_MODE=gptq-single"],
+            ["app-vllm", "vllm-gptq"],
+        ),
+        (
+            ["INFERENCE_ENGINE=vllm", "VLLM_MODE=gptq-dual"],
+            ["app-vllm", "vllm-gptq", "vllm-gptq-second"],
+        ),
+        (["INFERENCE_ENGINE=ollama"], ["app", "ollama"]),
+        (["INFERENCE_ENGINE=ollama", "OLLAMA_NETWORK=shared"], ["app-shared"]),
+        (
+            ["INFERENCE_ENGINE=ollama", "OLLAMA_HOST_URL=http://host.docker.internal:11434"],
+            ["app-ollama-host"],
+        ),
     ],
 )
-def test_make_start_selects_only_the_requested_gpu_services(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, expected: list[str]
+def test_make_start_selects_only_the_requested_inference_services(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, options: list[str], expected: list[str]
 ) -> None:
     import json
     import os
@@ -155,15 +180,17 @@ def test_make_start_selects_only_the_requested_gpu_services(
     docker.chmod(0o755)
     monkeypatch.setenv("COMMANDS", str(commands))
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+    for name in ("OLLAMA_HOST_URL", "OLLAMA_NETWORK"):
+        monkeypatch.delenv(name, raising=False)
     subprocess.run(
-        ["make", "start", "INFERENCE_ENGINE=vllm", f"VLLM_MODE={mode}"],
+        ["make", "start", *options],
         check=True,
         cwd=tmp_path,
     )
     lines = commands.read_text().splitlines()
     assert lines[0] == "doctor"
     started = json.loads(lines[-1])
-    assert started[started.index("up") + 1 : started.index("--detach")] == ["app-vllm", *expected]
+    assert started[started.index("up") + 1 : started.index("--detach")] == expected
     assert "--no-build" in started and "--pull" in started and "never" in started
 
 

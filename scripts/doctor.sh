@@ -3,7 +3,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ -f .env ]] || { echo 'Нет .env: выполните cp .env.example .env'; exit 1; }
 command -v docker >/dev/null || { echo 'Установите Docker Engine и плагин Compose'; exit 1; }
-command -v nvidia-smi >/dev/null || { echo 'Установите драйвер NVIDIA'; exit 1; }
 docker compose config --quiet
 # Parse only values we own; never execute .env as a shell script.
 value() {
@@ -17,6 +16,11 @@ bind=$(value WEB_BIND_ADDRESS 127.0.0.1)
 llm=$(value LLM_GPU_ID 0)
 engine=$(value INFERENCE_ENGINE ollama)
 [[ "$engine" == ollama || "$engine" == vllm ]] || { echo 'INFERENCE_ENGINE: укажите vllm или ollama'; exit 1; }
+host_url=$(value OLLAMA_HOST_URL '')
+models=''
+if [[ "$engine" == vllm || -z "$host_url" ]]; then
+  command -v nvidia-smi >/dev/null || { echo 'Установите драйвер NVIDIA'; exit 1; }
+fi
 if [[ "$engine" == vllm ]]; then
   [[ "$(uname -m)" == x86_64 ]] || { echo 'Для поставки vLLM нужен сервер linux/amd64'; exit 1; }
   mode=$(value VLLM_MODE bf16)
@@ -81,7 +85,7 @@ try:
 except (OSError, ValueError, KeyError, TypeError) as error:
     raise SystemExit(f"Неполный снимок vLLM в {models}: {error}") from error
 PY_CHECKPOINT
-else
+elif [[ -z "$host_url" ]]; then
   nvidia-smi --id="$llm" --query-gpu=uuid,name,memory.free --format=csv
   models=$(value OLLAMA_MODELS_DIR ./models/ollama)
   profile=$(value RAPPORTEUR_PROFILE server)
@@ -92,15 +96,17 @@ else
   [[ -d "$models/manifests" || -d "$models/manifests-v2" ]] || { echo 'Нет манифестов Ollama'; exit 1; }
 fi
 if command -v ss >/dev/null && ss -H -ltn | awk '{print $4}' | grep -qE ":${port}$"; then
-  if ! docker compose --profile shared-ollama --profile vllm --profile vllm-gptq-single --profile vllm-gptq-dual ps --status running --format '{{.Service}}' | grep -qE '^app(-shared|-vllm)?$'; then
+  if ! docker compose --profile shared-ollama --profile host-ollama --profile vllm --profile vllm-gptq-single --profile vllm-gptq-dual ps --status running --format '{{.Service}}' | grep -qE '^app(-shared|-ollama-host|-vllm)?$'; then
     echo "Порт $bind:$port занят: измените WEB_PORT в .env"; exit 1
   fi
 fi
 storage=${RAPPORTEUR_STORAGE:-$(value RAPPORTEUR_STORAGE ./storage)}
 storage_path=$(realpath -m -- "$storage")
-models_path=$(realpath -m -- "$models")
-if [[ "$storage_path" == "$models_path" || "$storage_path" == "${models_path%/}/"* || "$models_path" == "${storage_path%/}/"* ]]; then
-  echo "Каталоги моделей и хранилища пересекаются: $models_path и $storage_path"; exit 1
+if [[ -n "$models" ]]; then
+  models_path=$(realpath -m -- "$models")
+  if [[ "$storage_path" == "$models_path" || "$storage_path" == "${models_path%/}/"* || "$models_path" == "${storage_path%/}/"* ]]; then
+    echo "Каталоги моделей и хранилища пересекаются: $models_path и $storage_path"; exit 1
+  fi
 fi
 parent="$storage"; [[ -d "$parent" ]] || parent=$(dirname "$parent")
 [[ -w "$parent" ]] || { echo "Нет права записи в $parent"; exit 1; }

@@ -13,7 +13,11 @@ tool=src/rapporteur/storage_access.py
 tool=$(realpath -e -- "$tool")
 # Normalized Compose includes overrides; --images also lists dependency images.
 app=app
-if [[ "${INFERENCE_ENGINE:-$(value INFERENCE_ENGINE ollama)}" == vllm ]]; then app=app-vllm; fi
+if [[ "${INFERENCE_ENGINE:-$(value INFERENCE_ENGINE ollama)}" == vllm ]]; then
+  app=app-vllm
+elif [[ -n "${OLLAMA_HOST_URL:-$(value OLLAMA_HOST_URL '')}" ]]; then
+  app=app-ollama-host
+fi
 services=("$app")
 if [[ "$app" == app-vllm ]]; then services+=(vllm vllm-gptq vllm-gptq-second); fi
 config=$(docker compose config --format yaml "${services[@]}")

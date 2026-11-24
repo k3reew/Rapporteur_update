@@ -181,6 +181,19 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
     networks: [edge, shared, internal]
 
+  # Ollama запущена на хосте. Веса и GPU остаются под управлением хоста.
+  app-ollama-host:
+    <<: *app
+    profiles: [host-ollama]
+    environment:
+      RAPPORTEUR_PROFILE: ${RAPPORTEUR_PROFILE:-local}
+      OLLAMA_URL: ${OLLAMA_HOST_URL:-http://host.docker.internal:11434}
+    volumes:
+      - type: bind
+        source: ${RAPPORTEUR_STORAGE:-./storage}
+        target: /data
+    networks: [egress]
+
   # Модели лежат во внешнем каталоге OLLAMA_MODELS_DIR (blobs/ и manifests/) и подключаются
   # только на чтение (ADR-010). Ollama при старте переносит манифесты в manifests-v2, поэтому
   # манифесты (килобайты) копируются в память контейнера, а веса подключаются ссылкой.

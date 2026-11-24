@@ -21,9 +21,11 @@ export VLLM_MODE
 MODEL ?= qwen3.5:27b
 # Ollama другого проекта: при указанной сети используется app-shared.
 OLLAMA_NETWORK ?= $(shell sed -n 's/^OLLAMA_NETWORK=//p' .env 2>/dev/null)
+OLLAMA_HOST_URL ?= $(shell sed -n 's/^OLLAMA_HOST_URL=//p' .env 2>/dev/null)
+export OLLAMA_HOST_URL
 RAPPORTEUR_STORAGE ?= $(or $(shell sed -n 's/^RAPPORTEUR_STORAGE=//p' .env 2>/dev/null),./storage)
-ALL := $(COMPOSE) --profile shared-ollama --profile vllm --profile vllm-gptq-single --profile vllm-gptq-dual
-RUNTIME_SERVICES := app app-shared app-vllm ollama vllm vllm-gptq vllm-gptq-second
+ALL := $(COMPOSE) --profile shared-ollama --profile host-ollama --profile vllm --profile vllm-gptq-single --profile vllm-gptq-dual
+RUNTIME_SERVICES := app app-shared app-ollama-host app-vllm ollama vllm vllm-gptq vllm-gptq-second
 ifeq ($(INFERENCE_ENGINE),vllm)
 WAIT_TIMEOUT := 420
 ifeq ($(VLLM_MODE),bf16)
@@ -42,6 +44,9 @@ override export RAPPORTEUR_INFERENCE_SLOTS := 1
 endif
 endif
 RUN = $(COMPOSE) --profile $(VLLM_PROFILE)
+else ifneq ($(strip $(OLLAMA_HOST_URL)),)
+RUN = $(COMPOSE) --profile host-ollama
+ACTIVE_SERVICES := app-ollama-host
 else ifneq ($(strip $(OLLAMA_NETWORK)),)
 RUN = $(COMPOSE) --profile shared-ollama
 ACTIVE_SERVICES := app-shared
@@ -176,6 +181,6 @@ storage-check:
 
 ## make storage-repair — остановить писателей, исправить владельца/права только хранилища и проверить доступ
 storage-repair:
-	$(ALL) stop app app-shared app-vllm
+	$(ALL) stop app app-shared app-ollama-host app-vllm
 	@bash scripts/storage-access.sh repair
 	@bash scripts/storage-access.sh check
