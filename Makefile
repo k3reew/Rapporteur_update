@@ -13,40 +13,57 @@ NPM_BEFORE := 2026-10-20
 # Образ Ollama из compose.yaml: по digest на машине сборки, в комплекте — тегом без digest.
 OLLAMA_PINNED = $(shell $(COMPOSE) config --images ollama)
 OLLAMA_TAG = $(firstword $(subst @, ,$(OLLAMA_PINNED)))
-BUNDLE := bundle
+BUNDLE ?= bundle
+INFERENCE_ENGINE ?= $(or $(shell sed -n 's/^INFERENCE_ENGINE=//p' .env 2>/dev/null),ollama)
+export INFERENCE_ENGINE
+VLLM_MODE ?= $(or $(shell sed -n 's/^VLLM_MODE=//p' .env 2>/dev/null),bf16)
+export VLLM_MODE
 MODEL ?= qwen3.5:27b
-ASR_MODELS_DIR ?= $(or $(shell sed -n 's/^ASR_MODELS_DIR=//p' .env 2>/dev/null),./models/asr)
-# Ollama другого проекта: OLLAMA_NETWORK в .env или окружении включает app-shared без своей
-# Ollama (docs/ollama.md). Иначе — приложение и своя Ollama.
+# Ollama другого проекта: при указанной сети используется app-shared.
 OLLAMA_NETWORK ?= $(shell sed -n 's/^OLLAMA_NETWORK=//p' .env 2>/dev/null)
-# Хранилище приложения на хосте (RAPPORTEUR_STORAGE в .env), по умолчанию storage/.
 RAPPORTEUR_STORAGE ?= $(or $(shell sed -n 's/^RAPPORTEUR_STORAGE=//p' .env 2>/dev/null),./storage)
-# Все режимы: down, stop, ps и logs видят app, app-shared и оба варианта ASR.
-ALL := $(COMPOSE) --profile shared-ollama --profile asr-gpu --profile asr-cpu
-ifneq ($(strip $(OLLAMA_NETWORK)),)
-RUN = $(COMPOSE) --profile shared-ollama $$profile up app-shared $$service
+ALL := $(COMPOSE) --profile shared-ollama --profile vllm --profile vllm-gptq-single --profile vllm-gptq-dual
+RUNTIME_SERVICES := app app-shared app-vllm ollama vllm vllm-gptq vllm-gptq-second
+ifeq ($(INFERENCE_ENGINE),vllm)
+WAIT_TIMEOUT := 420
+ifeq ($(VLLM_MODE),bf16)
+VLLM_PROFILE := vllm
+ACTIVE_SERVICES := app-vllm vllm
 else
-RUN = $(COMPOSE) $$profile up
+VLLM_PROFILE := vllm-$(VLLM_MODE)
+ACTIVE_SERVICES := app-vllm vllm-gptq
+export VLLM_APP_PROFILE := server-vllm-gptq
+export VLLM_URL := http://vllm-gptq:8000
+ifeq ($(VLLM_MODE),gptq-dual)
+ACTIVE_SERVICES += vllm-gptq-second
+export VLLM_SECOND_URL := http://vllm-gptq-second:8000
+else
+override export RAPPORTEUR_INFERENCE_SLOTS := 1
 endif
+endif
+RUN = $(COMPOSE) --profile $(VLLM_PROFILE)
+else ifneq ($(strip $(OLLAMA_NETWORK)),)
+RUN = $(COMPOSE) --profile shared-ollama
+ACTIVE_SERVICES := app-shared
+else
+RUN = $(COMPOSE)
+ACTIVE_SERVICES := app ollama
+endif
+WAIT_TIMEOUT ?= 180
 
 .DEFAULT_GOAL := help
-.PHONY: bundle-docs help up start down ps logs config check lint test format pull lock bundle install prepare doctor storage-check storage-repair
+.PHONY: bundle-docs help up start down ps logs config check lint test format pull lock bundle install prepare prepare-vllm bundle-vllm doctor storage-check storage-repair acceptance-logs
 
 help:
 	@grep -E '^## ' Makefile | sed 's/^## //'
 
-## make up      — собрать и запустить приложение, Ollama и ASR по ASR_MODE, http://127.0.0.1:18763
+## make up      — собрать приложение и запустить выбранный профиль, http://127.0.0.1:18763
 ## make start   — запустить без сборки и скачивания образов (машина без интернета)
 up start:
-	@set -eu; mode=$$(bash scripts/asr-mode.sh); ASR_MODE="$$mode" bash scripts/doctor.sh; \
-	mkdir -p "$(RAPPORTEUR_STORAGE)"; \
-	service=; profile=; export ASR_ENABLED=1; \
-	case "$$mode" in \
-	  gpu) service=asr; profile="--profile asr-gpu"; $(ALL) stop asr-cpu ;; \
-	  cpu) service=asr-cpu; profile="--profile asr-cpu"; $(ALL) stop asr ;; \
-	  off) ASR_ENABLED=0; $(ALL) stop asr asr-cpu ;; \
-	esac; \
-	$(RUN) --detach --wait --wait-timeout 180 $(if $(filter up,$@),--build,--no-build --pull never)
+	@bash scripts/doctor.sh
+	mkdir -p "$(RAPPORTEUR_STORAGE)"
+	$(ALL) stop $(filter-out $(ACTIVE_SERVICES),$(RUNTIME_SERVICES))
+	$(RUN) up $(ACTIVE_SERVICES) --detach --wait --wait-timeout $(WAIT_TIMEOUT) $(if $(filter up,$@),--build,--no-build --pull never)
 
 ## make down    — остановить; база, материалы и справки остаются в storage/
 down:
@@ -56,13 +73,16 @@ down:
 ps:
 	$(ALL) ps
 
-## make logs    — журнал приложения, Ollama и ASR
+## make logs    — журнал приложения и локальной модели
 logs:
 	$(ALL) logs --follow
 
+acceptance-logs:
+	@$(ALL) logs --no-color --timestamps $(ACTIVE_SERVICES)
+
 ## make config  — проверить compose.yaml и .env без запуска
 config:
-	$(COMPOSE) config --quiet
+	$(ALL) config --quiet
 
 ## make check   — линтеры, типы, тесты и сборка фронтенда в контейнерах
 check: lint test
@@ -93,41 +113,23 @@ lock:
 	  -v $(CURDIR)/frontend:/app -w /app $(NODE_IMAGE) \
 	  npm install --package-lock-only --ignore-scripts --no-audit --no-fund --before=$(NPM_BEFORE)
 
-## make bundle [MODEL="qwen3.5:9b …"] — комплект для машины без интернета в bundle/
+## make bundle [MODEL="qwen3.5:9b …"] — комплект прежнего профиля Ollama в bundle/
 ## По умолчанию в комплект включается серверная qwen3.5:27b (docs/offline.md).
 bundle:
-	$(COMPOSE) build app asr
+	$(COMPOSE) build app
 	docker pull $(OLLAMA_PINNED)
 	docker tag $(OLLAMA_PINNED) $(OLLAMA_TAG)
 	mkdir -p $(BUNDLE)/models
 	$(COMPOSE) run --rm export-model $(MODEL)
-	@set -eu; source="$(ASR_MODELS_DIR)"; target="$(BUNDLE)/models/asr"; \
-	if [ "$$source" -ef "$$target" ]; then exit 0; fi; \
-	source_path=$$(realpath -e -- "$$source"); \
-	case "$$source_path" in \
-	  "$$(realpath -m -- "$$target")"/*) echo "ASR_MODELS_DIR находится внутри $$target" >&2; exit 1 ;; \
-	esac; \
-	stage=$$(mktemp -d "$(BUNDLE)/models/.asr-XXXXXX"); \
-	trap 'rm -rf -- "$$stage"' EXIT; \
-	mkdir "$$stage/new"; cp -a "$$source/." "$$stage/new/"; \
-	if [ -e "$$target" ] || [ -L "$$target" ]; then mv -T "$$target" "$$stage/old"; fi; \
-	if ! mv -T "$$stage/new" "$$target"; then \
-	  if [ -e "$$stage/old" ] || [ -L "$$stage/old" ]; then \
-	    if ! mv -T "$$stage/old" "$$target"; then \
-	      trap - EXIT; echo "Прежний комплект ASR сохранён в $$stage/old" >&2; \
-	    fi; \
-	  fi; \
-	  exit 1; \
-	fi
-	bash -o pipefail -c 'docker save rapporteur:local rapporteur-asr:local $(OLLAMA_TAG) | gzip -1 > $(BUNDLE)/images.tar.gz.partial'
+	bash -o pipefail -c 'docker save rapporteur:local $(OLLAMA_TAG) | gzip -1 > $(BUNDLE)/images.tar.gz.partial'
 	mv $(BUNDLE)/images.tar.gz.partial $(BUNDLE)/images.tar.gz
 	cp compose.yaml Makefile $(BUNDLE)/
 	mkdir -p $(BUNDLE)/scripts
-	cp scripts/doctor.sh scripts/asr-mode.sh $(BUNDLE)/scripts/
+	cp scripts/doctor.sh $(BUNDLE)/scripts/
 	cp scripts/storage-access.sh $(BUNDLE)/scripts/
 	cp src/rapporteur/storage_access.py $(BUNDLE)/scripts/storage-access.py
 	$(MAKE) bundle-docs
-	sed 's|^OLLAMA_MODELS_DIR=.*|OLLAMA_MODELS_DIR=./models|; s|^ASR_MODELS_DIR=.*|ASR_MODELS_DIR=./models/asr|' .env.example > $(BUNDLE)/.env.example
+	sed 's|^INFERENCE_ENGINE=.*|INFERENCE_ENGINE=ollama|; s|^OLLAMA_MODELS_DIR=.*|OLLAMA_MODELS_DIR=./models|' .env.example > $(BUNDLE)/.env.example
 	printf '\n# Образ Ollama из комплекта: тег вместо digest (docs/offline.md).\nOLLAMA_IMAGE=%s\n' \
 	  "$(OLLAMA_TAG)" >> $(BUNDLE)/.env.example
 	cd $(BUNDLE) && find images.tar.gz models compose.yaml Makefile .env.example README.md WORKFLOW.md ACCEPTANCE.md VALIDATION.md scripts docs -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
@@ -146,15 +148,23 @@ bundle-docs:
 install:
 	sha256sum --check --quiet SHA256SUMS
 	docker load --input images.tar.gz
+	@if [ -f vllm-image.tar ]; then docker load --input vllm-image.tar; fi
 	@test -f .env || { cp .env.example .env; echo "Создан .env: проверьте WEB_BIND_ADDRESS и WEB_PORT"; }
 
-## make prepare — скачать обе модели и собрать образы на машине с интернетом
+## make prepare — подготовить прежний профиль Ollama на машине с интернетом
 prepare:
-	mkdir -p "$(ASR_MODELS_DIR)"
 	@mkdir -p $$(sed -n 's/^OLLAMA_MODELS_DIR=//p' .env)
-	$(COMPOSE) build app asr
+	$(COMPOSE) build app
 	$(MAKE) pull MODEL=$(MODEL)
-	$(COMPOSE) run --rm download-asr
+
+## make prepare-vllm BUNDLE=/path — скачать закреплённые модели и образ vLLM на машине с интернетом
+prepare-vllm:
+	PYTHONPATH=src python3 scripts/fetch-vllm-models.py "$(BUNDLE)"
+	bash scripts/fetch-vllm-image.sh "$(BUNDLE)"
+
+## make bundle-vllm BUNDLE=/path — собрать полный офлайн-комплект после prepare-vllm
+bundle-vllm:
+	bash scripts/bundle-vllm.sh "$(BUNDLE)"
 
 ## make doctor — проверить настройки, порт, GPU и наличие моделей без изменения сервера
 doctor:
@@ -166,6 +176,6 @@ storage-check:
 
 ## make storage-repair — остановить писателей, исправить владельца/права только хранилища и проверить доступ
 storage-repair:
-	$(ALL) stop app app-shared asr asr-cpu
+	$(ALL) stop app app-shared app-vllm
 	@bash scripts/storage-access.sh repair
 	@bash scripts/storage-access.sh check

@@ -20,6 +20,7 @@ from rapporteur.contracts import FragmentDraft, Summary
 from rapporteur.contracts.enums import FragmentKind, ReportFormat, TextOrigin
 from rapporteur.contracts.fragments import TimeLocator
 from rapporteur.errors import UserError
+from rapporteur.ingest.documents import pages
 from rapporteur.ingest.inventory import inspect_file
 from rapporteur.llm.client import ScriptedClient
 from rapporteur.report.assemble import (
@@ -35,6 +36,19 @@ from rapporteur.settings import TEMPLATES_DIR
 
 from .fictional_talk import SLIDES, facts_answer, summary_answer, supported_summary_answer
 from .workflow_support import WorkflowClient, operator_confirms_screening, seed_regulation
+
+
+def test_docx_text_preserves_russian_words_acronyms_and_numbers_in_reading_order() -> None:
+    document = Document()
+    text = "Метод: сравнение политик LRU и LFU на стенде из 4 узлов с 32 ГБ памяти."
+    document.add_paragraph(text)
+    source = io.BytesIO()
+    document.save(source)
+    extracted = pages(
+        source.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert len(extracted) == 1
+    assert " ".join(extracted[0][0].split()) == text
 
 
 @pytest.fixture
@@ -395,14 +409,11 @@ def test_preparation_worker_proposes_unbound_document_and_restores_queue(
 
 
 def test_recordings_are_skipped_without_asr(
-    web: tuple[TestClient, ScriptedClient], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    web: tuple[TestClient, ScriptedClient], tmp_path: Path
 ) -> None:
-    """ASR_MODE=off: подготовка не обращается к ASR, предупреждает и не кэширует пропуск."""
+    """Архивную запись без сохранённого текста пропускают с предупреждением."""
     from uuid import uuid4
 
-    from rapporteur import settings
-
-    monkeypatch.setattr(settings, "ASR_ENABLED", False)
     client, scripted = web
     conference = client.post("/api/v1/conferences", json={"title": "Без ASR"}).json()["id"]
     base = f"/api/v1/conferences/{conference}"
@@ -439,7 +450,6 @@ def test_recordings_are_skipped_without_asr(
     assert "Распознавание речи выключено" in state["warnings"][0]
     assert [talk["title"] for talk in state["talks"]] == ["Кэширование"]
     assert len(list((tmp_path / "cache" / "prepared").iterdir())) == 1
-    assert client.get("/api/v1/system").json()["asr_enabled"] is False
 
     proposal = {
         "version": state["version"],

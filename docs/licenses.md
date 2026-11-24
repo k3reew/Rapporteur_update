@@ -13,4 +13,3 @@
 | --- | --- | --- |
 | AnyIO | MIT | [лицензия проекта](https://github.com/agronholm/anyio/blob/master/LICENSE) |
 | PyYAML | MIT | [лицензия проекта](https://github.com/yaml/pyyaml/blob/main/LICENSE) |
-| Debian FFmpeg (`ffprobe`) | LGPL и GPL для разных компонентов | [пакет Debian и файл Copyright](https://packages.debian.org/stable/ffmpeg); `/usr/share/doc/ffmpeg/copyright` в образе |

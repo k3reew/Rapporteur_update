@@ -1,16 +1,5 @@
-# Весь «Репортёр» — один compose (ADR-014): приложение, Ollama и необязательный ASR.
-# Команды — в Makefile.
-#
-# Сеть internal без выхода наружу: приложение ходит только в Ollama, Ollama — никуда (spec §2).
-# Порт приложения публикуется через сеть edge без NAT: входящие подключения работают,
-# исходящий трафик в другие сети не возвращается.
-#
-# Вместо своей Ollama можно подключиться к Ollama другого проекта: OLLAMA_NETWORK и OLLAMA_URL
-# в .env, затем make up — запустится app-shared без своей Ollama (docs/ollama.md).
-#
-# Распознавание речи необязательно: ASR_MODE в .env (docs/configuration.md). Makefile выбирает
-# профиль asr-gpu (отдельная GPU) или asr-cpu и передаёт приложению ASR_ENABLED. Без профиля
-# ASR не запускается, приложение пропускает записи с предупреждением.
+# Сервер приложений и локальные движки модели. Команды запуска — в Makefile.
+
 name: rapporteur
 
 x-ollama: &ollama
@@ -42,7 +31,7 @@ x-app: &app
   build:
     context: .
     target: app
-  image: rapporteur:local
+  image: ${RAPPORTEUR_OLLAMA_APP_IMAGE:-rapporteur:local}
   restart: unless-stopped
   # Файлы в storage/ принадлежат пользователю, который запускает make.
   user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
@@ -55,7 +44,6 @@ x-app: &app
       source: ${RAPPORTEUR_STORAGE:-./storage}
       target: /data
     - ${OLLAMA_MODELS_DIR:-./models/ollama}:/models/ollama:ro
-    - ${ASR_MODELS_DIR:-./models/asr}:/models/asr:ro
   mem_limit: ${APP_MEMORY:-16g}
   cpus: ${APP_CPUS:-8}
   healthcheck:
@@ -70,44 +58,109 @@ x-app: &app
     start_period: 10s
 
 x-app-environment: &app-environment
-  ASR_URL: http://asr:18764
-  ASR_ENABLED: ${ASR_ENABLED:-0}
   RAPPORTEUR_PROFILE: ${RAPPORTEUR_PROFILE:-server}
   OLLAMA_MODELS_PATH: /models/ollama
-  ASR_MODEL_DIR: /models/asr
-
-# ASR ждут, только если он запущен своим профилем.
-x-asr-dependency: &asr-dependency
-  asr:
-    condition: service_healthy
-    required: false
-  asr-cpu:
-    condition: service_healthy
-    required: false
-
-x-asr: &asr
-  build:
-    context: .
-    target: asr
-  image: rapporteur-asr:local
-  restart: unless-stopped
-  user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-  volumes:
-    - ${RAPPORTEUR_STORAGE:-./storage}:/data
-    - ${ASR_MODELS_DIR:-./models/asr}:/models/asr:ro
-  healthcheck:
-    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18764/health', timeout=3)"]
-    interval: 10s
-    timeout: 5s
-    retries: 6
-
-x-asr-environment: &asr-environment
-  ASR_MODEL_DIR: /models/asr
-  ASR_REVISION: ${ASR_REVISION:-small}
-  ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-}
-  OMP_NUM_THREADS: ${ASR_THREADS:-4}
+  RAPPORTEUR_INFERENCE_SLOTS: ${RAPPORTEUR_INFERENCE_SLOTS:-1}
 
 services:
+  app-vllm:
+    <<: *app
+    image: rapporteur:0.5.0
+    profiles: [vllm, vllm-gptq-single, vllm-gptq-dual]
+    environment:
+      RAPPORTEUR_PROFILE: ${VLLM_APP_PROFILE:-server-vllm}
+      VLLM_URL: ${VLLM_URL:-http://vllm:8000}
+      VLLM_SECOND_URL: ${VLLM_SECOND_URL:-}
+      RAPPORTEUR_INFERENCE_SLOTS: ${RAPPORTEUR_INFERENCE_SLOTS:-2}
+    volumes:
+      - type: bind
+        source: ${RAPPORTEUR_STORAGE:-./storage}
+        target: /data
+    networks: [internal, edge]
+
+  vllm: &vllm
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.32.0@sha256:6ee133356d49ed24cee03dd0cda3d3980279a11c107ce3e752c89e76540f41c9}
+    platform: linux/amd64
+    profiles: [vllm]
+    restart: unless-stopped
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    networks: [internal]
+    shm_size: 2g
+    environment:
+      HOME: /tmp
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - type: bind
+        source: ${VLLM_MODELS_DIR:-./models/vllm/qwen3.5-27b}
+        target: /models/qwen
+        read_only: true
+        bind:
+          create_host_path: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${VLLM_GPU_ID_0:-0}", "${VLLM_GPU_ID_1:-1}"]
+              capabilities: [gpu]
+    command:
+      - --model=/models/qwen
+      - --served-model-name=Qwen/Qwen3.5-27B
+      - --dtype=bfloat16
+      - --tensor-parallel-size=2
+      - --max-model-len=32768
+      - --max-num-seqs=${RAPPORTEUR_INFERENCE_SLOTS:-2}
+      - --reasoning-parser=qwen3
+      - --generation-config=vllm
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+
+  vllm-gptq: &gptq
+    <<: *vllm
+    profiles: [vllm-gptq-single, vllm-gptq-dual]
+    volumes:
+      - type: bind
+        source: ${VLLM_GPTQ_MODELS_DIR:-./models/vllm/qwen3.5-27b-gptq-int4}
+        target: /models/qwen
+        read_only: true
+        bind:
+          create_host_path: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${VLLM_GPU_ID_0:-0}"]
+              capabilities: [gpu]
+    command:
+      - --model=/models/qwen
+      - --served-model-name=Qwen/Qwen3.5-27B-GPTQ-Int4
+      - --dtype=bfloat16
+      - --quantization=gptq_marlin
+      - --tensor-parallel-size=1
+      - --max-model-len=32768
+      - --max-num-seqs=1
+      - --reasoning-parser=qwen3
+      - --generation-config=vllm
+
+  vllm-gptq-second:
+    <<: *gptq
+    profiles: [vllm-gptq-dual]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${VLLM_GPU_ID_1:-1}"]
+              capabilities: [gpu]
+
   app:
     <<: *app
     environment:
@@ -115,7 +168,6 @@ services:
       OLLAMA_URL: http://ollama:11434
     networks: [internal, edge]
     depends_on:
-      <<: *asr-dependency
       ollama:
         condition: service_healthy
 
@@ -128,44 +180,6 @@ services:
       <<: *app-environment
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
     networks: [edge, shared, internal]
-    depends_on: *asr-dependency
-
-  # Распознавание речи на отдельной GPU: ASR_MODE=gpu или auto при двух и более картах.
-  # Карта ASR_GPU_ID должна отличаться от LLM_GPU_ID (проверяет make doctor).
-  asr:
-    <<: *asr
-    profiles: [asr-gpu]
-    networks: [internal]
-    environment:
-      <<: *asr-environment
-      ASR_DEVICE: cuda
-    deploy:
-      resources:
-        limits:
-          cpus: "${ASR_CPUS:-8}"
-          memory: ${ASR_MEMORY:-16g}
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["${ASR_GPU_ID:-1}"]
-              capabilities: [gpu]
-
-  # Распознавание речи на процессоре (ASR_MODE=cpu): единственная GPU остаётся за Ollama.
-  # В сети internal доступен под тем же именем asr.
-  asr-cpu:
-    <<: *asr
-    profiles: [asr-cpu]
-    networks:
-      internal:
-        aliases: [asr]
-    environment:
-      <<: *asr-environment
-      ASR_DEVICE: cpu
-    deploy:
-      resources:
-        limits:
-          cpus: "${ASR_CPUS:-8}"
-          memory: ${ASR_MEMORY:-16g}
 
   # Модели лежат во внешнем каталоге OLLAMA_MODELS_DIR (blobs/ и manifests/) и подключаются
   # только на чтение (ADR-010). Ollama при старте переносит манифесты в manifests-v2, поэтому
@@ -228,19 +242,6 @@ services:
         read_only: true
       - ./bundle/models:/out
     entrypoint: [python, -m, rapporteur.bundle, /models, /out]
-
-  download-asr:
-    image: rapporteur:local
-    profiles: [tools]
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    networks: [egress]
-    environment:
-      ASR_REVISION: ${ASR_REVISION:-small}
-      HF_HUB_OFFLINE: "0"
-      HF_HOME: /tmp/hf
-    volumes:
-      - ${ASR_MODELS_DIR:-./models/asr}:/models/asr
-    entrypoint: [python, -m, rapporteur.offline_models]
 
   # Проверки Python: make check. Исходники с хоста, сети нет.
   dev:

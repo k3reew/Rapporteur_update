@@ -1,9 +1,6 @@
 """Инвентаризация оригинала без рендера и без загрузки записи в память."""
 
 import codecs
-import json
-import math
-import subprocess
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,20 +22,12 @@ from rapporteur.ingest.pptx_reader import read_pptx
 from rapporteur.ingest.titles import pdf_title, pptx_title
 
 MAX_UPLOAD_BYTES = 10 * 1024 * MIB
-MAX_DURATION_MS = 10 * 60 * 60 * 1000
 HEADER_BYTES = 1024
 PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 _PDF_LOCK = Lock()  # PDFium не допускает параллельных вызовов из разных потоков.
 _PROGRAMS = {
     "word/document.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "xl/workbook.xml": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-}
-_AUDIO = {
-    "aac": "audio/aac",
-    "flac": "audio/flac",
-    "mp3": "audio/mpeg",
-    "ogg": "audio/ogg",
-    "wav": "audio/wav",
 }
 
 
@@ -66,13 +55,19 @@ class Inspection:
 def upload_limit(head: bytes) -> int:
     if b"%PDF-" in head or head.startswith(b"PK\x03\x04"):
         return PresentationConfig().max_file_bytes
-    if _looks_like_recording(head):
-        return MAX_UPLOAD_BYTES
     return (
         NotesConfig().max_file_bytes
         if _looks_like_text(head)
         else PresentationConfig().max_file_bytes
     )
+
+
+def require_supported_upload(head: bytes) -> None:
+    if _looks_like_recording(head):
+        raise StageError(
+            FailureCode.UNSUPPORTED_FORMAT,
+            "Аудио и видео в этой версии не обрабатываются. Загрузите текст или презентацию.",
+        )
 
 
 def inspect_file(path: Path, *, program: bool = False) -> Inspection:
@@ -110,8 +105,7 @@ def inspect_file(path: Path, *, program: bool = False) -> Inspection:
         )
     if path.suffix.casefold() == ".doc" and head.startswith(b"\xd0\xcf\x11\xe0"):
         return Inspection(FileKind.PROGRAM if program else FileKind.DOCUMENT, "application/msword")
-    if _looks_like_recording(head):
-        return _recording(path)
+    require_supported_upload(head)
     if _looks_like_text(head):
         check_size(size, NotesConfig().max_file_bytes)
         decoded = decode_notes(path.read_bytes())
@@ -170,57 +164,9 @@ def _looks_like_text(data: bytes) -> bool:
 
 def _looks_like_recording(head: bytes) -> bool:
     return (
-        head.startswith((b"ID3", b"OggS", b"fLaC"))
-        or (head.startswith((b"RIFF", b"RF64")) and head[8:12] == b"WAVE")
+        head.startswith((b"ID3", b"OggS", b"fLaC", b"\x1aE\xdf\xa3", b"#!AMR", b"caff"))
+        or (head.startswith((b"RIFF", b"RF64")) and head[8:12] in (b"WAVE", b"AVI "))
+        or (head.startswith(b"FORM") and head[8:12] in (b"AIFF", b"AIFC"))
         or head[4:8] in {b"ftyp", b"moov", b"mdat", b"wide", b"free"}
         or (len(head) >= 2 and head[0] == 255 and head[1] & 224 == 224)
-    )
-
-
-def _recording(path: Path) -> Inspection:
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-protocol_whitelist",
-                "file",
-                "-format_whitelist",
-                "aac,flac,mov,mp3,ogg,wav",
-                "-enable_drefs",
-                "0",
-                "-show_entries",
-                "format=format_name,duration:stream=codec_type:stream_disposition=attached_pic",
-                "-of",
-                "json",
-                "-i",
-                str(path.resolve()),
-            ],
-            check=True,
-            capture_output=True,
-            timeout=30,
-        )
-        report = json.loads(result.stdout)
-        fmt = report["format"]["format_name"].split(",")[0]
-        duration = float(report["format"]["duration"])
-        if not math.isfinite(duration) or duration <= 0:
-            raise ValueError
-        kinds = {
-            stream["codec_type"]
-            for stream in report["streams"]
-            if not stream.get("disposition", {}).get("attached_pic")
-        }
-        if (fmt != "mov" and "audio" not in kinds) or not kinds & {"audio", "video"}:
-            raise ValueError
-    except (subprocess.SubprocessError, KeyError, ValueError) as error:
-        raise StageError(
-            FailureCode.BROKEN_FILE, "Не удалось прочитать запись и её длительность"
-        ) from error
-    if duration * 1000 > MAX_DURATION_MS:
-        raise StageError(FailureCode.FILE_TOO_LARGE, "Длительность записи превышает 10 часов")
-    if "video" in kinds:
-        return Inspection(FileKind.VIDEO, "video/mp4", duration_ms=max(1, round(duration * 1000)))
-    return Inspection(
-        FileKind.AUDIO, _AUDIO.get(fmt, "audio/mp4"), duration_ms=max(1, round(duration * 1000))
     )

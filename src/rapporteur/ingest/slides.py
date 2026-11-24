@@ -13,7 +13,7 @@ from rapporteur.errors import FailureCode, StageError
 from rapporteur.ingest.detect import PresentationFormat, detect_presentation
 from rapporteur.ingest.dictionary import build_dictionary
 from rapporteur.ingest.limits import PresentationConfig, check_size, check_zip
-from rapporteur.ingest.pdf_reader import open_pdf, read_page
+from rapporteur.ingest.pdf_reader import open_pdf, read_page, text_in_reading_order
 from rapporteur.ingest.pptx_reader import ExtractedSlide, read_pptx
 from rapporteur.ingest.render import pptx_to_pdf, render_page
 from rapporteur.ingest.titles import (
@@ -27,7 +27,7 @@ from rapporteur.storage import Storage
 from rapporteur.text import normalize_text
 
 # Версия разбора входит в ключ кэша: после правки разбора презентации разбираются заново.
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 @dataclass(frozen=True)
@@ -131,6 +131,9 @@ def _parse_pdf(data: bytes, work: Path, config: PresentationConfig) -> _Parsed:
         if len(pdf) == 0:
             raise StageError(FailureCode.BROKEN_FILE, "В PDF нет страниц")
         pages = [read_page(pdf, page_no) for page_no in range(1, len(pdf) + 1)]
+        text_layer = text_in_reading_order(path, len(pdf))
+        if text_layer is not None:
+            pages = [replace(page, text=text) for page, text in zip(pages, text_layer, strict=True)]
     except BaseException:
         pdf.close()
         raise

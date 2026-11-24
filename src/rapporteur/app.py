@@ -21,7 +21,7 @@ from rapporteur import (
 )
 from rapporteur.api import api
 from rapporteur.errors import UserError
-from rapporteur.llm.client import make_client
+from rapporteur.llm.client import VllmPool, make_client
 from rapporteur.processing import ClientFactory, Processor
 from rapporteur.storage import Storage
 from rapporteur.storage_access import StoragePermissionError, access_error, check_storage
@@ -48,10 +48,12 @@ def create_app(
     check_storage(data_dir)
     database = db.Database(data_dir / "rapporteur.db")
     storage = Storage(data_dir)
+    endpoints = settings.vllm_endpoints()
+    vllm = VllmPool(endpoints) if len(endpoints) > 1 else endpoints[0]
     processor = Processor(
         database,
         storage,
-        client or (lambda profile: make_client(profile, settings.OLLAMA_URL)),
+        client or (lambda profile: make_client(profile, settings.OLLAMA_URL, vllm)),
     )
 
     @asynccontextmanager

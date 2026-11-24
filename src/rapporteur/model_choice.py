@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from rapporteur import db
 from rapporteur.contracts import ModelProfile
 from rapporteur.contracts.base import NonEmptyStr
+from rapporteur.contracts.enums import InferenceEngine
 from rapporteur.errors import UserError
 from rapporteur.llm.profiles import load_profile, local_models
 
@@ -67,6 +68,8 @@ class ModelState(BaseModel):
     default: ActiveModel
     ollama_available: bool
     models: list[OllamaModel]
+    inference_engine: InferenceEngine
+    inference_available: bool
 
 
 def installed_models(ollama_url: str, timeout: float = 3) -> list[OllamaModel] | None:
@@ -89,6 +92,15 @@ def installed_models(ollama_url: str, timeout: float = 3) -> list[OllamaModel] |
         return None
 
 
+def vllm_models(base_url: str, timeout: float = 3) -> list[str]:
+    try:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/v1/models", timeout=timeout) as answer:
+            items = json.load(answer)["data"]
+        return [str(item["id"]) for item in items]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
 def stored(conn: sqlite3.Connection) -> ModelChoice | None:
     row = db.one(conn, "SELECT value FROM settings WHERE key = ?", _KEY)
     return ModelChoice.model_validate_json(row["value"]) if row else None
@@ -96,6 +108,8 @@ def stored(conn: sqlite3.Connection) -> ModelChoice | None:
 
 def active_profile(conn: sqlite3.Connection) -> ModelProfile:
     base = load_profile()
+    if base.engine is InferenceEngine.VLLM:
+        return base
     choice = stored(conn)
     if choice is None:
         return base
@@ -150,14 +164,19 @@ def save(
     )
 
 
-def state(conn: sqlite3.Connection, models: list[OllamaModel] | None) -> ModelState:
+def state(
+    conn: sqlite3.Connection, models: list[OllamaModel] | None, *, served: list[str] | None = None
+) -> ModelState:
     default = load_profile()
+    fixed = default.engine is InferenceEngine.VLLM
     current = active_profile(conn)
     return ModelState(
-        current=_active(current, chosen=stored(conn) is not None),
+        current=_active(current, chosen=not fixed and stored(conn) is not None),
         default=_active(default, chosen=False),
         ollama_available=models is not None,
         models=models or [],
+        inference_engine=default.engine,
+        inference_available=current.model in (served or []) if fixed else models is not None,
     )
 
 

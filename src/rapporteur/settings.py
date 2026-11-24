@@ -15,6 +15,9 @@ DATA_DIR = Path(os.environ.get("RAPPORTEUR_DATA_DIR", "/data"))
 # Собранный фронтенд; без него приложение отдаёт только API.
 STATIC_DIR = os.environ.get("RAPPORTEUR_STATIC_DIR")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
-ASR_URL = os.environ.get("ASR_URL", "http://asr:18764")
-# Запущен ли ASR (make передаёт по ASR_MODE). Без него записи пропускаются с предупреждением.
-ASR_ENABLED = os.environ.get("ASR_ENABLED", "1") != "0"
+VLLM_URL = os.environ.get("VLLM_URL", "http://vllm:8000")
+VLLM_SECOND_URL = os.environ.get("VLLM_SECOND_URL", "")
+
+
+def vllm_endpoints() -> tuple[str, ...]:
+    return (VLLM_URL, VLLM_SECOND_URL) if VLLM_SECOND_URL else (VLLM_URL,)

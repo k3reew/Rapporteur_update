@@ -182,7 +182,7 @@ def test_runtime_permission_failure_has_actionable_http_error(tmp_path: Path) ->
         directory.chmod(0o755)
 
 
-@pytest.mark.parametrize("model_location", [None, "asr", "parent", "root", "override"])
+@pytest.mark.parametrize("model_location", [None, "gptq", "parent", "root", "override"])
 def test_maintenance_uses_only_app_image_and_explicit_numeric_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model_location: str | None
 ) -> None:
@@ -193,8 +193,8 @@ def test_maintenance_uses_only_app_image_and_explicit_numeric_identity(
     storage = tmp_path / "data"
     storage.mkdir()
     environment = f"RAPPORTEUR_STORAGE={storage}\n"
-    if model_location == "asr":
-        environment += f"ASR_MODELS_DIR={storage}/cache/weights\n"
+    if model_location == "gptq":
+        environment += f"VLLM_GPTQ_MODELS_DIR={storage}/cache/weights\n"
     elif model_location == "parent":
         environment += f"OLLAMA_MODELS_DIR={tmp_path}\n"
     elif model_location == "root":
@@ -213,7 +213,7 @@ def test_maintenance_uses_only_app_image_and_explicit_numeric_identity(
         f"\\n      source: {storage}\\n      target: /data')\n"
         " if os.getenv('COMPOSE_OVERRIDE_MODEL'):\n"
         "  print('    - type: bind\\n      source: '+os.environ['COMPOSE_OVERRIDE_MODEL']"
-        "+'\\n      target: /models/asr')\n"
+        "+'\\n      target: /models/qwen')\n"
         "elif args[:2]==['image','inspect'] and args[-1]!='rapporteur:local': sys.exit(1)\n"
     )
     docker.chmod(0o755)

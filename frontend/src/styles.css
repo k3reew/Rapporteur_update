@@ -42,13 +42,21 @@ button {
 }
 button:hover:not(:disabled) { background: var(--subtle); border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
-button.primary {
+button.primary, .action-link {
   background: var(--primary);
   color: var(--primary-text);
   border-color: var(--primary);
   padding: .75rem 1.25rem;
 }
-button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 88%, var(--ink)); }
+button.primary:hover:not(:disabled), .action-link:hover { background: color-mix(in srgb, var(--primary) 88%, var(--ink)); }
+.action-link {
+  display: inline-block;
+  border-radius: 6px;
+  font-size: .9rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+}
 button.link { color: var(--accent); border: 0; background: none; padding: .4rem 0; }
 button.danger { color: var(--bad); }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
@@ -94,6 +102,29 @@ main {
 .step-number { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: .5rem; border-radius: 50%; background: var(--pill-bg); font-size: .75rem; }
 [aria-current] .step-number { background: var(--primary); color: var(--primary-text); }
 .workflow-page { max-width: 100%; }
+.next-action, .section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  flex-wrap: wrap;
+}
+.next-action {
+  margin: 1rem 0 1.4rem;
+  padding: 1rem 1.25rem;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.next-action h3, .next-action p, .section-heading p { margin: 0; }
+.next-action h3 + p { margin-top: .3rem; color: var(--mut); }
+.home-create form { align-items: end; flex: 1; }
+.home-create form .field { flex: 1 1 12rem; margin: 0; }
+.section-heading { margin-bottom: 1rem; }
+.talk-subline { display: block; }
+.review-queue { padding: .8rem 1rem; background: var(--subtle); }
+.talk-sources { margin-top: .55rem; }
+.talk-sources ul { margin-bottom: 0; }
 .card { padding: 0; margin: 0 0 2rem; }
 .card .card { margin-top: 1.5rem; }
 .card > :last-child { margin-bottom: 0; }
@@ -153,6 +184,10 @@ legend { margin-bottom: 1rem; font-weight: 600; }
 .talk-editor.open { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
 .edited-mark { padding: .15rem .7rem; background: var(--bad); color: #fff; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
 .source-binding { padding: 1rem 1.25rem; margin: 1.25rem 0; background: var(--subtle); }
+.unbound-materials { margin-top: 1.5rem; }
+.unbound-material { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .65rem 0; border-bottom: 1px solid var(--border); }
+.unbound-material select { max-width: min(24rem, 100%); }
+.preserve-lines { white-space: pre-wrap; }
 .binding-editor { margin-top: 1.5rem; }
 .binding-editor > summary { color: var(--accent); margin-bottom: 1rem; }
 .notice, [role='alert'] { padding: .9rem 1.1rem; border-radius: 5px; background: var(--subtle); font-size: .9rem; }
@@ -211,8 +246,11 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
   .theme-toggle { margin-left: auto; }
   main { margin: .75rem; padding: 1.25rem 1rem; }
   .conference-heading h2 { font-size: 1.4rem; }
-  .workflow-steps { gap: .8rem; overflow-x: auto; padding: 3px; }
-  .workflow-steps button { font-size: .8rem; }
+  .workflow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .2rem .65rem; }
+  .workflow-steps button { font-size: .8rem; min-height: 2.5rem; padding: .45rem 0 .6rem; white-space: normal; overflow-wrap: anywhere; }
+  .next-action { padding: .85rem; }
+  [aria-labelledby='report-title'] .fields .field { margin-bottom: 0; }
+
   .step-number { display: none; }
   .step-footer { flex-direction: column; align-items: stretch; }
   .material-row > summary { padding: 1rem 0; gap: .6rem; }
@@ -224,7 +262,7 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
 }
 /* Карточка доклада: авторы строками, на узком экране поля друг под другом. */
 .card-authors legend { margin-bottom: .5rem; font-size: .85rem; font-weight: 550; color: var(--mut); }
-.card-author { display: grid; grid-template-columns: 2fr 1fr 2fr 2fr auto; gap: .6rem; align-items: end; padding-bottom: .3rem; }
+.card-author { display: grid; grid-template-columns: 2fr 1fr 2fr 1.5fr 2fr auto; gap: .6rem; align-items: end; padding-bottom: .3rem; }
 .card-author .field { margin-bottom: .6rem; }
 .card-author .link { margin-bottom: 1rem; }
 .card-people { margin: 0 0 .6rem; padding: 0; list-style: none; }
@@ -257,13 +295,30 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
 .score.bad { color: var(--bad); }
 .interest-leader { display: inline-flex; align-items: center; gap: .35rem; margin-inline-start: .6rem; }
 .interest-item { display: flex; align-items: flex-start; gap: .6rem; margin-block: .6rem; }
+.screening-talk { padding: 1.25rem 0; border-bottom: 1px solid var(--border); }
+.screening-talk h3, .screening-talk > p { margin-block: 0 .5rem; }
 .summary-prose { max-width: 75ch; }
 .summary-prose p { margin-block: 1rem; }
 .summary-prose .chip { font-size: .72rem; padding: 0 .25rem; vertical-align: baseline; }
 
-.processing-table { min-width: 620px; }
-.processing-table th:first-child { width: 42%; }
-.processing-table .pill { white-space: normal; word-break: normal; }
+@media (max-width: 740px) {
+  .processing-table, .processing-table tbody { display: block; }
+  .processing-table thead { display: none; }
+  .processing-table .talk-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; padding: .9rem 0; border-top: 1px solid var(--border); }
+  .processing-table .talk-row > th, .processing-table .talk-row > td:last-child { grid-column: 1 / -1; }
+  .processing-table .talk-row > th { font-weight: 650; }
+  .processing-table .interest-row, .processing-table .interest-row > td { display: block; }
+  .processing-table .talk-row > *, .processing-table .interest-row > td { border-bottom: 0; padding: 0; }
+  .processing-table .interest-row { margin-bottom: .8rem; }
+}
+@media (min-width: 741px) {
+  .processing-table { min-width: 620px; table-layout: fixed; }
+  .processing-table thead th:nth-child(1) { width: 30%; }
+  .processing-table thead th:nth-child(2) { width: 21%; }
+  .processing-table thead th:nth-child(3) { width: 25%; }
+}
+.processing-table .pill, .processing-table td:last-child .row { overflow-wrap: normal; }
+.processing-error { margin-top: .3rem; font-size: .8rem; }
 .processing-table .interest-details { max-width: 75ch; }
 /* Доклады отделены друг от друга заметной границей, а секция интереса отделов
    примыкает к своему докладу без разрыва. */

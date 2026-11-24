@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { ReportPanel } from './ReportPanel';
@@ -6,6 +6,7 @@ import { ReportPanel } from './ReportPanel';
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const conference = {
@@ -162,4 +163,60 @@ test('приостановленная после перезапуска сбо�
   expect(await screen.findByText(/Сборка приостановлена после перезапуска/)).toBeDefined();
   fireEvent.click(screen.getByRole('button', { name: 'Продолжить сборку' }));
   await vi.waitFor(() => expect(api.mock.calls.some(([url, init]) => url === '/api/v1/report-jobs/job/retry' && init?.method === 'POST')).toBe(true));
+});
+
+
+test('обновляет состав выпуска без сброса ручного выбора или допуска непроверенной сводки', async () => {
+  vi.useFakeTimers();
+  const blocked = { ...progress.talks[0], id: 'new', title: 'Новый доклад', screening: { manual: false }, reportable: false };
+  let refreshed = false;
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/progress')) return Response.json({
+      ...progress, auto_start: true, talks: [progress.talks[0], { ...blocked, reportable: refreshed }],
+    });
+    if (url.endsWith('/reports') || url.endsWith('/report-jobs')) return Response.json([]);
+    return Response.json(conference);
+  }));
+  render(<ReportPanel conferenceId="conference" />);
+  await act(async () => {});
+  const original = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Доклад' });
+  const newTalk = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Новый доклад' });
+  expect(newTalk.disabled).toBe(true);
+  expect(screen.getByText('Подтвердите решение по отделам')).toBeDefined();
+  expect(screen.queryByLabelText('Собрать, даже если не все сводки проверены')).toBeNull();
+  fireEvent.click(original);
+  refreshed = true;
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(original.checked).toBe(false);
+  expect(newTalk.checked).toBe(true);
+});
+
+test('предпросмотр сохраняет поля и выпускает полный реестр без обязательной даты', async () => {
+  const fields = { participation: '', program: '', overview: '', attachments: '', contacts: null };
+  const draft = { revision: 0, fields, suggested_contacts: [], talks: [
+    { id: 'talk', speakers: [], organizations: [], contacts: [], annotation: ['Текст аннотации.'], conclusions: [] },
+  ] };
+  const api = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/progress')) return Response.json({ ...progress, workflow: 'operator', screening_confirmed: true });
+    if (url.endsWith('/report-draft')) {
+      if (init?.method === 'PUT') return Response.json({ ...draft, revision: 1, fields: JSON.parse(init.body as string).fields });
+      return Response.json(draft);
+    }
+    if (url.endsWith('/report-jobs')) return Response.json(init?.method === 'POST' ? { id: 'job' } : []);
+    if (url.endsWith('/reports')) return Response.json([]);
+    return Response.json(conference);
+  });
+  vi.stubGlobal('fetch', api);
+  render(<ReportPanel conferenceId="conference" />);
+  const participation = await screen.findByLabelText('Участие организации');
+  const publish = screen.getByRole<HTMLButtonElement>('button', { name: 'Выпустить справку' });
+  expect(publish.disabled).toBe(false);
+  fireEvent.change(participation, { target: { value: 'Команда примера' } });
+  expect(publish.disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить поля' }));
+  await screen.findByText('Черновик справки сохранён.');
+  fireEvent.click(publish);
+  await screen.findByText('Сборка поставлена в очередь. Можно переходить к другим разделам.');
+  const params = api.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body;
+  expect(JSON.parse(params as string)).toMatchObject({ draft_revision: 1, talk_ids: ['talk'] });
 });

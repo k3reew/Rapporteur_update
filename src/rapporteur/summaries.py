@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
-from rapporteur import db
+from rapporteur import db, interest
 from rapporteur.contracts import (
     Summary,
     SummaryLine,
@@ -164,6 +164,11 @@ def edit(conn: sqlite3.Connection, talk_id: str, data: SummaryEdit) -> None:
 def review(conn: sqlite3.Connection, talk_id: str, data: SummaryReview) -> None:
     """Человек проверил сводку: утверждения из её текста подтверждены, доклад проверен."""
     talk, row = _locked(conn, talk_id, data.version)
+    if (
+        interest.automatic(conn, talk_id)
+        and interest.route(conn, talk_id) is not interest.Route.SUMMARY
+    ):
+        raise UserError("Сначала подтвердите назначение доклада отделам", 409)
     if talk["job"] in ("queued", "running"):
         raise UserError("Дождитесь завершения обработки", 409)
     status = TalkStatus(talk["status"])

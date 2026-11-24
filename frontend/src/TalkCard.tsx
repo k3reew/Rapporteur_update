@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 /** Карточка доклада: тема, авторы с организацией и контактами, сведения без привязки к автору. */
-export type Speaker = { name: string; role?: 'speaker' | 'coauthor'; affiliation?: string | null; contacts?: string[] };
+export type Speaker = { name: string; role?: 'speaker' | 'coauthor'; affiliation?: string | null; position?: string | null; contacts?: string[] };
 export type Card = { title: string; speakers: Speaker[]; organizations?: string[]; contacts?: string[] };
 
 const roles: [NonNullable<Speaker['role']>, string][] = [['speaker', 'Докладчик'], ['coauthor', 'Соавтор']];
@@ -36,6 +36,7 @@ export function cleanCard<T extends Card>(card: T): T {
         ...speaker,
         name: speaker.name.trim(),
         affiliation: speaker.affiliation?.trim() || null,
+        ...(speaker.position !== undefined ? { position: speaker.position?.trim() || null } : {}),
         contacts: (speaker.contacts ?? []).map(item => item.trim()).filter(Boolean),
       })),
     organizations: (card.organizations ?? []).map(item => item.trim()).filter(Boolean),
@@ -60,6 +61,7 @@ export function CardEditor<T extends Card>({ card, onChange, titleLabel = 'Те�
           {roles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label>
         <label className="field">Организация<input value={speaker.affiliation ?? ''} onChange={event => changeSpeaker(index, { affiliation: event.target.value })} /></label>
+        <label className="field">Должность<input value={speaker.position ?? ''} onChange={event => changeSpeaker(index, { position: event.target.value })} /></label>
         <ListInput label="Контакты через «;»" value={speaker.contacts ?? []} onChange={contacts => changeSpeaker(index, { contacts })} />
         <button type="button" className="link" aria-label={`Удалить автора ${index + 1}`}
           onClick={() => change({ speakers: card.speakers.filter((_, i) => i !== index) })}>Удалить</button>
@@ -80,6 +82,7 @@ export function CardView({ card }: { card: Card }) {
       {card.speakers.map((speaker, index) => <li key={index}>
         <strong>{speaker.name}</strong>{speaker.role === 'coauthor' && ' (соавтор)'}
         {speaker.affiliation && <> — {speaker.affiliation}</>}
+        {speaker.position && <small>{speaker.position}</small>}
         {!!speaker.contacts?.length && <small>{speaker.contacts.join(', ')}</small>}
       </li>)}
     </ul> : <p className="notice">Автор не установлен</p>}

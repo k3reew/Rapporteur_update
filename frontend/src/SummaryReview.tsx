@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, type ReactNode } from 'react';
 
 import { Recommendations } from './Departments';
-import type { TalkProgress } from './talkTypes';
+import { Interest } from './Interest';
+import type { Progress } from './talkTypes';
+import { useResource } from './useResource';
 import { request } from './api';
 import { statusTone } from './status';
 import { CardEditor, CardView, cleanCard, type Card } from './TalkCard';
@@ -94,7 +96,7 @@ export function highlight(text: string, [start, end]: [number, number]): ReactNo
 
 function place(fragment: Fragment) {
   const { locator } = fragment;
-  if (locator.kind === 'page') return `слайд ${locator.page_no}`;
+  if (locator.kind === 'page') return `${fragment.kind === 'document' ? 'страница' : 'слайд'} ${locator.page_no}`;
   if (locator.kind === 'lines') return `строки ${locator.line_start}–${locator.line_end}`;
   return `с ${Math.floor(locator.start_ms / 1000)} с`;
 }
@@ -112,7 +114,10 @@ export function SummaryReview(
   const [busy, setBusy] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
-  const [talks, setTalks] = useState<TalkProgress[]>([]);
+  const { data: progress, refresh: refreshProgress } = useResource<Progress>(conferenceId ? `/api/v1/conferences/${conferenceId}/progress` : null, 5000);
+  const talks = progress?.talks ?? [];
+  const screening = talks.find(talk => talk.id === talkId)?.screening;
+  const pendingScreening = !!progress?.auto_start && (!screening?.manual || screening.state !== 'relevant' || screening.stale);
   const [metadata, setMetadata] = useState<Omit<Card, 'title'> & { title: string | null; revision: number }>();
   const [metaDraft, setMetaDraft] = useState<Card>();
   const [pending, setPending] = useState<string>();
@@ -120,9 +125,6 @@ export function SummaryReview(
   useEffect(() => {
     if (!conferenceId) return;
     const controller = new AbortController();
-    void request(`/api/v1/conferences/${conferenceId}/progress`, { signal: controller.signal })
-      .then(async r => setTalks((await r.json()).talks))
-      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
     void request(`/api/v1/talks/${talkId}`, { signal: controller.signal })
       .then(async r => setMetadata(await r.json()))
       .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
@@ -201,6 +203,18 @@ export function SummaryReview(
   const claims = new Map(summary.claims.map((claim) => [claim.key, claim]));
   const fragments = new Map(pack.fragments.map((fragment) => [fragment.revision_id, fragment]));
   const byLabel = new Map(pack.fragments.map((fragment) => [fragment.label, fragment]));
+  function screeningSource(label: string) {
+    const fragment = byLabel.get(label);
+    if (!fragment) return undefined;
+    const root = `/api/v1/files/${fragment.source_file_id}`;
+    if (fragment.locator.kind === 'page') {
+      return `${root}/${fragment.kind.startsWith('slide') ? 'slides' : 'pages'}/${fragment.locator.page_no}`;
+    }
+    if (fragment.locator.kind === 'time') {
+      return `${root}/content#t=${fragment.locator.start_ms / 1000},${fragment.locator.end_ms / 1000}`;
+    }
+    return `${root}/content`;
+  }
   const claim = claims.get(selected);
   const used = new Set([...summary.sentences, ...summary.conclusions].flatMap((line) => line.claim_ids));
 
@@ -275,7 +289,7 @@ export function SummaryReview(
   }
 
   const position = talks.findIndex(t => t.id === talkId);
-  const available = talks.filter(t => t.summary_number !== null);
+  const available = talks.filter(t => t.summary_number !== null && !t.card_only);
   const currentIndex = available.findIndex(t => t.id === talkId);
   const next = available.slice(currentIndex + 1).find(t => t.status !== 'reviewed');
   const lines = (kind: 'sentences' | 'conclusions') => summary[kind];
@@ -309,6 +323,15 @@ export function SummaryReview(
         </> : <><CardView card={{ ...metadata, title: metadata.title ?? '' }} />
           <button className="link" onClick={() => setMetaDraft({ ...metadata, title: metadata.title ?? '' })}>Править карточку</button></>}
       </div>}
+        {conferenceId && progress?.workflow === 'operator' && <p><a href={`#/c/${encodeURIComponent(conferenceId)}/screening`}>Решения по отделам</a></p>}
+        {progress?.workflow !== 'operator' && progress?.auto_start && screening && <Interest
+          key={screening.version}
+          talkId={talkId}
+          value={screening}
+          refresh={refreshProgress}
+          automatic
+          sourceOf={screeningSource}
+        />}
 
         <div className="kv">
           <div><b>Доклад</b><span className={`pill ${statusTone[talkStatus] ?? ''}`}>{talkStatuses[talkStatus] ?? talkStatus}</span></div>
@@ -361,6 +384,7 @@ export function SummaryReview(
             </>
           )}
 
+          {pendingScreening && <p className="notice">Подтвердите решения по отделам, чтобы завершить проверку сводки.</p>}
           <div className="row" style={{ marginTop: '1rem' }}>
             {draft ? (
               <>
@@ -371,7 +395,7 @@ export function SummaryReview(
               <>
                 <button
                   className="primary"
-                  disabled={!!busy || !!metaDraft || talkStatus === 'reviewed' || !summary.sentences.length}
+                  disabled={!!busy || !!metaDraft || pendingScreening || talkStatus === 'reviewed' || !summary.sentences.length}
                   onClick={() => void act('Подтверждение…', 'Сводка проверена.', () => request(`${url}/review`, {
                     method: 'POST',
                     headers: json,
@@ -380,7 +404,7 @@ export function SummaryReview(
                 >
                   Подтвердить проверку
                 </button>
-                {onNavigate && <button disabled={!!busy || !!metaDraft || talkStatus === 'reviewed' || !summary.sentences.length}
+                {onNavigate && <button disabled={!!busy || !!metaDraft || pendingScreening || talkStatus === 'reviewed' || !summary.sentences.length}
                   onClick={() => void (async () => {
                     const ok = await act('Подтверждение…', 'Сводка проверена.', () => request(`${url}/review`, {
                       method: 'POST', headers: json, body: JSON.stringify({ version: summary.version }),
@@ -412,8 +436,8 @@ export function SummaryReview(
                     {item.label}{fragment && ` · ${place(fragment)}`}
                   </figcaption>
                   {fragment && <blockquote>{highlight(fragment.text, item.span)}</blockquote>}
-                  {fragment?.locator.kind === 'time' && <audio controls preload="none"
-                    src={`/api/v1/files/${fragment.source_file_id}/content#t=${fragment.locator.start_ms / 1000},${fragment.locator.end_ms / 1000}`} />}
+                  {fragment?.locator.kind === 'time' && <p><a href={`/api/v1/files/${fragment.source_file_id}/content`}
+                    target="_blank" rel="noreferrer">Открыть оригинал</a></p>}
                   {fragment?.locator.kind === 'page' && (
                     <img
                       src={`/api/v1/files/${fragment.source_file_id}/${fragment.kind.startsWith('slide') ? 'slides' : 'pages'}/${fragment.locator.page_no}`}
@@ -436,7 +460,7 @@ export function SummaryReview(
         ) : (
           <div className="card claim-card muted">
             Нажмите на ссылку утверждения рядом с предложением, например c1, чтобы увидеть
-            цитату из источника и слайд.
+            цитату и место в источнике.
           </div>
         )}
       </div>

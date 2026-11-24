@@ -21,6 +21,7 @@ from .workflow_support import WorkflowClient, operator_confirms_screening, seed_
 
 
 class FakeOllama(BaseHTTPRequestHandler):
+    vllm_served: ClassVar[str] = "Qwen/Qwen3.5-27B"
     models: ClassVar[list[dict[str, Any]]] = [
         {
             "name": "qwen3.5:9b",
@@ -39,7 +40,12 @@ class FakeOllama(BaseHTTPRequestHandler):
     ]
 
     def do_GET(self) -> None:
-        body = json.dumps({"models": self.models}).encode()
+        data = (
+            {"data": [{"id": self.vllm_served}]}
+            if self.path == "/v1/models"
+            else {"models": self.models}
+        )
+        body = json.dumps(data).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -146,3 +152,39 @@ def test_choice_needs_ollama(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         saved = client.put("/api/v1/model", json={"model": "qwen3.5:9b", "reasoning": True})
 
     assert saved.status_code == 503 and "Ollama недоступна" in saved.json()["message"]
+
+
+def test_vllm_ignores_and_preserves_the_ollama_choice(
+    tmp_path: Path, ollama: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    application = create_app(tmp_path, process=False)
+    model = "Qwen/Qwen3.5-27B"
+    with TestClient(application) as client:
+        assert client.put("/api/v1/model", json={"model": "qwen2.5:7b"}).status_code == 200
+
+        monkeypatch.setenv("RAPPORTEUR_PROFILE", "server-vllm")
+        monkeypatch.setattr(settings, "VLLM_URL", ollama)
+        monkeypatch.setattr(settings, "VLLM_SECOND_URL", "http://127.0.0.1:9")
+        state = client.get("/api/v1/model").json()
+        assert state["current"] == {
+            "profile": "server-vllm",
+            "model": model,
+            "reasoning": True,
+            "chosen": False,
+        }
+        assert state["inference_available"] and state["inference_engine"] == "vllm"
+        assert not state["ollama_available"]
+        info = client.get("/api/v1/system").json()
+        assert info["inference_available"] and info["inference_engine"] == "vllm"
+        assert info["inference_models"] == [model]
+        assert info["inference_replicas"] == [
+            {"name": "Экземпляр 1", "ready": True},
+            {"name": "Экземпляр 2", "ready": False},
+        ]
+        assert client.put("/api/v1/model", json={"model": None}).status_code == 409
+
+        monkeypatch.setattr(FakeOllama, "vllm_served", "wrong-model")
+        assert not client.get("/api/v1/model").json()["inference_available"]
+        assert not client.get("/api/v1/system").json()["inference_available"]
+        monkeypatch.delenv("RAPPORTEUR_PROFILE")
+        assert client.get("/api/v1/model").json()["current"]["model"] == "qwen2.5:7b"

@@ -1,20 +1,15 @@
-"""Фоновая обработка докладов в процессе приложения (ADR-014).
+"""Фоновая подготовка, отбор и обработка независимых докладов с очередью в SQLite."""
 
-Доклад ставится в очередь полем talks.job = 'queued'. Один поток берёт доклады по одному
-и проходит цепочку spec §6: разбор презентаций и заметок → пакет фрагментов → факты (LLM) →
-сверка цитат → сводка (LLM). Результаты шагов кэшируются на томе (spec §3, п. 6), поэтому
-повтор после сбоя или перепривязки не обращается к модели заново, если входы не изменились.
-Доклады обрабатываются последовательно. Ollama и ASR закреплены за независимыми GPU;
-частичный кэш сохраняется между перезапусками. Незавершённые после перезапуска задания
-приостанавливаются (pause_unfinished): модель не начинает работу без команды оператора.
-"""
-
+import json
 import logging
+import os
 import sqlite3
 import tempfile
 import threading
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import UUID
 
@@ -67,20 +62,40 @@ def enqueue(conn: sqlite3.Connection, talk_ids: list[str]) -> None:
     departments.require_regulations(conn)
     for talk_id in talk_ids:
         screening.queue(conn, talk_id)
-        decided = interest.route(conn, talk_id) is not None
+        decided = interest.processing_route(conn, talk_id) is not None
         conn.execute(
             "UPDATE talks SET job=?, step=?, error=NULL, queued_at=? WHERE id=?",
             ("queued" if decided else None, None if decided else "screening", db.now(), talk_id),
         )
 
 
+def enqueue_reviewed(
+    conn: sqlite3.Connection, talk_id: str, previous: interest.Route | None
+) -> None:
+    current = interest.processing_route(conn, talk_id)
+    row = db.one(conn, "SELECT job,card_only FROM talks WHERE id=?", talk_id)
+    if row and interest.automatic(conn, talk_id) and current is previous is interest.Route.SUMMARY:
+        if row["job"] in ("queued", "running") or (row["job"] == "done" and not row["card_only"]):
+            return
+    enqueue(conn, [talk_id])
+
+
+def start_conference(conn: sqlite3.Connection, conference_id: str) -> None:
+    departments.require_regulations(conn)
+    conn.execute("UPDATE conferences SET processing_started=1 WHERE id=?", (conference_id,))
+    enqueue_ready(conn, conference_id)
+
+
 def enqueue_ready(conn: sqlite3.Connection, conference_id: str) -> int:
     """Ставит доклады с привязанными материалами, которые ещё не обработаны или устарели.
     Доклад в работе ставится заново: его материалы могли измениться."""
+    talks = (
+        preparation.screening_talks(conn, conference_id)
+        if preparation.operator(conn, conference_id)
+        else db.conference_talks(conn, conference_id)
+    )
     rows = [
-        row["id"]
-        for row in db.conference_talks(conn, conference_id)
-        if row["status"] in READY_STATUSES and row["job"] != "queued"
+        row["id"] for row in talks if row["status"] in READY_STATUSES and row["job"] != "queued"
     ]
     enqueue(conn, rows)
     return len(rows)
@@ -113,11 +128,40 @@ _PAUSE = (
 
 
 def pause_unfinished(conn: sqlite3.Connection) -> dict[str, int]:
-    """Прерванные остановкой и ожидавшие в очереди задания приостанавливаются. Иначе после
-    перезапуска, в том числе на перенесённом хранилище, модель начала бы работу, которую
-    в этом запуске никто не запрашивал. Оператор продолжает их в интерфейсе: «Продолжить»,
-    «Подготовить заново», «Рассчитать рекомендации», «Продолжить сборку»."""
-    return {name: conn.execute(sql).rowcount for name, sql in _PAUSE}
+    """Возобновляет задания запуска нового сценария. Старые установки требуют команды
+    оператора, чтобы не запускать отложенные работы при переносе старого хранилища."""
+    conn.execute("UPDATE talks SET worker_active=0 WHERE worker_active<>0")
+    paused = {name: conn.execute(sql).rowcount for name, sql in _PAUSE}
+    operator_conferences = "SELECT conference_id FROM preparations WHERE workflow='operator'"
+    operator_talks = (
+        "SELECT t.id FROM talks t JOIN sections s ON s.id=t.section_id "
+        f"WHERE s.conference_id IN ({operator_conferences})"
+    )
+    for name, sql in (
+        (
+            "подготовка",
+            "UPDATE preparations SET job='queued' WHERE job='paused' AND workflow='operator'",
+        ),
+        (
+            "отбор",
+            "UPDATE talk_screenings SET job='queued' WHERE job='paused' "
+            f"AND talk_id IN ({operator_talks})",
+        ),
+        (
+            "доклады",
+            f"UPDATE talks SET job='queued' WHERE job='paused' AND id IN ({operator_talks})",
+        ),
+        (
+            "справки",
+            f"UPDATE report_jobs SET status='queued',step='queued' WHERE status='paused' "
+            f"AND conference_id IN ({operator_conferences})",
+        ),
+    ):
+        resumed = conn.execute(sql).rowcount
+        if resumed:
+            paused[name] = max(0, paused[name] - resumed)
+            log.info("Возобновлены задания (%s): %d", name, resumed)
+    return paused
 
 
 @dataclass(frozen=True)
@@ -126,6 +170,8 @@ class _Talk:
     conference_id: str
     files: list[db.Row]
     revision: int
+    route: interest.Route | None = None
+    basis: str = ""
 
 
 class Processor:
@@ -136,6 +182,7 @@ class Processor:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.slots = 2 if os.environ.get("RAPPORTEUR_INFERENCE_SLOTS") == "2" else 1
 
     def start(self) -> None:
         with self.database.tx() as conn:
@@ -147,7 +194,7 @@ class Processor:
                 ", ".join(f"{name} — {count}" for name, count in paused.items() if count),
             )
         else:
-            log.info("Незавершённых заданий нет, очередь пуста")
+            log.info("Обработчик очереди готов")
         self._thread = threading.Thread(target=self._loop, name="processing", daemon=True)
         self._thread.start()
 
@@ -161,53 +208,82 @@ class Processor:
         self._wake.set()
 
     def _loop(self) -> None:
-        while not self._stop.is_set():
-            try:
-                worked = self.run_once()
-            except Exception:
-                log.exception("Сбой цикла обработки")
-                worked = False
-            if not worked:
-                self._wake.wait(timeout=5)
-                self._wake.clear()
+        with ThreadPoolExecutor(max_workers=self.slots, thread_name_prefix="talk") as pool:
+            while not self._stop.is_set():
+                try:
+                    worked = self.run_once(pool if self.slots > 1 else None)
+                except Exception:
+                    log.exception("Сбой цикла обработки")
+                    worked = False
+                if not worked:
+                    self._wake.wait(timeout=5)
+                    self._wake.clear()
 
-    def run_once(self) -> bool:
+    def run_once(self, pool: ThreadPoolExecutor | None = None) -> bool:
         """Обрабатывает следующий доклад из очереди; False, если очередь пуста."""
         if report_jobs.run_once(self.database, self.storage):
             return True
-        if self._prepare_once():
+        if self._prepare_once(pool):
             return True
+        if pool is None:
+            worked = self._talk_once()
+        else:
+            work = [pool.submit(self._talk_once) for _ in range(self.slots)]
+            results = [task.result() for task in work]
+            worked = any(results)
+        return worked or departments.run_once(self.database, self.client)
+
+    def _talk_once(self) -> bool:
         screened = screening.run_once(self.database, self.storage, self.client, self._screen_pack)
         if screened is not None:
             with self.database.tx() as conn:
-                if interest.route(conn, screened) is not None:
-                    enqueue(conn, [screened])
-                elif error := screening.view(conn, screened)["error"]:
+                row = db.one(conn, "SELECT job FROM talks WHERE id=?", screened)
+                if row and interest.processing_route(conn, screened) is not None:
+                    if row["job"] not in ("queued", "running", "done"):
+                        enqueue(conn, [screened])
+                elif row and (error := screening.view(conn, screened)["error"]):
                     conn.execute(
                         "UPDATE talks SET job='failed',step='screening',error=? WHERE id=?",
                         (error, screened),
                     )
         talk = self._take()
         if talk is None:
-            if screened is not None:
-                return True
-            return departments.run_once(self.database, self.client)
+            return screened is not None
         log.info("Обработка доклада %s", talk.id)
         try:
-            summary, pack = self._process(talk)
+            if talk.route is interest.Route.CARD:
+                summary, pack = None, None
+            else:
+                summary, pack = self._process(talk)
         except StageError as error:
             log.warning("Доклад %s: %s", talk.id, error.code.value)
-            self._finish(talk.id, "failed", f"{error.code.value}: {error.message}", talk.revision)
+            self._finish(
+                talk.id,
+                "failed",
+                f"{error.code.value}: {error.message}",
+                talk.revision,
+                talk.basis,
+                talk.route,
+            )
         except Exception:
             log.exception("Доклад %s: внутренняя ошибка", talk.id)
             self._finish(
-                talk.id, "failed", "internal_error: внутренняя ошибка, см. журнал", talk.revision
+                talk.id,
+                "failed",
+                "internal_error: внутренняя ошибка, см. журнал",
+                talk.revision,
+                talk.basis,
+                talk.route,
             )
         else:
             if summary is None:
-                self._save_card(talk.id, talk.revision)
+                self._save_card(talk.id, talk.revision, talk.basis, talk.route)
             else:
-                self._save(talk.id, summary, pack, talk.revision)
+                assert pack is not None
+                self._save(talk.id, summary, pack, talk.revision, talk.basis, talk.route)
+        finally:
+            with self.database.tx() as conn:
+                conn.execute("UPDATE talks SET worker_active=0 WHERE id=?", (talk.id,))
         return True
 
     def _screen_pack(self, talk_id: str) -> TalkFragmentPack:
@@ -240,10 +316,11 @@ class Processor:
     def _take(self) -> _Talk | None:
         with self.database.tx() as conn:
             rows = conn.execute(
-                "SELECT id FROM talks WHERE job='queued' ORDER BY queued_at"
+                "SELECT id FROM talks WHERE job='queued' AND worker_active=0 ORDER BY queued_at"
             ).fetchall()
             for row in rows:
-                if interest.route(conn, row["id"]) is None:
+                route = interest.processing_route(conn, row["id"])
+                if route is None:
                     try:
                         enqueue(conn, [row["id"]])
                     except UserError as error:
@@ -253,10 +330,13 @@ class Processor:
                         )
                     continue
                 conn.execute(
-                    "UPDATE talks SET job='running',step='parse',error=NULL WHERE id=?",
+                    "UPDATE talks SET job='running',step='parse',error=NULL,worker_active=1 "
+                    "WHERE id=?",
                     (row["id"],),
                 )
-                return self._load_talk(conn, row["id"])
+                return replace(
+                    self._load_talk(conn, row["id"]), route=route, basis=self._basis(conn)
+                )
         return None
 
     def _step(self, talk_id: str, step: str) -> None:
@@ -266,16 +346,17 @@ class Processor:
             )
 
     def _finish(
-        self, talk_id: str, job: str | None, error: str | None = None, revision: int | None = None
+        self,
+        talk_id: str,
+        job: str | None,
+        error: str,
+        revision: int,
+        basis: str,
+        route: interest.Route | None,
     ) -> None:
-        # Если доклад поставили заново во время обработки, он остаётся в очереди.
         with self.database.tx() as conn:
-            current = db.one(conn, "SELECT input_revision, status FROM talks WHERE id=?", talk_id)
-            if current and revision is not None and current["input_revision"] != revision:
-                job = (
-                    "queued" if current["status"] not in ("insufficient_data", "not_held") else None
-                )
-                error = None
+            if self._current(conn, talk_id, revision, basis, route) is None:
+                return
             conn.execute(
                 "UPDATE talks SET job = ?, step = NULL, error = ? WHERE id = ? AND job = 'running'",
                 (job, error, talk_id),
@@ -287,7 +368,7 @@ class Processor:
         # Модель — выбранная на странице «Управление» или профиль по умолчанию.
         with self.database.read() as conn:
             profile = model_choice.active_profile(conn)
-            if interest.route(conn, talk.id) is interest.Route.CARD:
+            if talk.route is interest.Route.CARD:
                 return None, pack
 
         self._step(talk.id, "facts")
@@ -307,6 +388,7 @@ class Processor:
         claims = verify_facts(facts.facts, pack, QuoteConfig(), id_seed=facts_key)
 
         self._step(talk.id, "summary")
+        started = time.monotonic()
         summary_config = summary_step.SummaryConfig(profile=profile, checks=load_checks())
         summary_key = cache_key(
             "summary", summary_step.VERSION, facts_key, summary_config.model_dump()
@@ -327,6 +409,7 @@ class Processor:
             )
 
         summary = self.storage.cached(f"cache/summary/{summary_key}.json", Summary, write)
+        log.info("stage=summary seconds=%.3f", time.monotonic() - started)
         return summary, pack
 
     def _pack(self, talk: _Talk) -> TalkFragmentPack:
@@ -380,12 +463,20 @@ class Processor:
             log.warning("Доклад %s: запись пропущена, распознавание речи выключено", talk.id)
         return pack
 
-    def _prepare_once(self) -> bool:
+    def _prepare_once(self, pool: ThreadPoolExecutor | None = None) -> bool:
         with self.database.tx() as conn:
             row = db.one(conn, "SELECT * FROM preparations WHERE job='queued' LIMIT 1")
             if row is None:
                 return False
             conference_id, version = row["conference_id"], row["version"]
+            automatic = bool(row["auto_start"])
+            operator = row["workflow"] == "operator"
+            context_ids = set(json.loads(row["context_file_ids"])) if operator else None
+            prior = [
+                preparation.ProposedTalk.model_validate(item)
+                for item in json.loads(row["proposal"])
+                if operator and item.get("talk_id")
+            ]
             try:
                 departments.require_regulations(conn)
             except UserError as error:
@@ -403,16 +494,45 @@ class Processor:
             files = conn.execute(
                 "SELECT * FROM files WHERE conference_id=? ORDER BY relative_path", (conference_id,)
             ).fetchall()
+            if operator:
+                files = [f for f in files if f["kind"] not in _RECORDINGS]
             existing = materials.review(conn, conference_id)
             profile = model_choice.active_profile(conn)
+            snapshot = preparation.input_snapshot(conn, conference_id) if automatic else None
+            conference = materials.require_conference(conn, conference_id)
+            existing_registry = bool(
+                conference["processing_started"] or any(f["confirmed"] for f in files)
+            )
         try:
             client = self.client(profile)
-            extracted = {
-                file["id"]: preparation.extract(file, self.storage, client, profile)
-                for file in files
-            }
+
+            def extract(file: db.Row) -> preparation.Prepared:
+                try:
+                    return preparation.extract(file, self.storage, client, profile)
+                except StageError as error:
+                    if not automatic or error.code.value.startswith("llm_"):
+                        raise
+                    return preparation.Prepared(fragments=[], warnings=[error.message])
+
+            prepared = map(extract, files) if pool is None else pool.map(extract, files)
+            extracted = {file["id"]: value for file, value in zip(files, prepared, strict=True)}
+            usable = [f for f in files if extracted[f["id"]].fragments] if automatic else files
+            if automatic:
+                ids = {f["id"] for f in usable}
+                existing = existing.model_copy(
+                    update={
+                        "files": [f for f in existing.files if str(f.source.id) in ids],
+                    }
+                )
             proposal = preparation.propose(
-                files, extracted, existing, client, profile, self.storage
+                usable,
+                extracted,
+                existing,
+                client,
+                profile,
+                self.storage,
+                context_ids=context_ids,
+                previous_proposal=prior,
             )
         except Exception as error:
             log.exception("Подготовка конференции %s", conference_id)
@@ -424,15 +544,64 @@ class Processor:
                 )
         else:
             with self.database.tx() as conn:
+                current = db.one(
+                    conn,
+                    "SELECT job FROM preparations WHERE conference_id=? AND version=?",
+                    conference_id,
+                    version,
+                )
+                if current is None or current["job"] != "running":
+                    return True
+                if automatic and snapshot != preparation.input_snapshot(conn, conference_id):
+                    conn.execute(
+                        "UPDATE preparations SET job='failed',error=? WHERE conference_id=?",
+                        (
+                            "Материалы изменились во время анализа. Запустите анализ заново.",
+                            conference_id,
+                        ),
+                    )
+                    return True
+                reasons = (
+                    preparation.review_reasons(
+                        files,
+                        extracted,
+                        proposal,
+                        existing_registry=existing_registry,
+                        context_ids=context_ids,
+                    )
+                    if automatic
+                    else []
+                )
                 conn.execute(
-                    "UPDATE preparations SET job='done', proposal=? WHERE "
-                    "conference_id=? AND version=?",
+                    "UPDATE preparations SET job='done',proposal=?,input_snapshot=?,"
+                    "review_reasons=?,context_file_ids=? WHERE conference_id=? AND version=?",
                     (
                         db.dumps([p.model_dump(mode="json") for p in proposal]),
+                        snapshot,
+                        db.dumps(reasons),
+                        db.dumps(sorted(context_ids or ())),
                         conference_id,
                         version,
                     ),
                 )
+                if automatic and not operator and not reasons:
+                    conn.execute("SAVEPOINT apply_proposal")
+                    try:
+                        preparation.apply(
+                            conn,
+                            conference_id,
+                            preparation.ProposalWrite(version=version, talks=proposal),
+                            self.storage,
+                        )
+                        start_conference(conn, conference_id)
+                    except (ValueError, UserError) as error:
+                        conn.execute("ROLLBACK TO apply_proposal")
+                        conn.execute(
+                            "UPDATE preparations SET review_reasons=? WHERE conference_id=?",
+                            (db.dumps([str(error)]), conference_id),
+                        )
+                    finally:
+                        conn.execute("RELEASE apply_proposal")
         return True
 
     def _slides(self, sha: str) -> SlidesArtifact:
@@ -456,7 +625,20 @@ class Processor:
             lambda: notes_parser.parse_notes(self.storage.get(blob_key(sha)), sha, config),
         )
 
-    def _current(self, conn: sqlite3.Connection, talk_id: str, revision: int) -> db.Row | None:
+    @staticmethod
+    def _basis(conn: sqlite3.Connection) -> str:
+        return cache_key(
+            departments.revisions(conn), model_choice.active_profile(conn).model_dump()
+        )
+
+    def _current(
+        self,
+        conn: sqlite3.Connection,
+        talk_id: str,
+        revision: int,
+        basis: str = "",
+        route: interest.Route | None = None,
+    ) -> db.Row | None:
         """Доклад, если результат обработки ещё к нему относится; иначе — повтор очереди."""
         talk = db.one(conn, "SELECT status, input_revision, job FROM talks WHERE id = ?", talk_id)
         if talk is None or talk["job"] != "running":
@@ -465,13 +647,29 @@ class Processor:
             job = "queued" if talk["status"] not in ("insufficient_data", "not_held") else None
             conn.execute("UPDATE talks SET job=?, step=NULL WHERE id=?", (job, talk_id))
             return None
+        if basis and (
+            basis != self._basis(conn) or route is not interest.processing_route(conn, talk_id)
+        ):
+            try:
+                enqueue(conn, [talk_id])
+            except UserError as error:
+                conn.execute(
+                    "UPDATE talks SET job='failed',error=? WHERE id=?", (error.message, talk_id)
+                )
+            return None
         return talk
 
-    def _save_card(self, talk_id: str, revision: int) -> None:
+    def _save_card(
+        self,
+        talk_id: str,
+        revision: int,
+        basis: str = "",
+        route: interest.Route | None = None,
+    ) -> None:
         """Доклад без сводки: карточка подтверждена на этапе «Доклады», в справку он идёт
         темой, авторами, организациями и контактами."""
         with self.database.tx() as conn:
-            talk = self._current(conn, talk_id, revision)
+            talk = self._current(conn, talk_id, revision, basis, route)
             if talk is None:
                 return
             if can_transition(TalkStatus(talk["status"]), TalkStatus.PROCESSED):
@@ -485,20 +683,38 @@ class Processor:
                 (talk_id,),
             )
 
-    def _save(self, talk_id: str, summary: Summary, pack: TalkFragmentPack, revision: int) -> None:
+    def _save(
+        self,
+        talk_id: str,
+        summary: Summary,
+        pack: TalkFragmentPack,
+        revision: int,
+        basis: str = "",
+        route: interest.Route | None = None,
+    ) -> None:
         """Новая машинная сводка становится очередной версией и требует проверки человеком.
         Тот же результат из кэша повторно не записывается."""
         with self.database.tx() as conn:
-            talk = self._current(conn, talk_id, revision)
+            talk = self._current(conn, talk_id, revision, basis, route)
             if talk is None:
                 return
             known = db.one(
                 conn,
-                "SELECT 1 FROM summaries WHERE talk_id = ? AND json_extract(summary, '$.id') = ?",
+                "SELECT 1 FROM summaries WHERE talk_id=? AND json_extract(summary, '$.id')=?",
                 talk_id,
                 str(summary.id),
             )
-            if known is None:
+            latest = db.one(
+                conn,
+                "SELECT pack,summary FROM summaries WHERE talk_id=? ORDER BY number DESC LIMIT 1",
+                talk_id,
+            )
+            if (
+                known is None
+                or latest is None
+                or latest["pack"] != pack.model_dump_json()
+                or json.loads(latest["summary"])["status"] == "stale"
+            ):
                 number = conn.execute(
                     "SELECT coalesce(max(number), 0) + 1 FROM summaries WHERE talk_id = ?",
                     (talk_id,),
@@ -515,11 +731,14 @@ class Processor:
                         stored.created_at.isoformat(),
                     ),
                 )
-                if can_transition(TalkStatus(talk["status"]), TalkStatus.PROCESSED):
-                    conn.execute(
-                        "UPDATE talks SET status = ? WHERE id = ?",
-                        (TalkStatus.PROCESSED.value, talk_id),
-                    )
+            status = TalkStatus(talk["status"])
+            if (known is None or status is not TalkStatus.REVIEWED) and can_transition(
+                status, TalkStatus.PROCESSED
+            ):
+                conn.execute(
+                    "UPDATE talks SET status = ? WHERE id = ?",
+                    (TalkStatus.PROCESSED.value, talk_id),
+                )
             conn.execute(
                 "UPDATE talks SET card_only = 0, job = 'done', step = NULL, error = NULL "
                 "WHERE id = ? AND job = 'running'",

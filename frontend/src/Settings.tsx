@@ -5,13 +5,17 @@ import { useResource } from './useResource';
 import { useUnsavedChanges } from './useUnsavedChanges';
 import type { Theme } from './theme';
 
+type InferenceReplica = { name: string; ready: boolean };
+
 type SystemInfo = {
   version: string;
-  ollama_url: string;
   ollama_available: boolean;
   ollama_models: string[];
-  asr_enabled: boolean;
-  profiles: { name: string; model: string; reasoning: boolean; prompt_version: string; default: boolean; available?: boolean | null; used?: boolean }[];
+  inference_engine?: 'ollama' | 'vllm';
+  inference_available?: boolean;
+  inference_models?: string[];
+  inference_replicas?: InferenceReplica[];
+  profiles: { name: string; model: string; engine?: 'ollama' | 'vllm'; reasoning: boolean; prompt_version: string; default: boolean; available?: boolean | null; used?: boolean }[];
   profile_note?: string | null;
   templates: { name: string; version: string }[];
   queue: Partial<Record<'queued' | 'running' | 'failed' | 'paused', number>>;
@@ -28,6 +32,8 @@ export type ModelState = {
   current: ActiveModel;
   default: ActiveModel;
   ollama_available: boolean;
+  inference_engine?: 'ollama' | 'vllm';
+  inference_available?: boolean;
   models: OllamaModel[];
 };
 
@@ -39,7 +45,7 @@ function describe(model: ActiveModel) {
 }
 
 /** Модель для сводок и режим рассуждения; галочка доступна, только если модель умеет рассуждать. */
-function ModelCard() {
+function ModelCard({ readiness, replicas }: { readiness?: boolean; replicas?: InferenceReplica[] }) {
   const [state, setState] = useState<ModelState>();
   const [model, setModel] = useState('');
   const [reasoning, setReasoning] = useState(false);
@@ -80,6 +86,27 @@ function ModelCard() {
   }
 
   if (!state) return error ? <div className="card"><p role="alert">{error}</p></div> : null;
+  if (state.inference_engine === 'vllm') {
+    const ready = readiness ?? state.inference_available;
+    return (
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Модель обработки</h3>
+        <p><strong>{state.current.model}</strong> <span className="muted">через vLLM</span></p>
+        <p role="status">
+          <span className={`pill ${ready ? 'ok' : 'warn'}`}>
+            {ready ? 'Модель доступна' : 'Модель недоступна'}
+          </span>
+        </p>
+        {replicas?.length ? <ul aria-label="Экземпляры vLLM">
+          {replicas.map(({ name, ready: replicaReady }) => (
+            <li key={name}>{name} · {replicaReady ? 'готов' : 'недоступен'}</li>
+          ))}
+        </ul> : null}
+        {!ready && <p>Дождитесь загрузки модели. Если статус сохраняется, обратитесь к администратору.</p>}
+      </div>
+    );
+  }
+
   const selected = state.models.find((item) => item.name === model);
   const canThink = !!selected?.thinking;
   const changed = model !== state.current.model || reasoning !== state.current.reasoning;
@@ -154,7 +181,10 @@ function ModelCard() {
 }
 
 export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Theme) => void }) {
-  const { data: info, error } = useResource<SystemInfo>('/api/v1/system');
+  const { data: info, error } = useResource<SystemInfo>('/api/v1/system', 5000);
+  const engine = info?.inference_engine === 'vllm' ? 'vLLM' : 'Ollama';
+  const inferenceAvailable = info?.inference_available ?? info?.ollama_available;
+  const inferenceModels = info?.inference_models ?? info?.ollama_models ?? [];
 
   return (
     <section aria-labelledby="settings-title">
@@ -174,7 +204,7 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
         {error && <p role="alert">{error}</p>}
       </div>
 
-      <ModelCard />
+      <ModelCard readiness={inferenceAvailable} replicas={info?.inference_replicas} />
 
       {info && (
         <details className="card system-details"><summary>Состояние сервиса и технические сведения</summary>
@@ -182,25 +212,19 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
           <div className="kv">
             <div><b>Версия</b>{info.version}</div>
             <div>
-              <b>Ollama</b>
-              {info.ollama_available
-                ? <span className="pill ok">доступна</span>
-                : <span className="pill bad">недоступна</span>}
-            </div>
-            <div>
-              <b>Распознавание речи</b>
-              {info.asr_enabled
-                ? <span className="pill ok">включено</span>
-                : <span className="pill warn">выключено, записи не расшифровываются</span>}
+              <b>{engine}</b>
+              {inferenceAvailable
+                ? <span className="pill ok">{engine === 'vLLM' ? 'доступен' : 'доступна'}</span>
+                : <span className="pill bad">{engine === 'vLLM' ? 'недоступен' : 'недоступна'}</span>}
             </div>
             <div><b>В очереди</b>{info.queue.queued ?? 0}</div>
             <div><b>Обрабатывается</b>{info.queue.running ?? 0}</div>
             <div><b>С ошибкой</b>{info.queue.failed ?? 0}</div>
             <div><b>Приостановлено</b>{info.queue.paused ?? 0}</div>
           </div>
-          {info.ollama_available && (
+          {inferenceAvailable && (
             <p className="muted">
-              Модели Ollama: {info.ollama_models.length ? info.ollama_models.join(', ') : 'не загружены'}.
+              Модели {engine}: {inferenceModels.length ? inferenceModels.join(', ') : 'не загружены'}.
             </p>
           )}
           <h3>Профили моделей</h3>
@@ -217,7 +241,7 @@ export function Settings({ theme, onTheme }: { theme: Theme; onTheme: (theme: Th
                         {profile.default && <span className="pill info">по умолчанию</span>}{' '}
                         {profile.used && <span className="pill ok">используется</span>}
                       </th>
-                      <td>{profile.model}{profile.available === false && <> <span className="pill warn">нет в каталоге моделей</span></>}</td>
+                      <td>{profile.model}{profile.available === false && <> <span className="pill warn">{profile.engine === 'vllm' ? 'не обслуживается vLLM' : 'нет в каталоге моделей'}</span></>}</td>
                       <td>{profile.reasoning ? 'да' : 'нет'}</td>
                       <td>{profile.prompt_version}</td>
                     </tr>

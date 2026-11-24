@@ -64,7 +64,7 @@ test('главная показывает конференции и удаляе
   expect(screen.getByRole('heading', { level: 1, name: 'Репортёр' })).toBeDefined();
   const card = await screen.findByRole('article', { name: 'Конференция' });
   expect(within(card).getByText('Проверено')).toBeDefined();
-  expect(within(card).getByText('обработка не запущена')).toBeDefined();
+  expect(within(card).getByText('Загрузка материалов')).toBeDefined();
   fireEvent.click(within(card).getByRole('button', { name: 'Удалить' }));
 
   await screen.findByText('Конференция «Конференция» удалена.');
@@ -160,4 +160,28 @@ test('активный этап не выдаёт разрешение поте�
   fireEvent.click(screen.getByRole('button', { name: 'Справка' }));
   await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
   await screen.findByRole('heading', { name: 'Справка' });
+});
+
+
+test('главная показывает первый шаг или продолжение конференции с нужного этапа', async () => {
+  let departments: { pages: { text: string }[] }[] = [];
+  const routes = {
+    '/api/v1/conferences': () => Response.json([{ ...conference, resume_step: 'review' }]),
+    '/api/v1/departments': () => Response.json(departments),
+    '/api/v1/conferences/conference': () => Response.json(conference),
+    '/api/v1/conferences/conference/progress': () => Response.json(progress),
+  };
+  vi.stubGlobal('fetch', api(routes));
+  const { unmount } = render(<App />);
+  const firstStep = await screen.findByRole('link', { name: 'Добавить отдел' });
+  expect(firstStep.getAttribute('href')).toBe('#/departments');
+  expect(screen.queryByLabelText('Название новой конференции')).toBeNull();
+  unmount();
+
+  departments = [{ pages: [{ text: 'Положение отдела' }] }];
+  render(<App />);
+  await screen.findByLabelText('Название новой конференции');
+  const card = await screen.findByRole('article', { name: 'Конференция' });
+  fireEvent.click(within(card).getByRole('button', { name: 'Продолжить' }));
+  await waitFor(() => expect(window.location.hash).toBe('#/c/conference/review'));
 });

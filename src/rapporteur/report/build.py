@@ -19,6 +19,7 @@ from rapporteur.settings import TEMPLATES_DIR
 from rapporteur.storage import Storage
 
 TEMPLATE = "starter"
+OPERATOR_TEMPLATE = "operator"
 REPORT_FORMATS = (ReportFormat.DOCX, ReportFormat.MARKDOWN, ReportFormat.PDF)
 
 
@@ -38,11 +39,15 @@ def build_report(
     files_key: str,
     work: Path,
     *,
-    template_dir: Path = TEMPLATES_DIR / TEMPLATE,
+    template_dir: Path | None = None,
     formats: tuple[ReportFormat, ...] = REPORT_FORMATS,
 ) -> BuiltReport:
     """Файлы кладутся в files_key/. Ошибка выборки, бланка или подтверждения — ReportError."""
     try:
+        if template_dir is None:
+            template_dir = TEMPLATES_DIR / (
+                OPERATOR_TEMPLATE if sources.operator_fields is not None else TEMPLATE
+            )
         template = load_template(template_dir)
         assembled = build_report_input(
             sources, selection, template.spec.version, unreviewed_confirmed

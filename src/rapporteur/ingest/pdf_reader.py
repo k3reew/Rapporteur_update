@@ -1,5 +1,6 @@
 """Текст PDF по страницам и строки с размером шрифта для поиска заголовка."""
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +33,23 @@ def open_pdf(path: Path) -> pdfium.PdfDocument:
         if getattr(error, "err_code", None) == pdfium_raw.FPDF_ERR_PASSWORD:
             raise StageError(FailureCode.ENCRYPTED_FILE, "PDF защищён паролем") from error
         raise StageError(FailureCode.BROKEN_FILE, "Файл повреждён: PDF не читается") from error
+
+
+def text_in_reading_order(path: Path, count: int) -> list[str] | None:
+    # В PDF от LibreOffice PDFium может размещать латиницу и числа в конце строки.
+    try:
+        result = subprocess.run(
+            ["pdftotext", "-enc", "UTF-8", str(path), "-"],
+            check=True,
+            capture_output=True,
+            timeout=120,
+        )
+        pages = result.stdout.decode("utf-8").split("\f")
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+        return None
+    if len(pages) == count + 1 and not pages[-1].strip():
+        return pages[:-1]
+    return None
 
 
 def read_page(pdf: pdfium.PdfDocument, page_no: int) -> PdfPage:

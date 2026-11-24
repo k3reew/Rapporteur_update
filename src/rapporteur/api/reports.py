@@ -54,6 +54,18 @@ def list_reports(conn: ReadTx, conference_id: str) -> list[reports.ReportVersion
     return reports.versions(conn, conference_id)
 
 
+@api.get("/conferences/{conference_id}/report-draft")
+def report_draft(conn: ReadTx, conference_id: str) -> reports.ReportDraftView:
+    return reports.draft(conn, conference_id)
+
+
+@api.put("/conferences/{conference_id}/report-draft")
+def save_report_draft(
+    conn: Tx, conference_id: str, data: reports.ReportDraftWrite
+) -> reports.ReportDraftView:
+    return reports.save_draft(conn, conference_id, data)
+
+
 @api.post("/conferences/{conference_id}/reports", status_code=201)
 def build_report(
     request: Request, conference_id: str, data: reports.ReportBuild

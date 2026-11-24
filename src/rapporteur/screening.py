@@ -9,6 +9,7 @@
 import json
 import logging
 import sqlite3
+import time
 from collections.abc import Callable, Iterator
 from functools import partial
 from typing import Any, Literal
@@ -17,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rapporteur import db, departments, model_choice
 from rapporteur.contracts import ModelProfile, TalkFragmentPack
+from rapporteur.contracts.enums import TextOrigin
 from rapporteur.errors import NotFoundError, StageError, UserError
 from rapporteur.llm.client import LlmClient
 from rapporteur.llm.tasks import json_task
@@ -120,7 +122,9 @@ def view(conn: sqlite3.Connection, talk_id: str) -> dict[str, Any]:
             "error": None,
             "manual": False,
         }
-    stale = snapshot != (row["input_revision"], row["department_revisions"], row["profile"])
+    stale = snapshot[:2] != (row["input_revision"], row["department_revisions"]) or (
+        not row["manual"] and snapshot[2] != row["profile"]
+    )
     items = json.loads(row["result"])
     if row["job"] == "failed" and not items:
         items = [
@@ -207,7 +211,9 @@ def review(conn: sqlite3.Connection, talk_id: str, data: Review) -> None:
             "department_name": dep["name"],
             "status": "relevant" if dep["id"] in selected else "not_relevant",
             "reason": old.get("reason")
-            or ("Интерес подтверждён оператором" if dep["id"] in selected else "Исключён оператором"),
+            or (
+                "Интерес подтверждён оператором" if dep["id"] in selected else "Исключён оператором"
+            ),
             "evidence": old.get("evidence", []),
             "paragraphs": old.get("paragraphs", []),
         }
@@ -317,7 +323,8 @@ def run_once(
     with database.tx() as conn:
         row = db.one(
             conn,
-            "SELECT * FROM talk_screenings s WHERE job='queued' AND version=(SELECT "
+            "SELECT s.* FROM talk_screenings s JOIN talks t ON t.id=s.talk_id "
+            "WHERE s.job='queued' AND t.worker_active=0 AND s.version=(SELECT "
             "max(version) FROM talk_screenings x WHERE x.talk_id=s.talk_id) "
             "ORDER BY created_at LIMIT 1",
         )
@@ -325,15 +332,41 @@ def run_once(
             return None
         talk_id: str = row["talk_id"]
         version = row["version"]
+        if _snapshot(conn, talk_id) != (
+            row["input_revision"],
+            row["department_revisions"],
+            row["profile"],
+        ) and departments.latest(conn):
+            conn.execute(
+                "UPDATE talk_screenings SET job='done' WHERE talk_id=? AND version=?",
+                (talk_id, version),
+            )
+            queue(conn, talk_id, force=True)
+            return talk_id
+        conn.execute("UPDATE talks SET worker_active=1 WHERE id=?", (talk_id,))
         conn.execute(
             "UPDATE talk_screenings SET job='running' WHERE talk_id=? AND version=?",
             (talk_id, version),
         )
         log.info("Отбор по интересу отделов: доклад %s, версия %s", talk_id, version)
-        profile = ModelProfile.model_validate_json(row["profile"])
+    started = time.monotonic()
     try:
+        profile = ModelProfile.model_validate_json(row["profile"])
         with database.read() as conn:
             deps = departments.require_regulations(conn)
+            previous = db.one(
+                conn,
+                "SELECT department_revisions,result FROM talk_screenings WHERE talk_id=? "
+                "AND input_revision=? AND manual=1 AND version<? ORDER BY version DESC LIMIT 1",
+                talk_id,
+                row["input_revision"],
+                version,
+            )
+        preserved = (
+            {item["department_id"]: item for item in json.loads(previous["result"])}
+            if previous and previous["department_revisions"] != row["department_revisions"]
+            else {}
+        )
         pack = pack_factory(talk_id)
         client = factory(profile)
         budget = max(
@@ -350,8 +383,20 @@ def run_once(
         source_batches = list(
             _chunks([{"label": f.label, "text": f.text} for f in pack.fragments], budget)
         )
+        readable = any(
+            f.text.strip() and f.origin is not TextOrigin.VLM and not f.low_quality
+            for f in pack.fragments
+        )
+        evidence_links = {
+            fragment.label: f"/api/v1/files/{fragment.source_file_id}/content"
+            for fragment in pack.fragments
+        }
         results = []
         for dep in deps:
+            confirmed = preserved.get(dep["id"])
+            if confirmed and confirmed["department_version"] == dep["version"]:
+                results.append(confirmed)
+                continue
             decisions = []
             regulation_batches = list(
                 _chunks(
@@ -412,17 +457,43 @@ def run_once(
                     paragraphs=[],
                 )
             )
+            if chosen.status == "not_relevant" and not readable:
+                chosen = Decision(
+                    status="uncertain",
+                    reason="Недостаточно читаемого текста для уверенного исключения доклада",
+                    evidence=[],
+                    paragraphs=[],
+                )
             results.append(
                 {
                     "department_id": dep["id"],
                     "department_version": dep["version"],
                     "department_name": dep["name"],
                     **chosen.model_dump(),
+                    "evidence": [
+                        {**quote.model_dump(), "source_url": evidence_links.get(quote.label)}
+                        for quote in chosen.evidence
+                    ],
+                    "paragraphs": [
+                        {
+                            **quote.model_dump(),
+                            "source_url": (
+                                f"/api/v1/departments/{dep['id']}/source?version={dep['version']}"
+                                if dep["sha256"] and not quote.label.startswith("p0.")
+                                else None
+                            ),
+                        }
+                        for quote in chosen.paragraphs
+                    ],
                 }
             )
         with database.tx() as conn:
             current = _latest(conn, talk_id)
             if current is None or current["version"] != version:
+                conn.execute(
+                    "UPDATE talk_screenings SET job='done',result=? WHERE talk_id=? AND version=?",
+                    (db.dumps(results), talk_id, version),
+                )
                 return talk_id
             if _snapshot(conn, talk_id) != (
                 row["input_revision"],
@@ -449,4 +520,8 @@ def run_once(
                     version,
                 ),
             )
+    finally:
+        with database.tx() as conn:
+            conn.execute("UPDATE talks SET worker_active=0 WHERE id=?", (talk_id,))
+        log.info("stage=screening seconds=%.3f", time.monotonic() - started)
     return talk_id

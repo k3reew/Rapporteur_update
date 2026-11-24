@@ -9,11 +9,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rapporteur import db, departments, interest, reports, screening
+from rapporteur import db, departments, interest, preparation, reports, screening
 from rapporteur.contracts import ReportInput
 from rapporteur.errors import NotFoundError, UserError
-from rapporteur.report.assemble import build_report_input, report_variables, template_context
-from rapporteur.report.build import REPORT_FORMATS, BuiltReport
+from rapporteur.report.assemble import (
+    ReportError,
+    build_report_input,
+    report_variables,
+    template_context,
+)
+from rapporteur.report.build import OPERATOR_TEMPLATE, REPORT_FORMATS, BuiltReport
 from rapporteur.report.export import export_files, render_formats
 from rapporteur.report.template import Template, TemplateError, TemplateSpec, load_template
 from rapporteur.settings import TEMPLATES_DIR
@@ -37,6 +42,7 @@ class Snapshot(BaseModel):
     source_versions: dict[str, int]
     input_revisions: dict[str, int]
     interest_versions: dict[str, int]
+    draft_revision: int | None = None
 
 
 def view(conn: sqlite3.Connection, job_id: str) -> dict[str, Any]:
@@ -95,14 +101,18 @@ def _existing(
 def enqueue(
     database: db.Database, storage: Storage, conference_id: str, data: BuildRequest
 ) -> dict[str, Any]:
-    request_hash = cache_key(data.model_dump(exclude={"idempotency_key"}))
+    excluded = {"idempotency_key"}
+    if data.draft_revision is None:
+        excluded.add("draft_revision")
+    request_hash = cache_key(data.model_dump(exclude=excluded))
     with database.read() as conn:
         existing = _existing(conn, conference_id, data.idempotency_key, request_hash)
         if existing:
             return existing
         departments.require_regulations(conn)
+        operator = preparation.operator(conn, conference_id)
         selection_request = data
-        if data.talk_ids is None:
+        if not operator and data.talk_ids is None:
             selection_request = data.model_copy(
                 update={
                     "talk_ids": [
@@ -134,16 +144,22 @@ def enqueue(
             if row["id"] in interests
         }
     try:
-        template = load_template(TEMPLATE_DIR)
+        directory = TEMPLATES_DIR / OPERATOR_TEMPLATE if operator else TEMPLATE_DIR
+        template = load_template(directory)
     except TemplateError as error:
         raise UserError(f"Не удалось прочитать бланк справки: {error}", 500) from error
     content = template.document.read_bytes()
     sha = sha256_hex(content)
     template_key = f"report-templates/{sha}.docx"
     storage.put(template_key, content)
-    assembled = build_report_input(
-        sources, selection, template.spec.version, data.unreviewed_confirmed
-    )
+    try:
+        assembled = build_report_input(
+            sources, selection, template.spec.version, data.unreviewed_confirmed and not operator
+        )
+    except ReportError as error:
+        raise UserError(f"Справка не собрана: {error}") from error
+    if operator and assembled.input.skipped:
+        raise UserError("Проверьте сводки всех включённых докладов перед выпуском", 409)
     snapshot = Snapshot(
         input=assembled.input,
         warnings=assembled.warnings,
@@ -155,11 +171,13 @@ def enqueue(
         },
         input_revisions=input_revisions,
         interest_versions={key: value["version"] for key, value in interests.items()},
+        draft_revision=data.draft_revision,
     )
     with database.tx() as conn:
         existing = _existing(conn, conference_id, data.idempotency_key, request_hash)
         if existing:
             return existing
+        _require_current(conn, conference_id, snapshot)
         job_id = db.new_id()
         now = db.now()
         conn.execute(
@@ -180,11 +198,39 @@ def enqueue(
         return view(conn, job_id)
 
 
+def _require_current(conn: sqlite3.Connection, conference_id: str, snapshot: Snapshot) -> None:
+    if snapshot.input.operator_fields is not None:
+        reports.require_operator_snapshot(
+            conn, conference_id, snapshot.input, snapshot.draft_revision
+        )
+    revisions = {
+        row["id"]: row["input_revision"] for row in db.conference_talks(conn, conference_id)
+    }
+    summaries = db.current_summaries(conn, conference_id)
+    for talk_id, revision in snapshot.input_revisions.items():
+        summary_version = summaries[talk_id]["number"] if talk_id in summaries else None
+        if (
+            revisions.get(talk_id) != revision
+            or not interest.reportable(conn, talk_id)
+            or screening.view(conn, talk_id)["version"] != snapshot.interest_versions[talk_id]
+            or summary_version != snapshot.source_versions.get(talk_id)
+        ):
+            raise UserError("Состав справки изменился. Соберите новую справку.", 409)
+
+
 def retry(conn: sqlite3.Connection, job_id: str) -> dict[str, Any]:
     current = view(conn, job_id)
     # Приостановленное после перезапуска задание продолжается тем же снимком (processing.py).
     if current["status"] not in ("failed", "paused"):
         raise UserError("Повтор доступен для неудачного или приостановленного задания.", 409)
+    if preparation.automatic(conn, current["conference_id"]) or preparation.operator(
+        conn, current["conference_id"]
+    ):
+        stored = db.one(conn, "SELECT snapshot FROM report_jobs WHERE id=?", job_id)
+        assert stored is not None
+        _require_current(
+            conn, current["conference_id"], Snapshot.model_validate_json(stored["snapshot"])
+        )
     conn.execute(
         "UPDATE report_jobs SET status='queued',step='queued',error=NULL,updated_at=? WHERE id=?",
         (db.now(), job_id),
@@ -208,6 +254,11 @@ def run_once(database: db.Database, storage: Storage) -> bool:
         log.info("Выпуск справки: задание %s, попытка %s", job_id, attempt)
     try:
         snapshot = Snapshot.model_validate_json(row["snapshot"])
+        with database.read() as conn:
+            if snapshot.input.operator_fields is not None or preparation.automatic(
+                conn, row["conference_id"]
+            ):
+                _require_current(conn, row["conference_id"], snapshot)
         if sha256_hex(storage.get(snapshot.template_key)) != snapshot.template_sha256:
             raise UserError("Сохранённый бланк повреждён.")
         template = Template(spec=snapshot.template, document=storage.path(snapshot.template_key))
@@ -236,6 +287,10 @@ def run_once(database: db.Database, storage: Storage) -> bool:
             current = db.one(conn, "SELECT status,attempt FROM report_jobs WHERE id=?", job_id)
             if current is None or current["status"] != "running" or current["attempt"] != attempt:
                 return True
+            if snapshot.input.operator_fields is not None or preparation.automatic(
+                conn, row["conference_id"]
+            ):
+                _require_current(conn, row["conference_id"], snapshot)
             reports.save_version(conn, row["conference_id"], job_id, built)
             conn.execute(
                 "UPDATE report_jobs SET "

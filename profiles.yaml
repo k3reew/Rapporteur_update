@@ -2,7 +2,7 @@
 # Этап получает профиль целиком в конфиге, поэтому смена модели или параметров меняет ключ кэша.
 # prompt_version выбирает файлы prompts/<шаг>/<версия>.md.
 #
-# Профиль server выбирается через RAPPORTEUR_PROFILE в Compose; local — для разработки.
+# Профиль server-vllm выбирается в Compose. server и local работают с Ollama.
 default: local
 profiles:
   # Машина разработки: RTX 3060 12 ГБ, проверка механизма, а не качества (docs/benchmarks/).
@@ -40,6 +40,32 @@ profiles:
     model: qwen3.5:27b
     weights_revision: local-manifest
     quantization: q4_K_M
+    generation:
+      temperature: 0.1
+      reasoning: true
+      max_tokens: 12000
+      context_tokens: 32768
+    prompt_version: v4
+    stages: [facts, facts-review, summary, critic, vision, segmentation, recommendations]
+
+  - name: server-vllm
+    engine: vllm
+    model: Qwen/Qwen3.5-27B
+    weights_revision: hf:81a287ca484a5e71148f5beb7f367bb5286d70f9
+    quantization: bf16
+    generation:
+      temperature: 0.1
+      reasoning: true
+      max_tokens: 12000
+      context_tokens: 32768
+    prompt_version: v4
+    stages: [facts, facts-review, summary, critic, vision, segmentation, recommendations]
+
+  - name: server-vllm-gptq
+    engine: vllm
+    model: Qwen/Qwen3.5-27B-GPTQ-Int4
+    weights_revision: hf:8f0c09f227ae570e79617c6d9172b59df9c16081
+    quantization: gptq-int4
     generation:
       temperature: 0.1
       reasoning: true

@@ -12,28 +12,35 @@ tool=src/rapporteur/storage_access.py
 [[ -f "$tool" ]] || { echo 'Нет инструмента storage-access.py в исходниках или комплекте' >&2; exit 1; }
 tool=$(realpath -e -- "$tool")
 # Normalized Compose includes overrides; --images also lists dependency images.
-application=$(docker compose config --format yaml app | awk '
-  $0 == "  app:" { service=1; next }
+app=app
+if [[ "${INFERENCE_ENGINE:-$(value INFERENCE_ENGINE ollama)}" == vllm ]]; then app=app-vllm; fi
+services=("$app")
+if [[ "$app" == app-vllm ]]; then services+=(vllm vllm-gptq vllm-gptq-second); fi
+config=$(docker compose config --format yaml "${services[@]}")
+application=$(printf '%s\n' "$config" | awk -v app="$app" '
+  $0 == "  " app ":" { service=1; next }
   service && /^  [^ ]/ { service=0 }
   service { print }
 ')
 image=$(printf '%s\n' "$application" | sed -n 's/^    image: //p')
 [[ -n "$image" ]] || { echo 'Не найден образ сервиса app в Compose' >&2; exit 1; }
 bind_source() {
-  printf '%s\n' "$application" | awk -v target="$1" '
+  awk -v target="$1" '
     /^[[:space:]]*- type:/ { kind=$3; source="" }
     /^[[:space:]]*source:/ { source=$0; sub(/^[[:space:]]*source: /,"",source) }
     /^[[:space:]]*target:/ && $2==target && kind=="bind" { print source }
   '
 }
-storage=$(bind_source /data)
+storage=$(printf '%s\n' "$application" | bind_source /data)
 [[ -n "$storage" && -d "$storage" ]] || { echo "Не найден bind-каталог /data: $storage" >&2; exit 1; }
 storage=$(realpath -e -- "$storage")
 models=("${OLLAMA_MODELS_DIR:-$(value OLLAMA_MODELS_DIR ./models/ollama)}"
-        "${ASR_MODELS_DIR:-$(value ASR_MODELS_DIR ./models/asr)}")
-for target in /models/ollama /models/asr; do
-  source=$(bind_source "$target")
-  [[ -z "$source" ]] || models+=("$source")
+        "${VLLM_MODELS_DIR:-$(value VLLM_MODELS_DIR ./models/vllm/qwen3.5-27b)}"
+        "${VLLM_GPTQ_MODELS_DIR:-$(value VLLM_GPTQ_MODELS_DIR ./models/vllm/qwen3.5-27b-gptq-int4)}")
+for target in /models/ollama /models/qwen; do
+  while IFS= read -r source; do models+=("$source"); done < <(
+    printf '%s\n' "$config" | bind_source "$target"
+  )
 done
 for model in "${models[@]}"; do
   model=$(realpath -m -- "$model")

@@ -4,7 +4,7 @@ import json
 from typing import Literal
 
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from rapporteur import (
     db,
@@ -28,6 +28,7 @@ class TalkProgress(BaseModel):
     section: str
     order: int
     title: str | None
+    speakers: list[str]
     status: TalkStatus
     # queued, running, done, failed или paused — приостановлено после перезапуска до команды
     # оператора; step — текущий шаг: screening, parse, facts, verify, summary.
@@ -46,6 +47,9 @@ class TalkProgress(BaseModel):
 
 class Progress(BaseModel):
     processing_started: bool
+    auto_start: bool
+    workflow: Literal["legacy", "operator"]
+    screening_confirmed: bool
     files: int
     talks: list[TalkProgress]
 
@@ -53,11 +57,14 @@ class Progress(BaseModel):
 @api.post("/conferences/{conference_id}/processing", status_code=202)
 def start_processing(request: Request, conn: Tx, conference_id: str) -> Progress:
     materials.require_conference(conn, conference_id)
+    _require_registry(conn, conference_id)
+    if preparation.operator(conn, conference_id) and not preparation.screening_confirmed(
+        conn, conference_id
+    ):
+        raise UserError("Сначала подтвердите соответствие отделам", 409)
     if not db.one(conn, "SELECT 1 FROM files WHERE conference_id = ?", conference_id):
         raise UserError("Сначала загрузите материалы")
-    departments.require_regulations(conn)
-    conn.execute("UPDATE conferences SET processing_started = 1 WHERE id = ?", (conference_id,))
-    processing.enqueue_ready(conn, conference_id)
+    processing.start_conference(conn, conference_id)
     _wake(request)
     return conference_progress(conn, conference_id)
 
@@ -65,6 +72,7 @@ def start_processing(request: Request, conn: Tx, conference_id: str) -> Progress
 @api.get("/conferences/{conference_id}/progress")
 def conference_progress(conn: ReadTx, conference_id: str) -> Progress:
     conference = materials.require_conference(conn, conference_id)
+    automatic = preparation.automatic(conn, conference_id)
     current = db.current_summaries(conn, conference_id)
     talks = []
     for row in db.conference_talks(conn, conference_id):
@@ -76,6 +84,7 @@ def conference_progress(conn: ReadTx, conference_id: str) -> Progress:
                 section=row["section_title"],
                 order=row["position"],
                 title=row["title"],
+                speakers=[person["name"] for person in json.loads(row["speakers"])],
                 status=row["status"],
                 job=row["job"],
                 step=row["step"],
@@ -87,6 +96,7 @@ def conference_progress(conn: ReadTx, conference_id: str) -> Progress:
                 screening=screening.view(conn, row["id"]),
                 bulk_reviewable=bool(
                     summary
+                    and (not automatic or interest.route(conn, row["id"]) is interest.Route.SUMMARY)
                     and row["status"] == "processed"
                     and row["job"] not in ("queued", "running")
                     and json.loads(summary["summary"])["status"] == "ready"
@@ -98,19 +108,38 @@ def conference_progress(conn: ReadTx, conference_id: str) -> Progress:
                 ),
             )
         )
+    operator = preparation.operator(conn, conference_id)
+    if operator:
+        active = {row["id"] for row in preparation.screening_talks(conn, conference_id)}
+        talks = [talk for talk in talks if talk.id in active]
     files = conn.execute(
         "SELECT count(*) FROM files WHERE conference_id = ?", (conference_id,)
     ).fetchone()[0]
     return Progress(
-        processing_started=bool(conference["processing_started"]), files=files, talks=talks
+        processing_started=bool(conference["processing_started"]),
+        auto_start=automatic,
+        workflow="operator" if operator else "legacy",
+        screening_confirmed=preparation.screening_confirmed(conn, conference_id),
+        files=files,
+        talks=talks,
     )
 
 
 @api.post("/talks/{talk_id}/retry", status_code=202)
 def retry_talk(request: Request, conn: Tx, talk_id: str) -> Response:
-    row = db.one(conn, "SELECT job FROM talks WHERE id = ?", talk_id)
+    row = db.one(
+        conn,
+        "SELECT t.job,s.conference_id FROM talks t JOIN sections s ON s.id=t.section_id "
+        "WHERE t.id=?",
+        talk_id,
+    )
     if row is None:
         raise NotFoundError("Доклад не найден")
+    if preparation.operator(conn, row["conference_id"]) and (
+        not preparation.screening_confirmed(conn, row["conference_id"])
+        or talk_id not in {t["id"] for t in preparation.screening_talks(conn, row["conference_id"])}
+    ):
+        raise UserError("Сначала подтвердите реестр и соответствие отделам", 409)
     if row["job"] in ("queued", "running"):
         raise UserError("Доклад уже в обработке", 409)
     processing.enqueue(conn, [talk_id])
@@ -124,8 +153,16 @@ def preparation_state(conn: ReadTx, conference_id: str) -> dict[str, object]:
 
 
 @api.post("/conferences/{conference_id}/preparation", status_code=202)
-def prepare_conference(request: Request, conn: Tx, conference_id: str) -> dict[str, object]:
-    preparation.queue(conn, conference_id)
+def prepare_conference(
+    request: Request, conn: Tx, conference_id: str, data: preparation.PreparationStart | None = None
+) -> dict[str, object]:
+    preparation.queue(
+        conn,
+        conference_id,
+        auto_start=bool(data and data.auto_start),
+        force=bool(data and data.force),
+        workflow=data.workflow if data else "legacy",
+    )
     _wake(request)
     return preparation.state(conn, conference_id)
 
@@ -136,10 +173,72 @@ def confirm_preparation(
 ) -> dict[str, object]:
     preparation.apply(conn, conference_id, data, _storage(request))
     conference = materials.require_conference(conn, conference_id)
-    if conference["processing_started"]:
-        processing.enqueue_ready(conn, conference_id)
+    if conference["processing_started"] or preparation.automatic(conn, conference_id):
+        processing.start_conference(conn, conference_id)
         _wake(request)
     return preparation.state(conn, conference_id)
+
+
+def _require_registry(conn: ReadTx, conference_id: str) -> None:
+    if preparation.operator(conn, conference_id) and not preparation.screening_talks(
+        conn, conference_id
+    ):
+        raise UserError("Сначала подтвердите реестр докладов", 409)
+
+
+def _screening_rows(conn: ReadTx, conference_id: str) -> list[db.Row]:
+    if preparation.operator(conn, conference_id):
+        return preparation.screening_talks(conn, conference_id)
+    return db.conference_talks(conn, conference_id)
+
+
+class ScreeningChoice(screening.Review):
+    talk_id: str
+
+
+class ScreeningConfirmation(BaseModel):
+    talks: list[ScreeningChoice] = Field(max_length=500)
+
+
+@api.put("/conferences/{conference_id}/screening")
+def confirm_screening(
+    request: Request, conn: Tx, conference_id: str, data: ScreeningConfirmation
+) -> list[dict[str, object]]:
+    materials.require_conference(conn, conference_id)
+    _require_registry(conn, conference_id)
+    if not preparation.operator(conn, conference_id):
+        raise UserError("Этот реестр подтверждается отдельно для каждого доклада", 409)
+    talks = _screening_rows(conn, conference_id)
+    ids = {row["id"] for row in talks}
+    choices = {choice.talk_id: choice for choice in data.talks}
+    if len(choices) != len(data.talks) or choices.keys() - ids:
+        raise UserError("Доклады отсутствуют в подтверждённом реестре или повторяются")
+    for talk_id in ids:
+        view = screening.view(conn, talk_id)
+        if view["state"] in ("queued", "running", "paused", "not_started", "stale"):
+            raise UserError("Дождитесь актуальной оценки всех докладов", 409)
+        choice = choices.get(talk_id)
+        if choice is None and not view["manual"]:
+            raise UserError("Подтвердите решение по каждому докладу", 409)
+        if choice is not None:
+            same = view["manual"] and set(view["department_ids"]) == set(choice.department_ids)
+            if same and view["version"] in (choice.version, choice.version + 1):
+                continue
+            screening.review(conn, talk_id, choice)
+    conn.execute(
+        "UPDATE preparations SET screening_confirmed=1 WHERE conference_id=?", (conference_id,)
+    )
+    for talk in talks:
+        route = interest.processing_route(conn, talk["id"])
+        has_card = bool(talk["card_only"])
+        if (
+            talk["job"] not in ("queued", "running", "done")
+            or (talk["job"] == "done" and has_card != (route is interest.Route.CARD))
+            or talk["status"] == "stale"
+        ):
+            processing.enqueue(conn, [talk["id"]])
+    _wake(request)
+    return conference_screening(conn, conference_id)
 
 
 @api.get("/conferences/{conference_id}/screening")
@@ -147,7 +246,7 @@ def conference_screening(conn: ReadTx, conference_id: str) -> list[dict[str, obj
     materials.require_conference(conn, conference_id)
     return [
         {"talk_id": row["id"], **screening.view(conn, row["id"])}
-        for row in db.conference_talks(conn, conference_id)
+        for row in _screening_rows(conn, conference_id)
     ]
 
 
@@ -155,8 +254,19 @@ def conference_screening(conn: ReadTx, conference_id: str) -> list[dict[str, obj
 def rescreen(request: Request, conn: Tx, conference_id: str) -> list[dict[str, object]]:
     materials.require_conference(conn, conference_id)
     departments.require_regulations(conn)
-    for talk in db.conference_talks(conn, conference_id):
+    _require_registry(conn, conference_id)
+    operator = preparation.operator(conn, conference_id)
+    if operator:
+        conn.execute(
+            "UPDATE preparations SET screening_confirmed=0 WHERE conference_id=?", (conference_id,)
+        )
+    for talk in _screening_rows(conn, conference_id):
         if talk["status"] in ("matched", "stale", "processed", "reviewed"):
+            view = screening.view(conn, talk["id"])
+            if operator and (
+                (view["manual"] and not view["stale"]) or view["state"] in ("queued", "running")
+            ):
+                continue
             screening.queue(conn, talk["id"], force=True)
             conn.execute("UPDATE talks SET job=NULL,step='screening' WHERE id=?", (talk["id"],))
     _wake(request)
@@ -170,12 +280,25 @@ def rescreen_talk(request: Request, conn: Tx, talk_id: str) -> Response:
     материалов; при запущенной обработке доклад ждёт нового отбора (как после rescreen)."""
     row = db.one(
         conn,
-        "SELECT t.status, c.processing_started FROM talks t JOIN sections s ON "
+        "SELECT t.status, c.id AS conference_id, c.processing_started FROM talks t "
+        "JOIN sections s ON "
         "t.section_id=s.id JOIN conferences c ON c.id=s.conference_id WHERE t.id=?",
         talk_id,
     )
     if row is None:
         raise NotFoundError("Доклад не найден")
+    _require_registry(conn, row["conference_id"])
+    if preparation.operator(conn, row["conference_id"]):
+        if talk_id not in {
+            t["id"] for t in preparation.screening_talks(conn, row["conference_id"])
+        }:
+            raise UserError("Доклад отсутствует в подтверждённом реестре", 409)
+        conn.execute(
+            "UPDATE preparations SET screening_confirmed=0 WHERE conference_id=?",
+            (row["conference_id"],),
+        )
+        if screening.view(conn, talk_id)["state"] in ("queued", "running"):
+            return Response(status_code=202)
     if row["status"] not in ("matched", "stale", "processed", "reviewed"):
         raise UserError("Пересчитать отбор можно для докладов с привязанными материалами", 409)
     screening.queue(conn, talk_id, force=True)
@@ -189,14 +312,17 @@ def rescreen_talk(request: Request, conn: Tx, talk_id: str) -> Response:
 def review_screening(
     request: Request, conn: Tx, talk_id: str, data: screening.Review
 ) -> dict[str, object]:
-    screening.review(conn, talk_id, data)
     row = db.one(
         conn,
-        "SELECT c.processing_started FROM conferences c JOIN sections s ON "
+        "SELECT c.id AS conference_id, c.processing_started FROM conferences c JOIN sections s ON "
         "s.conference_id=c.id JOIN talks t ON t.section_id=s.id WHERE t.id=?",
         talk_id,
     )
+    if row and preparation.operator(conn, row["conference_id"]):
+        raise UserError("Подтвердите решения на экране «Соответствие отделам»", 409)
+    previous = interest.processing_route(conn, talk_id)
+    screening.review(conn, talk_id, data)
     if row and row["processing_started"]:
-        processing.enqueue(conn, [talk_id])
+        processing.enqueue_reviewed(conn, talk_id, previous)
         _wake(request)
     return screening.view(conn, talk_id)

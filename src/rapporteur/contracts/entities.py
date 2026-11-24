@@ -59,6 +59,7 @@ class Speaker(ContractModel):
 
     name: NonEmptyStr
     affiliation: NonEmptyStr | None = None
+    position: NonEmptyStr | None = Field(default=None, exclude_if=lambda value: value is None)
     role: PersonRole = PersonRole.SPEAKER
     contacts: list[NonEmptyStr] = Field(default_factory=list)
 

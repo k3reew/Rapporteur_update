@@ -1,0 +1,47 @@
+version: operator-1
+document: report.docx
+variables:
+  title:
+    source: conference.title
+    type: str
+    required: true
+  period:
+    source: report.period
+    type: period
+    required: false
+  place:
+    source: conference.place
+    type: str
+    required: false
+  organizer:
+    source: conference.organizer
+    type: str
+    required: false
+  talks_count:
+    source: computed.talks_count
+    type: int
+    required: true
+  sections:
+    source: report.sections
+    type: list
+    required: true
+  participation:
+    source: draft.participation
+    type: str
+    required: false
+  program:
+    source: draft.program
+    type: str
+    required: false
+  overview:
+    source: draft.overview
+    type: str
+    required: false
+  attachments:
+    source: draft.attachments
+    type: str
+    required: false
+  contacts:
+    source: draft.contacts
+    type: list
+    required: true

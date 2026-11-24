@@ -3,24 +3,71 @@ import { request, getJSON } from './api';
 import { useResource } from './useResource';
 import { useUnsavedChanges } from './useUnsavedChanges';
 
-type Department = { id: string; version: number; name: string; original_name: string; pages: { page: number; text: string }[] };
+export type Department = {
+  id: string; version: number; name: string; original_name?: string | null; filename?: string | null;
+  description?: string; functions?: string; pages: { page: number; text: string }[];
+};
+
+export function departmentReady(department: Pick<Department, 'pages' | 'description' | 'functions'>) {
+  return !!(department.description?.trim() || department.functions?.trim() || department.pages?.some(page => page.text.trim()));
+}
+
 export function Departments() {
-  const { data, setData: setItems, error: loadError } = useResource<Department[]>('/api/v1/departments');
+  const url = '/api/v1/departments';
+  const { data, setData: setItems, error: loadError } = useResource<Department[]>(url);
   const items = data ?? [];
+  const anyReady = items.some(departmentReady);
   const [selected, setSelected] = useState('');
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [functions, setFunctions] = useState('');
+  const [file, setFile] = useState<File>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const selectedName = items.find(item => item.id === selected)?.name ?? '';
-  useUnsavedChanges(busy || name !== selectedName);
-  async function upload(file: File) {
+  const department = items.find(item => item.id === selected);
+  const fieldsDirty = name !== (department?.name ?? '') || description !== (department?.description ?? '')
+    || functions !== (department?.functions ?? '');
+  useUnsavedChanges(busy || fieldsDirty || !!file);
+
+  function choose(id: string) {
+    const item = items.find(entry => entry.id === id);
+    setSelected(id);
+    setName(item?.name ?? '');
+    setDescription(item?.description ?? '');
+    setFunctions(item?.functions ?? '');
+    setFile(undefined);
+    setError('');
+  }
+
+  async function save() {
     setBusy(true); setError('');
+    let list = items;
+    let id = selected;
+    function replace(item: Department) {
+      list = [...list.filter(entry => entry.id !== item.id), item];
+      setItems(list);
+    }
     try {
-      const params = new URLSearchParams({ name, filename: file.name });
-      if (selected) params.set('department_id', selected);
-      await request(`/api/v1/departments?${params}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
-      setItems(await getJSON<Department[]>('/api/v1/departments'));
-      setName(''); setSelected('');
+      if (fieldsDirty && (id || description.trim() || functions.trim())) {
+        const saved: Department = await (await request(url, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim(), description: description.trim(), functions: functions.trim(), ...(id ? { department_id: id } : {}) }),
+        })).json();
+        id = saved.id;
+        replace(saved);
+        setSelected(id);
+        setName(saved.name);
+        setDescription(saved.description ?? '');
+        setFunctions(saved.functions ?? '');
+      }
+      if (file) {
+        const params = new URLSearchParams({ name: name.trim(), filename: file.name });
+        if (id) params.set('department_id', id);
+        replace(await (await request(`${url}?${params}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
+        })).json());
+      }
+      choose('');
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -30,25 +77,43 @@ export function Departments() {
     try {
       await request(`/api/v1/departments/${item.id}`, { method: 'DELETE' });
       setItems(await getJSON<Department[]>('/api/v1/departments'));
-      if (selected === item.id) { setSelected(''); setName(''); }
+      if (selected === item.id) choose('');
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
   return <section className="card"><h2>Отделы и положения</h2>
-    <p className="muted">Положения помогают определить, каким отделам интересен доклад. Рекомендации проверяются вместе со сводкой.</p>
+    <p className="muted">Опишите задачи отдела или приложите положение. Эти сведения нужны для отбора докладов.</p>
+    {anyReady && <div className="next-action">
+      <p>Сведения об отделах готовы для анализа конференции.</p>
+      <a className="primary action-link" href="#/">Перейти к материалам</a>
+    </div>}
+    {busy && <p role="status">Обновляем список отделов…</p>}
     {(error || loadError) && <p role="alert">{error || loadError}</p>}
-    <details className="department-upload"><summary>Добавить отдел или обновить положение</summary><div className="fields">
-    <label className="field">Отдел<select value={selected} onChange={e => {
-      setSelected(e.target.value); setName(items.find(d => d.id === e.target.value)?.name ?? '');
-    }}><option value="">Новый отдел</option>{items.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-    <label className="field">Название отдела<input value={name} onChange={e => setName(e.target.value)} /></label>
-    <label className="field">{busy ? 'Распознавание положения…' : 'Загрузить положение / новую версию'}<input type="file" accept=".doc,.docx,.pdf,.txt,.md"
-      disabled={busy || !name.trim()} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(file); }} /></label>
-    </div></details>
+    <details className="department-upload" open={data?.length === 0 || undefined}>
+      <summary>Добавить или изменить отдел</summary>
+      <form className="fields" onSubmit={event => { event.preventDefault(); void save(); }}>
+        <fieldset disabled={busy}>
+          <label className="field">Отдел<select value={selected} onChange={e => choose(e.target.value)}>
+            <option value="">Новый отдел</option>{items.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select></label>
+          <label className="field">Название отдела<input value={name} required onChange={e => setName(e.target.value)} /></label>
+          <label className="field">Описание<textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} /></label>
+          <label className="field">Функции<textarea rows={4} value={functions} onChange={e => setFunctions(e.target.value)} /></label>
+          <label className="field">Положение (необязательно)<input type="file" accept=".doc,.docx,.pdf,.txt,.md"
+            onChange={e => { setFile(e.target.files?.[0]); e.target.value = ''; }} /></label>
+          {file && <p className="row">{file.name} <button className="link" type="button" onClick={() => setFile(undefined)}>Снять вложение</button></p>}
+          <button className="primary" disabled={!name.trim() || (!fieldsDirty && !file)
+            || !(description.trim() || functions.trim() || file || department?.pages?.length)}>Сохранить отдел</button>
+        </fieldset>
+      </form>
+    </details>
     {!data && !loadError && <p className="loading">Загрузка отделов…</p>}
-    {data && !items.length && <p className="empty-state">Положения ещё не загружены. Добавьте первый отдел.</p>}
-    <div className="department-list">{items.map(d => <details key={d.id}><summary>{d.name} · версия {d.version} · {d.original_name}</summary>
-      {d.pages.map(p => <div key={p.page}><h3>Страница {p.page}</h3><pre style={{ whiteSpace: 'pre-wrap' }}>{p.text}</pre></div>)}
+    {data && !items.length && <p className="empty-state">Добавьте первый отдел.</p>}
+    <div className="department-list">{items.map(d => <details key={d.id}><summary>{d.name} · версия {d.version}{(d.filename || d.original_name) && ` · ${d.filename || d.original_name}`}</summary>
+      {d.description && <div><h3>Описание</h3><p className="preserve-lines">{d.description}</p></div>}
+      {d.functions && <div><h3>Функции</h3><p className="preserve-lines">{d.functions}</p></div>}
+      {!departmentReady(d) && <p className="notice">Добавьте описание, функции или читаемое положение.</p>}
+      {(d.filename || d.original_name) && d.pages.map(p => <div key={p.page}><h3>Страница {p.page}</h3><pre style={{ whiteSpace: 'pre-wrap' }}>{p.text}</pre></div>)}
       <div className="row"><button className="danger" disabled={busy} onClick={() => void remove(d)}>Удалить отдел</button></div>
     </details>)}</div>
   </section>;

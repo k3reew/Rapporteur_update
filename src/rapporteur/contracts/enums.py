@@ -133,6 +133,7 @@ class CheckName(StrEnum):
 
 class InferenceEngine(StrEnum):
     OLLAMA = "ollama"
+    VLLM = "vllm"
 
 
 class ReportFormat(StrEnum):

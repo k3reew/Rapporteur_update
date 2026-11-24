@@ -1,13 +1,4 @@
-"""Сводка или только карточка: итог отбора по интересу отделов (screening.py).
-
-Доклад, интересный хотя бы одному отделу, получает краткую сводку. Остальным достаточно
-карточки: темы, авторов, организаций и контактов. Предварительный отбор модели только
-предлагает решение: классификация может ошибаться, поэтому ни сводка, ни карточка не
-формируются, пока оператор на этапе «Проверка» не подтвердит интерес выбранных отделов или
-не выберет «Только карточка». До этого, а также пока отбор не завершён или устарел, доклад
-ждёт. Обработка (processing.py) записывает итог в talks.card_only; справка выводит такой
-доклад без сводки.
-"""
+"""Отбор отделов определяет вид черновика, решение оператора определяет допуск к выпуску."""
 
 import sqlite3
 from enum import StrEnum
@@ -39,16 +30,45 @@ def route(conn: sqlite3.Connection, talk_id: str) -> Route | None:
     return decided(screening.view(conn, talk_id))
 
 
+def automatic(conn: sqlite3.Connection, talk_id: str) -> bool:
+    row = db.one(
+        conn,
+        "SELECT p.auto_start FROM talks t JOIN sections s ON s.id=t.section_id "
+        "JOIN preparations p ON p.conference_id=s.conference_id WHERE t.id=?",
+        talk_id,
+    )
+    return bool(row and row["auto_start"])
+
+
+def processing_route(conn: sqlite3.Connection, talk_id: str) -> Route | None:
+    view = screening.view(conn, talk_id)
+    row = db.one(
+        conn,
+        "SELECT p.auto_start,p.workflow,p.screening_confirmed,p.job FROM preparations p "
+        "JOIN sections s ON s.conference_id=p.conference_id JOIN talks t ON t.section_id=s.id "
+        "WHERE t.id=?",
+        talk_id,
+    )
+    if row and row["workflow"] == "operator":
+        return decided(view) if row["screening_confirmed"] and row["job"] == "confirmed" else None
+    if row and row["auto_start"] and view["state"] == "relevant":
+        return Route.SUMMARY
+    return decided(view)
+
+
 def reportable(conn: sqlite3.Connection, talk_id: str) -> bool:
     """Доклад входит в справку, когда его обработка соответствует актуальному отбору:
     сводка у интересного отделам доклада, карточка у остальных. Наличие и состояние самой
     сводки проверяет сборка справки (reports.py, report/assemble.py)."""
-    row = db.one(conn, "SELECT status, card_only FROM talks WHERE id = ?", talk_id)
+    row = db.one(conn, "SELECT status, card_only, job FROM talks WHERE id = ?", talk_id)
     if row is None:
+        return False
+    auto = automatic(conn, talk_id)
+    if auto and row["job"] != "done":
         return False
     match route(conn, talk_id):
         case Route.SUMMARY:
-            return not row["card_only"]
+            return not row["card_only"] and (not auto or row["status"] == TalkStatus.REVIEWED)
         case Route.CARD:
             return bool(row["card_only"]) and TalkStatus(row["status"]) in REPORTABLE_TALK_STATUSES
     return False

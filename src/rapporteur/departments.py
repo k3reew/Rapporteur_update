@@ -36,14 +36,24 @@ class Review(BaseModel):
 
 
 def latest(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    return [
-        {**dict(row), "pages": json.loads(row["pages"])}
-        for row in conn.execute(
-            "SELECT * FROM departments d WHERE version=(SELECT max(version) "
-            "FROM departments x WHERE x.id=d.id) "
-            "ORDER BY name"
+    result = []
+    for row in conn.execute(
+        "SELECT d.*, coalesce(x.description, '') AS description, "
+        "coalesce(x.functions, '') AS functions "
+        "FROM departments d LEFT JOIN department_details x ON x.department_id=d.id "
+        "AND x.version=d.version WHERE d.version=(SELECT max(version) "
+        "FROM departments v WHERE v.id=d.id) ORDER BY d.name"
+    ):
+        pages = json.loads(row["pages"])
+        text = "\n".join(
+            f"{label}: {row[field]}"
+            for label, field in (("Описание", "description"), ("Функции", "functions"))
+            if row[field]
         )
-    ]
+        if text:
+            pages.insert(0, {"page": 0, "text": text})
+        result.append({**dict(row), "pages": pages})
+    return result
 
 
 def revisions(conn: sqlite3.Connection) -> dict[str, int]:
@@ -63,7 +73,7 @@ def require_regulations(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     usable = [dep for dep in latest(conn) if any(p["text"].strip() for p in dep["pages"])]
     if not usable:
         raise UserError(
-            "Сначала загрузите положение хотя бы одного отдела в разделе «Отделы».",
+            "Сначала укажите функции отдела или загрузите его положение в разделе «Отделы».",
             409,
             code="departments_required",
         )

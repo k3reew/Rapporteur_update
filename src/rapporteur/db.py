@@ -176,7 +176,34 @@ def _v5(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE preparations SET version=version+1")
 
 
-_MIGRATIONS = (_v1, _v2, _v3, _v4, _v5)
+def _v6(conn: sqlite3.Connection) -> None:
+    conn.execute("ALTER TABLE preparations ADD COLUMN auto_start INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE preparations ADD COLUMN input_snapshot TEXT")
+    conn.execute("ALTER TABLE preparations ADD COLUMN review_reasons TEXT NOT NULL DEFAULT '[]'")
+    conn.execute("ALTER TABLE talks ADD COLUMN worker_active INTEGER NOT NULL DEFAULT 0")
+
+
+def _v7(conn: sqlite3.Connection) -> None:
+    conn.execute("ALTER TABLE preparations ADD COLUMN workflow TEXT NOT NULL DEFAULT 'legacy'")
+    conn.execute(
+        "ALTER TABLE preparations ADD COLUMN screening_confirmed INTEGER NOT NULL DEFAULT 0"
+    )
+    conn.execute("ALTER TABLE preparations ADD COLUMN context_file_ids TEXT NOT NULL DEFAULT '[]'")
+    conn.execute("""CREATE TABLE department_details (
+        department_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        description TEXT NOT NULL,
+        functions TEXT NOT NULL,
+        PRIMARY KEY(department_id, version),
+        FOREIGN KEY(department_id, version) REFERENCES departments(id,version) ON DELETE CASCADE
+    )""")
+    conn.execute("""CREATE TABLE report_drafts (
+        conference_id TEXT PRIMARY KEY REFERENCES conferences(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL, fields TEXT NOT NULL, updated_at TEXT NOT NULL
+    )""")
+
+
+_MIGRATIONS = (_v1, _v2, _v3, _v4, _v5, _v6, _v7)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 

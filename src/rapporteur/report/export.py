@@ -13,6 +13,8 @@ from typing import Any
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
 from rapporteur.contracts.enums import ReportFormat
 from rapporteur.contracts.reports import ReportFile
@@ -43,23 +45,31 @@ def render_formats(
     progress: Callable[[str], None] | None = None,
 ) -> dict[ReportFormat, bytes]:
     context = dict(context)
-    context["talks"] = [
-        talk.model_copy(
+    operator = "sections" in context
+    missing = "________________" if operator else "Автор не установлен"
+    talks = {
+        talk.talk_id: talk.model_copy(
             update={
-                "speakers": talk.speakers or ["Автор не установлен"],
-                "authors": talk.authors or talk.speakers or ["Автор не установлен"],
+                "speakers": talk.speakers or [missing],
+                "authors": talk.authors or talk.speakers or [missing],
                 # docxtpl uses the paragraph marker to preserve real Word paragraph boundaries.
                 "summary": talk.summary.replace("\n\n", "\a") if talk.summary else None,
             }
         )
         for talk in context.get("talks", [])
-    ]
+    }
+    context["talks"] = list(talks.values())
+    if operator:
+        context["sections"] = [
+            section | {"talks": [talks[talk.talk_id] for talk in section["talks"]]}
+            for section in context["sections"]
+        ]
     if progress:
         progress("docx")
     docx = render_docx(template, context)
     # Add the appendix before deriving Markdown/PDF so all formats have identical text.
     recommendations = context.get("department_recommendations", [])
-    if recommendations:
+    if recommendations and not operator:
         document = Document(io.BytesIO(docx))
 
         def heading(text: str, *, centered: bool = False) -> None:
@@ -119,14 +129,27 @@ def export_files(
 
 
 def docx_to_markdown(docx: bytes) -> str:
-    """Абзац DOCX — абзац Markdown; абзац целиком полужирный — **полужирный**."""
+    """Сохраняет порядок абзацев и таблиц DOCX."""
     blocks: list[str] = []
-    for paragraph in Document(io.BytesIO(docx)).paragraphs:
-        text = paragraph.text.strip()
+    for element in Document(io.BytesIO(docx)).iter_inner_content():
+        if isinstance(element, Table) and element.rows:
+            rows = [
+                [
+                    _MARKDOWN_SPECIAL.sub(r"\\\1", " ".join(cell.text.split())).replace("|", r"\|")
+                    for cell in row.cells
+                ]
+                for row in element.rows
+            ]
+            rows.insert(1, ["---"] * len(rows[0]))
+            blocks.append("\n".join("| " + " | ".join(row) + " |" for row in rows))
+            continue
+        if not isinstance(element, Paragraph):
+            continue
+        text = element.text.strip()
         if not text:
             continue
         escaped = _LINE_START_SPECIAL.sub(r"\\\1", _MARKDOWN_SPECIAL.sub(r"\\\1", text))
-        runs = [run for run in paragraph.runs if run.text.strip()]
+        runs = [run for run in element.runs if run.text.strip()]
         if runs and all(run.bold for run in runs):
             escaped = f"**{escaped}**"
         blocks.append(escaped)

@@ -23,12 +23,15 @@ from rapporteur.contracts.enums import (
     TalkStatus,
 )
 from rapporteur.contracts.reports import (
+    ReportContact,
+    ReportDraftFields,
     ReportSelection,
     ReportTalk,
     ReportVariables,
     SkippedTalk,
 )
 from rapporteur.llm.prompts import edition
+from rapporteur.materials import DEFAULT_SECTION
 from rapporteur.report.template import Period
 
 _SKIP_REASONS = {
@@ -53,6 +56,8 @@ class ReportSources:
     summaries: Sequence[Summary]
     department_recommendations: Sequence[dict[str, Any]] = ()
     recommendation_warnings: Sequence[str] = ()
+    operator_fields: ReportDraftFields | None = None
+    contact_talk_ids: frozenset[UUID] = frozenset()
 
     @cached_property
     def section_by_id(self) -> dict[UUID, Section]:
@@ -112,6 +117,9 @@ def build_report_input(
     included: list[ReportTalk] = []
     skipped: list[SkippedTalk] = []
     warnings: list[str] = list(sources.recommendation_warnings)
+    missing_title = (
+        "________________" if sources.operator_fields is not None else "Тема не установлена"
+    )
 
     for talk_id in selection.talk_ids:
         talk = sources.talk_by_id.get(talk_id)
@@ -121,7 +129,7 @@ def build_report_input(
         if talk.status not in REPORTABLE_TALK_STATUSES:
             reason = _SKIP_REASONS.get(talk.status, f"статус {talk.status.value}")
         elif talk.card_only:
-            included.append(_report_talk(sources, talk, talk.title or "Тема не установлена", None))
+            included.append(_report_talk(sources, talk, talk.title or missing_title, None))
             if not talk.title or not talk.speakers:
                 warnings.append(f"Уточните тему или автора: {_name(talk)}")
             continue
@@ -137,9 +145,7 @@ def build_report_input(
         elif not summary.sentences:
             reason = "сводка пуста: нужна правка человеком"
         else:
-            included.append(
-                _report_talk(sources, talk, talk.title or "Тема не установлена", summary)
-            )
+            included.append(_report_talk(sources, talk, talk.title or missing_title, summary))
             if not talk.title or not talk.speakers:
                 warnings.append(f"Уточните тему или автора: {_name(talk)}")
             if (
@@ -158,6 +164,11 @@ def build_report_input(
         warnings.append(f"Не входит в справку: {_name(talk)} — {reason}")
 
     start, end = _period(sources, selection, included)
+    fields = sources.operator_fields
+    if fields is not None and fields.contacts is None:
+        fields = fields.model_copy(
+            update={"contacts": suggested_contacts(sources, [item.talk_id for item in included])}
+        )
     try:
         report_input = ReportInput(
             conference_title=sources.conference.title,
@@ -170,6 +181,7 @@ def build_report_input(
             skipped=skipped,
             template_version=template_version,
             unreviewed_confirmed=unreviewed_confirmed,
+            operator_fields=fields,
             department_recommendations=[
                 item
                 for item in sources.department_recommendations
@@ -190,9 +202,31 @@ def _report_talk(
 ) -> ReportTalk:
     speakers = [person for person in talk.speakers if person.role is PersonRole.SPEAKER]
     authors, organizations, contacts = _card(talk)
+    section = sources.section_by_id[talk.section_id]
+    operator = sources.operator_fields is not None
+    several = len(talk.speakers) > 1
+    if operator:
+        authors = [_clean(person.name) for person in talk.speakers]
+        affiliations: dict[str, tuple[str, list[str]]] = {}
+        for person in talk.speakers:
+            label = _clean(person.affiliation or "").rstrip(". ")
+            if label:
+                affiliations.setdefault(label.casefold(), (label, []))[1].append(
+                    _clean(person.name)
+                )
+        for item in talk.organizations:
+            label = _clean(item).rstrip(". ")
+            if label:
+                affiliations.setdefault(label.casefold(), (label, []))
+        organizations = [
+            f"{label} ({', '.join(_unique(names))})" if several and names else label
+            for label, names in affiliations.values()
+        ]
     return ReportTalk(
         talk_id=talk.id,
-        section_title=sources.section_by_id[talk.section_id].title,
+        section_title=section.title,
+        section_id=section.id if operator else None,
+        section_date=section.date if operator else None,
         title=title,
         speakers=[_clean(person.name) for person in speakers],
         affiliations=_unique(
@@ -205,6 +239,13 @@ def _report_talk(
         authors=authors,
         organizations=organizations,
         contacts=contacts,
+        positions=_unique(
+            f"{person.position} ({_clean(person.name)})" if several else person.position
+            for person in talk.speakers
+            if person.position
+        )
+        if operator
+        else [],
     )
 
 
@@ -255,6 +296,9 @@ def _period(
     """Выбранные дни, иначе дни вошедших докладов, иначе даты конференции."""
     if selection.days:
         return min(selection.days), max(selection.days)
+    start, end = sources.conference.start_date, sources.conference.end_date
+    if sources.operator_fields is not None and (start or end):
+        return start or end, end or start
     days = [
         day
         for item in included
@@ -262,11 +306,38 @@ def _period(
     ]
     if days:
         return min(days), max(days)
-    return sources.conference.start_date, sources.conference.end_date
+    return start, end
 
 
 def _name(talk: Talk) -> str:
     return f"«{talk.title}»" if talk.title else str(talk.id)
+
+
+def suggested_contacts(sources: ReportSources, talk_ids: Iterable[UUID]) -> list[ReportContact]:
+    selected = set(talk_ids) & sources.contact_talk_ids
+    rows: list[ReportContact] = []
+    for talk in sources.ordered_talks():
+        if talk.id not in selected:
+            continue
+        for person in talk.speakers:
+            if person.contacts:
+                rows.append(
+                    ReportContact(
+                        organization=(person.affiliation or "")[:1000],
+                        position=(person.position or "")[:1000],
+                        person=", ".join([person.name, *person.contacts])[:1000],
+                        talk=(talk.title or "")[:1000],
+                    )
+                )
+        if talk.contacts:
+            rows.append(
+                ReportContact(
+                    organization=", ".join(talk.organizations)[:1000],
+                    person=", ".join(talk.contacts)[:1000],
+                    talk=(talk.title or "")[:1000],
+                )
+            )
+    return rows[:500]
 
 
 def _clean(value: str) -> str:
@@ -294,7 +365,7 @@ def template_context(report_input: ReportInput, variables: ReportVariables) -> d
         period = Period(
             report_input.period_start, report_input.period_end or report_input.period_start
         )
-    return {
+    context: dict[str, Any] = {
         "title": report_input.conference_title,
         "period": period,
         "place": report_input.place,
@@ -304,3 +375,27 @@ def template_context(report_input: ReportInput, variables: ReportVariables) -> d
         "talks": list(report_input.talks),
         "department_recommendations": report_input.department_recommendations,
     }
+    fields = report_input.operator_fields
+    if fields is not None:
+        sections: dict[UUID | None, dict[str, Any]] = {}
+        for talk in report_input.talks:
+            section = sections.setdefault(
+                talk.section_id,
+                {
+                    "title": "" if talk.section_title == DEFAULT_SECTION else talk.section_title,
+                    "day": talk.section_date,
+                    "talks": [],
+                },
+            )
+            section["talks"].append(talk)
+        context.update(
+            {
+                "participation": fields.participation,
+                "program": fields.program,
+                "overview": fields.overview,
+                "attachments": fields.attachments,
+                "contacts": fields.contacts or [ReportContact()],
+                "sections": list(sections.values()),
+            }
+        )
+    return context

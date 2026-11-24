@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 
 import { Departments } from './Departments';
+import { ConferenceScreening } from './ConferenceScreening';
 import { Home } from './Home';
-import type { ConferenceItem } from './conferenceTypes';
+import type { ConferenceItem, ConferenceStep } from './conferenceTypes';
 import { Materials } from './Materials';
 import { Preparation } from './Preparation';
 import { useResource } from './useResource';
@@ -12,7 +13,7 @@ import { Settings } from './Settings';
 import { SummaryReview } from './SummaryReview';
 import { applyTheme, effectiveTheme, storedTheme, type Theme } from './theme';
 
-type Tab = 'materials' | 'talks' | 'review' | 'report';
+type Tab = ConferenceStep;
 type Route =
   | { page: 'home' }
   | { page: 'settings' }
@@ -20,7 +21,7 @@ type Route =
   | { page: 'conference'; id: string; tab: Tab }
   | { page: 'talk'; id: string; talkId: string };
 
-const tabs: [Tab, string][] = [['materials', 'Материалы'], ['talks', 'Доклады'], ['review', 'Проверка'], ['report', 'Справка']];
+const tabs: [Tab, string][] = [['materials', 'Материалы'], ['talks', 'Доклады'], ['screening', 'Соответствие'], ['review', 'Сводки'], ['report', 'Справка']];
 
 /** Адрес страницы в hash: работают «назад», перезагрузка и ссылки на доклад. */
 export function parseRoute(hash: string): Route {
@@ -54,7 +55,7 @@ export function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
   const [theme, setTheme] = useState<Theme>(storedTheme);
   const conferenceId = route.page === 'conference' || route.page === 'talk' ? route.id : '';
-  const { data: conference, error } = useResource<ConferenceItem>(conferenceId ? `/api/v1/conferences/${conferenceId}` : null);
+  const { data: conference, error, refresh: refreshConference } = useResource<ConferenceItem>(conferenceId ? `/api/v1/conferences/${conferenceId}` : null);
 
   useEffect(() => {
     const update = () => {
@@ -76,7 +77,7 @@ export function App() {
         <h1><a href="#/">Репортёр</a></h1>
         
         <nav aria-label="Разделы приложения">
-          <button aria-current={route.page === 'home' ? 'page' : undefined} onClick={() => go({ page: 'home' })}>
+          <button aria-current={route.page === 'home' || conferenceId ? 'page' : undefined} onClick={() => go({ page: 'home' })}>
             Конференции
           </button>
           <button aria-current={route.page === 'settings' ? 'page' : undefined} onClick={() => go({ page: 'settings' })}>
@@ -94,7 +95,7 @@ export function App() {
         </button>
       </header>
       <main>
-        {route.page === 'home' && <Home onOpen={(id) => go({ page: 'conference', id, tab: 'materials' })} />}
+        {route.page === 'home' && <Home onOpen={(id, tab) => go({ page: 'conference', id, tab })} />}
         {route.page === 'departments' && <Departments />}
         {route.page === 'settings' && <Settings theme={theme} onTheme={setTheme} />}
         {conferenceId && (
@@ -102,7 +103,7 @@ export function App() {
             <div className="conference-heading"><a className="back-link" href="#/" onClick={event => { event.preventDefault(); go({ page: 'home' }); }}>Все конференции</a>
               <h2>{conference?.id === conferenceId ? conference.title ?? 'Без названия' : 'Конференция'}</h2>
               <nav aria-label="Этапы подготовки справки" className="workflow-steps">
-                {tabs.map(([value, label], index) => (
+                {tabs.filter(([value]) => conference?.workflow !== 'legacy' || value !== 'screening').map(([value, label], index) => (
                   <button
                     key={value}
                     aria-current={
@@ -111,7 +112,7 @@ export function App() {
                     }
                     onClick={() => go({ page: 'conference', id: conferenceId, tab: value })}
                   >
-                    <span className="step-number" aria-hidden="true">{index + 1}</span>{label}
+                    <span className="step-number" aria-hidden="true">{index + 1}</span>{value === 'review' && conference?.workflow === 'legacy' ? 'Проверка' : label}
                   </button>
                 ))}
               </nav>
@@ -123,10 +124,14 @@ export function App() {
           <Materials
             key={route.id}
             conferenceId={route.id}
-            onPrepared={() => go({ page: 'conference', id: route.id, tab: 'talks' })}
+            onPrepared={() => { refreshConference(); go({ page: 'conference', id: route.id, tab: 'talks' }); }}
           />
         )}
-        {route.page === 'conference' && route.tab === 'talks' && <Preparation key={route.id} conferenceId={route.id} onConfirmed={() => go({ page: 'conference', id: route.id, tab: 'review' })} onStarted={() => go({ page: 'conference', id: route.id, tab: 'review' })} />}
+        {route.page === 'conference' && route.tab === 'talks' && <Preparation key={route.id} conferenceId={route.id}
+          onConfirmed={workflow => go({ page: 'conference', id: route.id, tab: workflow === 'operator' ? 'screening' : 'review' })}
+          onStarted={() => go({ page: 'conference', id: route.id, tab: 'review' })} />}
+        {route.page === 'conference' && route.tab === 'screening' && <ConferenceScreening key={route.id} conferenceId={route.id}
+          onConfirmed={() => go({ page: 'conference', id: route.id, tab: 'review' })} />}
         {route.page === 'conference' && route.tab === 'review' && (
           <Processing
             key={route.id}

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Репортёр",
-    "version": "0.2.1"
+    "version": "0.4.0"
   },
   "paths": {
     "/health": {
@@ -885,6 +885,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PreparationStart"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -1893,7 +1910,7 @@
     "/api/v1/model": {
       "get": {
         "summary": "Get Model",
-        "description": "Модель для сводок: текущая, по умолчанию и установленные в Ollama.",
+        "description": "Текущая модель и доступность сервиса.",
         "operationId": "get_model_api_v1_model_get",
         "responses": {
           "200": {
@@ -2354,6 +2371,16 @@
           "reviewed": {
             "type": "integer",
             "title": "Reviewed"
+          },
+          "resume_step": {
+            "type": "string",
+            "enum": [
+              "materials",
+              "talks",
+              "review",
+              "report"
+            ],
+            "title": "Resume Step"
           }
         },
         "type": "object",
@@ -2367,7 +2394,8 @@
           "processing_started",
           "talks",
           "summaries",
-          "reviewed"
+          "reviewed",
+          "resume_step"
         ],
         "title": "ConferenceItem"
       },
@@ -2695,6 +2723,14 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "InferenceEngine": {
+        "type": "string",
+        "enum": [
+          "ollama",
+          "vllm"
+        ],
+        "title": "InferenceEngine"
+      },
       "LinesLocator": {
         "properties": {
           "kind": {
@@ -2953,6 +2989,13 @@
             },
             "type": "array",
             "title": "Models"
+          },
+          "inference_engine": {
+            "$ref": "#/components/schemas/InferenceEngine"
+          },
+          "inference_available": {
+            "type": "boolean",
+            "title": "Inference Available"
           }
         },
         "type": "object",
@@ -2960,7 +3003,9 @@
           "current",
           "default",
           "ollama_available",
-          "models"
+          "models",
+          "inference_engine",
+          "inference_available"
         ],
         "title": "ModelState"
       },
@@ -3133,6 +3178,23 @@
         ],
         "title": "PersonRole"
       },
+      "PreparationStart": {
+        "properties": {
+          "auto_start": {
+            "type": "boolean",
+            "title": "Auto Start",
+            "default": false
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PreparationStart"
+      },
       "ProfileInfo": {
         "properties": {
           "name": {
@@ -3142,6 +3204,9 @@
           "model": {
             "type": "string",
             "title": "Model"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/InferenceEngine"
           },
           "reasoning": {
             "type": "boolean",
@@ -3176,6 +3241,7 @@
         "required": [
           "name",
           "model",
+          "engine",
           "reasoning",
           "prompt_version",
           "default"
@@ -3187,6 +3253,10 @@
           "processing_started": {
             "type": "boolean",
             "title": "Processing Started"
+          },
+          "auto_start": {
+            "type": "boolean",
+            "title": "Auto Start"
           },
           "files": {
             "type": "integer",
@@ -3203,6 +3273,7 @@
         "type": "object",
         "required": [
           "processing_started",
+          "auto_start",
           "files",
           "talks"
         ],
@@ -4249,6 +4320,20 @@
             "type": "array",
             "title": "Ollama Models"
           },
+          "inference_engine": {
+            "$ref": "#/components/schemas/InferenceEngine"
+          },
+          "inference_available": {
+            "type": "boolean",
+            "title": "Inference Available"
+          },
+          "inference_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Inference Models"
+          },
           "asr_enabled": {
             "type": "boolean",
             "title": "Asr Enabled"
@@ -4292,6 +4377,9 @@
           "ollama_url",
           "ollama_available",
           "ollama_models",
+          "inference_engine",
+          "inference_available",
+          "inference_models",
           "asr_enabled",
           "profiles",
           "templates",
@@ -4383,6 +4471,13 @@
               }
             ],
             "title": "Title"
+          },
+          "speakers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Speakers"
           },
           "status": {
             "$ref": "#/components/schemas/TalkStatus"
@@ -4483,6 +4578,7 @@
           "section",
           "order",
           "title",
+          "speakers",
           "status",
           "job",
           "step",

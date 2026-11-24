@@ -127,6 +127,15 @@ def test_upgrade_invalidates_locally_edited_preparation_drafts(tmp_path: Path) -
             "UPDATE talks SET contacts=?, input_revision=input_revision+1 WHERE id=?",
             (db.dumps(["registry@example.org"]), talk_id),
         )
+        conn.execute("ALTER TABLE preparations DROP COLUMN auto_start")
+        conn.execute("ALTER TABLE preparations DROP COLUMN input_snapshot")
+        conn.execute("ALTER TABLE preparations DROP COLUMN review_reasons")
+        conn.execute("ALTER TABLE talks DROP COLUMN worker_active")
+        conn.execute("ALTER TABLE preparations DROP COLUMN workflow")
+        conn.execute("ALTER TABLE preparations DROP COLUMN screening_confirmed")
+        conn.execute("ALTER TABLE preparations DROP COLUMN context_file_ids")
+        conn.execute("DROP TABLE department_details")
+        conn.execute("DROP TABLE report_drafts")
         conn.execute("PRAGMA user_version = 4")
 
     with TestClient(create_app(tmp_path, process=False)) as client:

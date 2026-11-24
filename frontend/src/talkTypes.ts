@@ -1,4 +1,4 @@
-/** Решение модели, которое оператор ещё не подтвердил: обработка ждёт (interest.py). */
+/** Решение об отборе, которое оператор ещё не подтвердил. */
 export function awaitsOperator(value: Screening | undefined) {
   return !!value && !value.manual && ['relevant', 'not_relevant', 'uncertain'].includes(value.state);
 }
@@ -12,8 +12,9 @@ export type Screening = {
   error: string | null;
   department_ids: string[];
   /** interest — уверенность модели, что доклад интересен отделу, %; null — решение без модели. */
-  items: { department_id: string; department_name: string; status: string; interest?: number | null; reason: string; evidence: { label: string; quote: string }[]; paragraphs: { label: string; quote: string }[] }[];
+  items: { department_id: string; department_name: string; status: string; interest?: number | null; reason: string; evidence: ScreeningQuote[]; paragraphs: ScreeningQuote[] }[];
 };
+type ScreeningQuote = { label: string; quote: string; source_url?: string | null };
 /** paused — приостановлено после перезапуска приложения до команды оператора. */
 type Job = 'queued' | 'running' | 'done' | 'failed' | 'paused';
 export type TalkProgress = {
@@ -21,6 +22,7 @@ export type TalkProgress = {
   section: string;
   order: number;
   title: string | null;
+  speakers?: string[];
   status: string;
   job: Job | null;
   step: 'screening' | 'parse' | 'facts' | 'verify' | 'summary' | null;
@@ -36,6 +38,9 @@ export type TalkProgress = {
 };
 export type Progress = {
   processing_started: boolean;
+  auto_start?: boolean;
+  workflow?: 'operator' | 'legacy';
+  screening_confirmed?: boolean;
   files: number;
   talks: TalkProgress[];
 };

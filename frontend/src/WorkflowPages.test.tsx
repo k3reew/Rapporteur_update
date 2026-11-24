@@ -8,6 +8,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 test('старый processing открывает проверку, новые этапы имеют собственные адреса', () => {
   expect(parseRoute('#/c/c/processing')).toEqual({ page: 'conference', id: 'c', tab: 'review' });
   expect(parseRoute('#/c/c/talks')).toEqual({ page: 'conference', id: 'c', tab: 'talks' });
+  expect(parseRoute('#/c/c/screening')).toEqual({ page: 'conference', id: 'c', tab: 'screening' });
   expect(parseRoute('#/c/c/review')).toEqual({ page: 'conference', id: 'c', tab: 'review' });
 });
 
@@ -67,11 +68,15 @@ test('частичная ошибка загрузки сохраняет усп
   const { Materials } = await import('./Materials');
   const prepared = vi.fn();
   render(<Materials conferenceId="c" onPrepared={prepared} />);
-  fireEvent.change(screen.getByLabelText('Отдельные файлы'), { target: { files: [new File(['yes'], 'ok.txt'), new File(['no'], 'broken.txt')] } });
+  fireEvent.change(screen.getByLabelText('Отдельные файлы'), { target: { files: [new File(['yes'], 'ok.txt'), new File(['no'], 'broken.txt'), new File(['recording'], 'recording.wav', { type: 'audio/wav' })] } });
   await screen.findByText('broken.txt — Файл повреждён');
+  await screen.findByText('recording.wav — Аудио и видео не поддерживаются.');
   await screen.findByText('ok.txt');
-  fireEvent.click(screen.getByRole('button', { name: 'Подготовить доклады' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Начать анализ' }));
   await waitFor(() => expect(prepared).toHaveBeenCalled());
+  expect(fetch).toHaveBeenCalledWith('/api/v1/conferences/c/preparation', expect.objectContaining({
+    method: 'POST', body: JSON.stringify({ workflow: 'operator', auto_start: true }),
+  }));
 });
 
 test('закрытие ручного редактора сохраняет черновик названия', async () => {
@@ -134,10 +139,10 @@ test('при отсутствии положения направляет в о�
   const { Materials } = await import('./Materials');
   vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.endsWith('/departments') ? [] : { files: [] })));
   render(<Materials conferenceId="c" onPrepared={() => {}} />);
-  const link = await screen.findByRole('link', { name: 'загрузите положение отдела' });
+  const link = await screen.findByRole('link', { name: 'добавьте сведения об отделе' });
   expect(link.getAttribute('href')).toBe('#/departments');
   expect((screen.getByRole('button', { name: 'Выбрать файлы' }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole('button', { name: 'Подготовить доклады' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Начать анализ' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 test('развёрнутый доклад подсвечивается, помечается правкой и остаётся выделенным', async () => {
@@ -155,4 +160,55 @@ test('развёрнутый доклад подсвечивается, поме
   fireEvent.click(details.querySelector('summary')!);
   await waitFor(() => expect(details.querySelector('.edited-mark')).not.toBeNull());
   expect(details.className).not.toContain('open');
+});
+
+test('подтверждает реестр с секцией, должностью и материалом конференции', async () => {
+  const proposal = { workflow: 'operator', auto_start: true, job: 'done', version: 2, context_file_ids: [], talks: [{
+    talk_id: null, title: 'Доклад', speakers: [{ name: 'Автор' }], links: [{ file_id: 'f' }],
+  }] };
+  const api = vi.fn(async (url: string) => Response.json(url.endsWith('/materials')
+    ? { files: [
+      { source: { id: 'f', kind: 'document' }, relative_path: 'Доклад.docx' },
+      { source: { id: 'g', kind: 'document' }, relative_path: 'Вступление.docx' },
+    ], talks: [], sections: [] } : proposal));
+  vi.stubGlobal('fetch', api);
+  const confirmed = vi.fn();
+  render(<Preparation conferenceId="c" onConfirmed={confirmed} />);
+  fireEvent.change(await screen.findByLabelText('Секция'), { target: { value: 'Пленарное заседание' } });
+  fireEvent.change(screen.getByLabelText('Должность'), { target: { value: 'Инженер' } });
+  fireEvent.change(screen.getByLabelText('Роль Вступление.docx'), { target: { value: 'context' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить реестр' }));
+  await waitFor(() => expect(confirmed).toHaveBeenCalledWith('operator'));
+  expect(api).toHaveBeenCalledWith('/api/v1/conferences/c/preparation', expect.objectContaining({
+    method: 'PUT',
+    body: expect.stringContaining('"context_file_ids":["g"]'),
+  }));
+  expect(api).toHaveBeenCalledWith('/api/v1/conferences/c/preparation', expect.objectContaining({
+    method: 'PUT',
+    body: expect.stringMatching(/"position":"Инженер".*"section":"Пленарное заседание"/),
+  }));
+});
+
+
+test('пауза и ручная проверка продолжают автоматический анализ тем же заданием', async () => {
+  const reason = 'Проверьте границы выступления в записи';
+  const proposal = { version: 1, auto_start: true, error: null, review_reasons: [reason], talks: [{
+    title: 'Доклад', speakers: [], links: [{ file_id: 'a', start_ms: null, end_ms: null, page_start: null, page_end: null }], reason: '', talk_id: null,
+  }] };
+  const api = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/materials')) return Response.json({ files: [{ source: { id: 'a', kind: 'document' }, relative_path: 'Доклад.txt' }], talks: [] });
+    if (init?.method === 'POST') return Response.json({ ...proposal, job: 'done' });
+    if (init?.method === 'PUT') return Response.json({ ...proposal, job: 'confirmed' });
+    return Response.json({ ...proposal, job: 'paused' });
+  });
+  vi.stubGlobal('fetch', api);
+  const confirmed = vi.fn();
+  render(<Preparation conferenceId="c" onConfirmed={confirmed} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Продолжить подготовку' }));
+  await screen.findByText(reason);
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и продолжить анализ' }));
+  await waitFor(() => expect(confirmed).toHaveBeenCalled());
+  expect(api.mock.calls.filter(([, init]) => init?.method === 'POST')).toEqual([
+    ['/api/v1/conferences/c/preparation', expect.objectContaining({ body: JSON.stringify({ auto_start: true }) })],
+  ]);
 });

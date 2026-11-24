@@ -44,8 +44,8 @@ def test_forbidden_transitions_are_rejected(current: TalkStatus, target: TalkSta
     assert not can_transition(current, target)
 
 
-def test_engine_list_has_no_vllm() -> None:
-    assert {engine.value for engine in InferenceEngine} == {"ollama"}
+def test_engine_list_supports_vllm_and_ollama() -> None:
+    assert {engine.value for engine in InferenceEngine} == {"ollama", "vllm"}
 
 
 def _bundle_with_text(text: str, span: list[int]) -> dict[str, Any]:

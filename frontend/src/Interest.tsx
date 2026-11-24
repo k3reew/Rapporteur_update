@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { request } from './api';
 import { awaitsOperator, type Screening } from './talkTypes';
 
-// Решение модели до подтверждения оператором: обработка ждёт (interest.py).
 const proposals: Record<string, string> = { relevant: 'Модель: есть интерес — подтвердите решение', not_relevant: 'Модель: интереса нет — подтвердите решение', uncertain: 'Интерес требует решения' };
 const labels: Record<string, string> = { not_started: 'Отбор ещё не выполнен', queued: 'Отбор в очереди', running: 'Определяется интерес отделов', relevant: 'Есть интерес отделов', not_relevant: 'Интерес не найден — только карточка', uncertain: 'Интерес требует решения', stale: 'Отбор устарел', paused: 'Отбор приостановлен после перезапуска' };
 
@@ -15,9 +14,9 @@ function scored(item: Item): item is Item & { interest: number } {
 }
 
 /** Уверенность модели, что доклад интересен отделу, — отдельной крупной плашкой цвета решения. */
-function Score({ item }: { item: Item }) {
+function Score({ item, manual }: { item: Item; manual: boolean }) {
   return scored(item)
-    ? <span className={`score ${tones[item.status] ?? ''}`} title={`Уверенность модели: ${verdicts[item.status] ?? item.status}`}>{item.interest} %</span>
+    ? <span className={manual ? 'score' : `score ${tones[item.status] ?? ''}`} title="Оценка модели">{item.interest} %</span>
     : <span className="score" title="Решение оператора или прежней версии отбора">—</span>;
 }
 
@@ -32,9 +31,16 @@ function leaders(value: Screening): Item[] {
   return byInterest.filter(scored).slice(0, 1);
 }
 
-export function Interest({ talkId, value, refresh }: { talkId: string; value: Screening; refresh: () => void }) {
+export function Interest({ talkId, value, refresh, automatic, sourceOf, decision }: {
+  talkId: string;
+  value: Screening;
+  refresh: () => void;
+  automatic?: boolean;
+  sourceOf?: (label: string) => string | undefined;
+  decision?: { selected: string[]; unresolved: boolean; disabled: boolean; update: (ids: string[]) => void };
+}) {
   const [choice, setChoice] = useState<string[] | null>(null);
-  const selected = choice ?? value.department_ids;
+  const selected = decision?.selected ?? choice ?? value.department_ids;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function save(ids: string[]) {
@@ -45,29 +51,49 @@ export function Interest({ talkId, value, refresh }: { talkId: string; value: Sc
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
-  const editable = value.version > 0 && !['queued', 'running', 'stale'].includes(value.state);
+  const editable = value.version > 0 && !['queued', 'running', 'stale', 'paused'].includes(value.state);
   const shown = ['relevant', 'uncertain', 'not_relevant'].includes(value.state) ? leaders(value) : [];
   const unscored = !value.manual && !value.error && value.items.length > 0 && !value.items.some(scored);
   const awaiting = awaitsOperator(value);
-  return <details className="interest-details" open={awaiting || undefined}><summary><span className={awaiting ? 'text-warn' : undefined}>{(awaiting ? proposals[value.state] : undefined) ?? labels[value.state] ?? value.state}</span>
-    {shown.map(item => <span key={item.department_id} className="interest-leader"><Score item={item} /> {item.department_name}</span>)}</summary>
+  const requiresDecision = decision?.unresolved ?? awaiting;
+  return <details className="interest-details" open={requiresDecision || undefined}><summary><span className={requiresDecision ? 'text-warn' : undefined}>{(awaiting ? proposals[value.state] : undefined) ?? labels[value.state] ?? value.state}</span>
+    {shown.map(item => <span key={item.department_id} className="interest-leader"><Score item={item} manual={value.manual} /> {item.department_name}</span>)}</summary>
     {value.stale && <p className="notice">Изменились материалы, положения или модель. Пересчитайте отбор.</p>}
     {value.manual && <p className="muted">Решение оператора</p>}
-    {awaiting && <p className="notice">Модель только предлагает решение и может ошибаться. Сводка или карточка формируются после вашего решения: отметьте отделы и нажмите «Подтвердить интерес» либо нажмите «Только карточка».</p>}
+    {requiresDecision && <p className="notice">
+      Модель только предлагает решение и может ошибаться. {value.error
+        ? 'Отбор не завершился. Проверьте материалы и положения или повторите расчёт.'
+        : 'Сверьте цитаты доклада и положения. Выберите отделы или сохраните доклад как карточку.'}
+    </p>}
     {unscored && <p className="muted">Процент уверенности появится после «Пересчитать интерес отделов»: это решение получено прежней версией отбора.</p>}
     {value.items.map(item => <div key={item.department_id} className="interest-item">
-      <Score item={item} />
+      <Score item={item} manual={value.manual} />
       <div>
-      <label className="check"><input type="checkbox" checked={selected.includes(item.department_id)} disabled={!editable || busy}
-        onChange={e => setChoice(previous => e.target.checked ? [...(previous ?? value.department_ids), item.department_id] : (previous ?? value.department_ids).filter(id => id !== item.department_id))} />{item.department_name}</label>
+      <label className="check"><input type="checkbox" checked={selected.includes(item.department_id)} disabled={!editable || busy || decision?.disabled}
+        onChange={e => {
+          const ids = e.target.checked ? [...selected, item.department_id] : selected.filter(id => id !== item.department_id);
+          if (decision) decision.update(ids); else setChoice(ids);
+        }} />{item.department_name}</label>
       <small className="muted"> · {verdicts[item.status] ?? item.status}</small>
       <p className="muted">{item.reason}</p>
       {!![...item.evidence, ...item.paragraphs].length && <details><summary>Цитаты</summary>
-        {[...item.evidence, ...item.paragraphs].map((quote, index) => <blockquote key={index}><small>{quote.label}</small> {quote.quote}</blockquote>)}</details>}
+        {item.evidence.map((quote, index) => {
+          const source = quote.source_url || sourceOf?.(quote.label);
+          return <blockquote key={index}>
+            <small>{source ? <a href={source} target="_blank" rel="noreferrer">Источник доклада {quote.label}</a> : `Доклад ${quote.label}`}</small> {quote.quote}
+          </blockquote>;
+        })}
+        {item.paragraphs.map((quote, index) => <blockquote key={index}>
+          <small>{quote.source_url ? <a href={quote.source_url} target="_blank" rel="noreferrer">Источник отдела {quote.label}</a> : `Положение отдела ${quote.label}`}</small> {quote.quote}
+        </blockquote>)}</details>}
       </div>
     </div>)}
     {(error || value.error) && <p role="alert">{error || value.error}</p>}
-    {editable && <div className="row"><button disabled={busy || !selected.length} onClick={() => void save(selected)}>Подтвердить интерес</button>
-      <button disabled={busy} onClick={() => void save([])}>Только карточка</button></div>}
+    {editable && (!decision || requiresDecision) && <div className="row">
+      <button disabled={busy || !selected.length || decision?.disabled}
+        onClick={() => decision ? decision.update(selected) : void save(selected)}>{decision ? 'Подтвердить выбор отделов' : 'Подтвердить интерес'}</button>
+      <button disabled={busy || decision?.disabled}
+        onClick={() => decision ? decision.update([]) : void save([])}>{automatic || decision ? 'Оставить карточку' : 'Только карточка'}</button>
+    </div>}
   </details>;
 }

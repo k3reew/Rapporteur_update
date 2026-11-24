@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterable
 from dataclasses import dataclass
+from queue import SimpleQueue
 from typing import Any, Literal, Protocol
 
 from rapporteur.contracts import ModelProfile
@@ -104,6 +105,126 @@ class OllamaClient:
         )
 
 
+class VllmClient:
+    """Локальный vLLM с OpenAI-совместимым протоколом и шаблоном Qwen."""
+
+    def __init__(self, base_url: str, timeout_s: float = 1800) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout_s = timeout_s
+
+    @staticmethod
+    def _message(message: Message) -> dict[str, Any]:
+        if not message.images:
+            return {"role": message.role, "content": message.content}
+        return {
+            "role": message.role,
+            "content": [
+                {"type": "text", "text": message.content},
+                *[
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}}
+                    for image in message.images
+                ],
+            ],
+        }
+
+    def chat(self, request: ChatRequest) -> ChatResponse:
+        body: dict[str, Any] = {
+            "model": request.model,
+            "messages": [self._message(message) for message in request.messages],
+            "stream": False,
+            "chat_template_kwargs": {"enable_thinking": request.think},
+            "temperature": request.temperature,
+            "max_completion_tokens": request.max_tokens,
+        }
+        if request.seed is not None:
+            body["seed"] = request.seed
+        if request.schema is not None:
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "result", "schema": request.schema},
+            }
+        http_request = urllib.request.Request(
+            f"{self.base_url}/v1/chat/completions",
+            json.dumps(body, ensure_ascii=False).encode(),
+            {"Content-Type": "application/json"},
+        )
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(http_request, timeout=self.timeout_s) as response:
+                data = json.load(response)
+        except urllib.error.HTTPError as error:
+            with error:
+                detail = (
+                    error.read(4096).decode(errors="replace").lower() if error.code == 400 else ""
+                )
+            if "maximum context length" in detail or "max_model_len" in detail:
+                raise StageError(
+                    FailureCode.CONTEXT_OVERFLOW, "Запрос превышает предел контекста vLLM"
+                ) from error
+            raise StageError(
+                FailureCode.LLM_UNAVAILABLE,
+                f"vLLM не выполнил запрос (HTTP {error.code}). Проверьте состояние модели.",
+            ) from error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise StageError(
+                FailureCode.LLM_UNAVAILABLE, "vLLM недоступен. Проверьте состояние модели."
+            ) from error
+        except ValueError as error:
+            raise StageError(
+                FailureCode.LLM_INVALID_OUTPUT, "Ответ vLLM не является JSON"
+            ) from error
+        try:
+            choice = data["choices"][0]
+            message = choice["message"]
+            content = message.get("content") or ""
+            thinking = message.get("reasoning") or ""
+            reason = choice["finish_reason"]
+            if not isinstance(content, str) or not isinstance(thinking, str):
+                raise ValueError("invalid message")
+            if reason not in ("stop", "length"):
+                raise ValueError("invalid finish reason")
+            if (
+                reason == "stop"
+                and request.schema is not None
+                and request.think
+                and not content.strip()
+            ):
+                # vLLM может вернуть весь структурированный ответ в reasoning (vllm#50948).
+                try:
+                    recovered = json.loads(thinking)
+                except json.JSONDecodeError:
+                    recovered = None
+                if isinstance(recovered, dict):
+                    content, thinking = thinking, ""
+            usage = data["usage"]
+            return ChatResponse(
+                content=content,
+                thinking=thinking,
+                done_reason=reason,
+                prompt_tokens=int(usage["prompt_tokens"]),
+                completion_tokens=int(usage["completion_tokens"]),
+                seconds=time.monotonic() - started,
+            )
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as error:
+            raise StageError(FailureCode.LLM_INVALID_OUTPUT, "Некорректный ответ vLLM") from error
+
+
+class VllmPool:
+    """Один одновременно выполняемый запрос на отдельный экземпляр модели."""
+
+    def __init__(self, endpoints: tuple[str, ...]) -> None:
+        self.free: SimpleQueue[VllmClient] = SimpleQueue()
+        for endpoint in endpoints:
+            self.free.put(VllmClient(endpoint))
+
+    def chat(self, request: ChatRequest) -> ChatResponse:
+        client = self.free.get()
+        try:
+            return client.chat(request)
+        finally:
+            self.free.put(client)
+
+
 class ScriptedClient:
     """Отвечает заданными ответами по очереди и запоминает запросы. Для тестов."""
 
@@ -121,7 +242,7 @@ class ScriptedClient:
         return response
 
 
-def make_client(profile: ModelProfile, ollama_url: str) -> LlmClient:
+def make_client(profile: ModelProfile, ollama_url: str, vllm: str | LlmClient) -> LlmClient:
     if profile.engine is InferenceEngine.OLLAMA:
         return OllamaClient(ollama_url)
-    raise ValueError(f"движок {profile.engine.value} не поддерживается")
+    return VllmClient(vllm) if isinstance(vllm, str) else vllm

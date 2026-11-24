@@ -208,11 +208,19 @@ def test_file_errors_are_isolated(app: Fixture) -> None:
     assert len(app.client.get(f"{base}/materials").json()["files"]) == 1
 
 
-def test_recording_duration_from_content(app: Fixture) -> None:
-    response = app.upload(app.conference(), "запись.bin", recording())
-
-    assert response.status_code == 201, response.text
-    assert (response.json()["kind"], response.json()["duration_ms"]) == ("audio", 1000)
+def test_upload_rejects_recordings_by_content_and_keeps_other_files(app: Fixture) -> None:
+    base = app.conference()
+    for path, data in (
+        ("папка/запись.bin", recording()),
+        ("папка/камера.mp4", b"\x00\x00\x00\x18ftypmp42" + bytes(16)),
+    ):
+        rejected = app.upload(base, path, data)
+        assert rejected.status_code == 422, rejected.text
+        assert "Аудио и видео" in rejected.json()["message"]
+    accepted = app.upload(base, "папка/тезисы.txt", "Содержание выступления".encode())
+    assert accepted.status_code == 201
+    result = app.client.get(f"{base}/materials").json()
+    assert [file["source"]["original_name"] for file in result["files"]] == ["тезисы.txt"]
 
 
 def test_manual_talk_and_speakers(app: Fixture) -> None:
@@ -313,7 +321,13 @@ def test_talk_without_text_fails_with_a_clear_message(
 
     monkeypatch.setattr("rapporteur.preparation.extract", lambda *args: Prepared(fragments=[]))
     base = app.conference()
-    assert app.upload(base, "01_Иванов/запись.wav", recording()).status_code == 201
+    upload = app.client.post(
+        f"{base}/materials",
+        params={"path": "01_Иванов/доклад.txt", "purpose": "document"},
+        headers={"Content-Type": "application/octet-stream"},
+        content="Учебный текст доклада".encode(),
+    )
+    assert upload.status_code == 201
     app.confirm_suggestions(base)
     app.client.post(f"{base}/processing")
 
@@ -432,7 +446,8 @@ def test_system_shows_profiles_and_templates(app: Fixture) -> None:
 
     assert {"local", "local-fast"} <= {profile["name"] for profile in info["profiles"]}
     assert [p["name"] for p in info["profiles"] if p["default"]] == ["local"]
-    assert info["templates"] == [{"name": "starter", "version": "starter-2"}]
+    assert {"name": "starter", "version": "starter-2"} in info["templates"]
+    assert any(template["name"] == "operator" for template in info["templates"])
     # В тестах сети нет: Ollama недоступна, но страница управления открывается.
     assert info["ollama_available"] is False and info["queue"] == {}
 

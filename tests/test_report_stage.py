@@ -54,3 +54,54 @@ def test_broken_template_is_a_report_error(tmp_path: Path) -> None:
 
 def test_all_three_formats_by_default() -> None:
     assert set(REPORT_FORMATS) == {ReportFormat.DOCX, ReportFormat.MARKDOWN, ReportFormat.PDF}
+
+
+def test_operator_template_preserves_card_details_and_contact_table(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from rapporteur.contracts import Speaker
+    from rapporteur.contracts.enums import TalkStatus
+    from rapporteur.contracts.reports import ReportContact, ReportDraftFields
+
+    original = SOURCES.talks[0]
+    card = original.model_copy(
+        update={
+            "status": TalkStatus.PROCESSED,
+            "card_only": True,
+            "organizations": ["Институт примера."],
+            "speakers": [
+                Speaker(
+                    name="Иван Иванов",
+                    affiliation="Институт примера",
+                    position="Руководитель направления",
+                    contacts=["test@example.invalid"],
+                )
+            ],
+        }
+    )
+    section = SOURCES.section_by_id[card.section_id].model_copy(update={"date": None})
+    sources = replace(
+        SOURCES,
+        conference=SOURCES.conference.model_copy(update={"start_date": None, "end_date": None}),
+        talks=[card],
+        sections=[section],
+        operator_fields=ReportDraftFields(
+            participation="Делегация лаборатории",
+            contacts=[ReportContact(person="Мария Сергеева", cooperation="Обмен материалами")],
+        ),
+    )
+    storage = Storage(tmp_path / "data")
+    built = build_report(
+        sources, select_talks(sources), False, storage, "report", tmp_path, formats=FAST
+    )
+    md = storage.get(
+        next(file.storage_key for file in built.files if file.format == ReportFormat.MARKDOWN)
+    ).decode()
+    assert built.input.period_start is None
+    assert "Делегация лаборатории" in md
+    assert md.count("Институт примера") == 1
+    assert "Руководитель направления" in md
+    assert "test@example.invalid" in md
+    assert "| Организация | Должность | ФИО / телефон | Доклад | Совместная работа |" in md
+    assert "|  |  | Мария Сергеева |  | Обмен материалами |" in md
+    assert "Основные выводы" not in md

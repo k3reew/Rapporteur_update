@@ -1,6 +1,7 @@
 """Профили моделей из profiles.yaml (spec §9, ADR-010).
 
-Профиль выбирается по RAPPORTEUR_PROFILE или полю default, но используется только модель,
+Профиль выбирается по RAPPORTEUR_PROFILE или полю default. vLLM использует заданную
+ревизию весов. Для Ollama используется только модель,
 которая действительно лежит в каталоге OLLAMA_MODELS_DIR (в контейнере — OLLAMA_MODELS_PATH).
 Если модели выбранного профиля там нет, берётся первый профиль profiles.yaml с имеющейся
 моделью; если подходящего профиля нет, выбранный профиль работает с самой крупной имеющейся
@@ -20,6 +21,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from rapporteur.contracts import ModelProfile
+from rapporteur.contracts.enums import InferenceEngine
 from rapporteur.settings import PROFILES_FILE
 
 log = logging.getLogger("rapporteur.profiles")
@@ -93,12 +95,14 @@ def load_profile(name: str | None = None, path: Path = PROFILES_FILE) -> ModelPr
     if wanted is None:
         known = ", ".join(profile.name for profile in profiles.profiles)
         raise ProfileError(f"Нет профиля {wanted_name}; есть: {known}")
+    if wanted.engine is InferenceEngine.VLLM:
+        return wanted
     present = local_models()
     if name is not None or not present or wanted.model in present:
         return _pinned(wanted, present.get(wanted.model))
     root = models_root()
     for profile in profiles.profiles:
-        if profile.model in present:
+        if profile.engine is wanted.engine and profile.model in present:
             _replaced(wanted.name, wanted.model, f"профиль {profile.name}", profile.model, root)
             return _pinned(profile, present[profile.model])
     model, manifest = max(present.items(), key=lambda item: (_weights_size(item[1]), item[0]))

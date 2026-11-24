@@ -74,6 +74,22 @@ test('приостановленный после перезапуска док�
   await vi.waitFor(() => expect(posts).toEqual(['/api/v1/talks/t2/retry']));
 });
 
+test('сбой формата ответа показывает короткое объяснение и свёрнутую диагностику', async () => {
+  const error = 'llm_invalid_output: ответ не является JSON: Expecting value';
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+    processing_started: true,
+    files: 1,
+    talks: [{ ...talk, title: 'Кэширование', job: 'failed', error }],
+  })));
+  render(<Processing conferenceId="c" onOpen={() => {}} />);
+
+  expect(await screen.findByText('Модель вернула ответ в неверном формате.')).toBeDefined();
+  const details = screen.getByText(error).closest('details');
+  expect(details?.open).toBe(false);
+  expect(within(details!).getByText('Подробности ошибки')).toBeDefined();
+  expect(screen.getByRole('button', { name: 'Повторить' })).toBeDefined();
+});
+
 test('решение модели без подтверждения оператора отмечено и считается', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
     processing_started: true,

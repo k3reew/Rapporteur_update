@@ -43,6 +43,9 @@ class ReportTalk(ContractModel):
     authors: list[NonEmptyStr] = Field(default_factory=list)
     organizations: list[NonEmptyStr] = Field(default_factory=list)
     contacts: list[NonEmptyStr] = Field(default_factory=list)
+    positions: list[NonEmptyStr] = Field(default_factory=list)
+    section_id: UUID | None = None
+    section_date: dt.date | None = None
 
     @model_validator(mode="after")
     def _reportable(self) -> Self:
@@ -63,6 +66,22 @@ class SkippedTalk(ContractModel):
     status: TalkStatus
 
 
+class ReportContact(ContractModel):
+    organization: str = Field(default="", max_length=1000)
+    position: str = Field(default="", max_length=1000)
+    person: str = Field(default="", max_length=1000)
+    talk: str = Field(default="", max_length=1000)
+    cooperation: str = Field(default="", max_length=2000)
+
+
+class ReportDraftFields(ContractModel):
+    participation: str = Field(default="", max_length=4000)
+    program: str = Field(default="", max_length=8000)
+    overview: str = Field(default="", max_length=8000)
+    attachments: str = Field(default="", max_length=4000)
+    contacts: list[ReportContact] | None = Field(default=None, max_length=500)
+
+
 class ReportInput(ContractModel):
     """Снимок входных данных сборки. Хранится в версии справки."""
 
@@ -77,6 +96,7 @@ class ReportInput(ContractModel):
     template_version: NonEmptyStr
     unreviewed_confirmed: bool
     department_recommendations: list[dict[str, object]] = Field(default_factory=list)
+    operator_fields: ReportDraftFields | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

@@ -129,7 +129,16 @@ def test_release_030_database_gets_card_columns_and_backup(tmp_path: Path) -> No
         conn.execute("ALTER TABLE talks DROP COLUMN organizations")
         conn.execute("ALTER TABLE talks DROP COLUMN contacts")
         conn.execute("ALTER TABLE talks DROP COLUMN card_only")
+        conn.execute("ALTER TABLE talks DROP COLUMN worker_active")
+        conn.execute("ALTER TABLE preparations DROP COLUMN auto_start")
+        conn.execute("ALTER TABLE preparations DROP COLUMN input_snapshot")
+        conn.execute("ALTER TABLE preparations DROP COLUMN review_reasons")
         # База выпуска 0.3.0: отбор и фоновые выпуски уже есть (v2), карточки ещё нет.
+        conn.execute("ALTER TABLE preparations DROP COLUMN workflow")
+        conn.execute("ALTER TABLE preparations DROP COLUMN screening_confirmed")
+        conn.execute("ALTER TABLE preparations DROP COLUMN context_file_ids")
+        conn.execute("DROP TABLE department_details")
+        conn.execute("DROP TABLE report_drafts")
         conn.execute("PRAGMA user_version = 2")
 
     upgraded = db.Database(path)

@@ -109,3 +109,23 @@ test('подтверждение проверки создаёт новую ве
   });
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Подтвердить проверку' }).disabled).toBe(true);
 });
+
+test('черновик по автоматическому отбору показывает источник и ждёт подтверждения отдела', async () => {
+  const screening = {
+    version: 1, state: 'relevant', stale: false, manual: false, department_ids: ['research'], error: null,
+    items: [{ department_id: 'research', department_name: 'Исследования', status: 'relevant', reason: 'Связь',
+      evidence: [{ label: 'S2', quote: 'Задержка снизилась на 23 %.' }],
+      paragraphs: [{ label: 'D1.1', quote: 'Исследовать быстродействие систем.' }] }],
+  };
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/progress')) return Response.json({ auto_start: true, talks: [{ id: 'talk', screening }] });
+    if (url.endsWith('/summary')) return reply(view);
+    return Response.json({ title: 'Кэширование', speakers: [], organizations: [], contacts: [], revision: 0 });
+  }));
+  render(<SummaryReview conferenceId="c" talkId="talk" onClose={() => {}} />);
+
+  const evidence = await screen.findByText('Цитаты');
+  fireEvent.click(evidence);
+  expect(screen.getByRole('link', { name: 'Источник доклада S2' }).getAttribute('href')).toBe('/api/v1/files/file/slides/2');
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Подтвердить проверку' }).disabled).toBe(true);
+});

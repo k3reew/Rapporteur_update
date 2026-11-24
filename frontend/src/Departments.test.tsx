@@ -3,6 +3,25 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { Departments, Recommendations } from './Departments';
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+test('создаёт отдел с описанием и функциями без файла положения', async () => {
+  let stored: Record<string, unknown> | undefined;
+  const api = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      stored = { id: 'd', version: 1, original_name: '', pages: [], ...JSON.parse(init.body as string) };
+      return Response.json(stored);
+    }
+    return Response.json(stored ? [stored] : []);
+  });
+  vi.stubGlobal('fetch', api);
+  render(<Departments />);
+  fireEvent.change(await screen.findByLabelText('Название отдела'), { target: { value: 'Отдел транспорта' } });
+  fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Работа с маршрутизацией' } });
+  fireEvent.change(screen.getByLabelText('Функции'), { target: { value: 'Проверяет модели движения' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Сохранить отдел' }));
+  expect(await screen.findByRole('link', { name: 'Перейти к материалам' })).toBeDefined();
+  expect(stored).toMatchObject({ name: 'Отдел транспорта', description: 'Работа с маршрутизацией', functions: 'Проверяет модели движения' });
+});
+
 test('правка рекомендации сохраняет исходную версию при обновлении результата', async () => {
   vi.useFakeTimers();
   let version = 1;

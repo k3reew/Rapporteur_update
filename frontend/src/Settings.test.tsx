@@ -73,3 +73,26 @@ test('выбор модели без рассуждения снимает и б
   });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Как в profiles.yaml' })).toBeDefined());
 });
+
+test('показывает закреплённую модель vLLM и готовность сервиса', async () => {
+  const server = { ...local, profile: 'server-vllm', model: 'Qwen/Qwen3.5-27B' };
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/v1/system') return Response.json({
+      ...system, inference_engine: 'vllm', inference_available: true,
+      inference_models: [server.model], ollama_available: false,
+      inference_replicas: [{ name: 'Экземпляр 1', ready: true }, { name: 'Экземпляр 2', ready: false }],
+    });
+    if (url === '/api/v1/model') return Response.json({
+      ...model, current: server, default: server, models: [], ollama_available: false,
+      inference_engine: 'vllm', inference_available: true,
+    });
+    throw new Error(`нет ответа для ${url}`);
+  }));
+  render(<Settings theme="system" onTheme={() => {}} />);
+
+  await screen.findByText('Модель доступна');
+  expect(screen.getByText(server.model)).toBeDefined();
+  expect(await screen.findByText('Экземпляр 1 · готов')).toBeDefined();
+  expect(screen.getByText('Экземпляр 2 · недоступен')).toBeDefined();
+  expect(screen.queryByLabelText('Модель Ollama')).toBeNull();
+});

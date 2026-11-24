@@ -15,6 +15,35 @@ type ReportVersion = {
   warnings: string[];
 };
 type ReportJob = { id: string; status: 'queued' | 'running' | 'done' | 'failed' | 'paused'; step: string; error: string | null; report_version_id: string | null };
+type ReportContact = { organization: string; position: string; person: string; talk: string; cooperation: string };
+type ReportFields = {
+  participation: string;
+  program: string;
+  overview: string;
+  attachments: string;
+  contacts: ReportContact[] | null;
+};
+type ReportEdit = { revision: number; fields: ReportFields };
+type PreviewTalk = {
+  id: string;
+  speakers: { name: string; position: string | null; affiliation: string | null; contacts: string[] }[];
+  organizations: string[];
+  contacts: string[];
+  annotation: string[];
+  conclusions: string[];
+};
+type ReportDraft = ReportEdit & { suggested_contacts: ReportContact[]; talks: PreviewTalk[] };
+const fieldLabels = {
+  participation: 'Участие организации',
+  program: 'Программа конференции',
+  overview: 'Общие сведения',
+  attachments: 'Приложения',
+} as const;
+const contactLabels = {
+  organization: 'Организация', position: 'Должность', person: 'ФИО / телефон',
+  talk: 'Доклад', cooperation: 'Совместная работа',
+} as const;
+const blankContact: ReportContact = { organization: '', position: '', person: '', talk: '', cooperation: '' };
 const jobSteps: Record<string, string> = { queued: 'В очереди', running: 'Подготовка', docx: 'Документ DOCX', md: 'Текст Markdown', pdf: 'Документ PDF', done: 'Готово', failed: 'Ошибка', paused: 'ждёт команды оператора' };
 const json = { 'Content-Type': 'application/json' };
 const formats: Record<string, string> = { docx: 'DOCX', md: 'Markdown', pdf: 'PDF' };
@@ -24,6 +53,16 @@ function canReport(talk: TalkProgress) {
   return !!talk.reportable && (!!talk.card_only || talk.summary_number !== null);
 }
 
+function reportBlocker(talk: TalkProgress) {
+  if (talk.screening?.error || talk.job === 'failed') return 'Повторите обработку или проверьте материалы';
+  if (talk.screening?.stale || talk.summary_status === 'stale') return 'Обновите отбор или сводку';
+  if (talk.job === 'paused' || talk.screening?.state === 'paused') return 'Продолжите обработку';
+  if (talk.job === 'queued' || talk.job === 'running' || ['queued', 'running'].includes(talk.screening?.state ?? '')) return 'Идёт анализ';
+  if (talk.screening && !talk.screening.manual) return 'Подтвердите решение по отделам';
+  if (talk.summary_number !== null) return 'Проверьте сводку';
+  return 'Проверьте наличие материалов и запустите анализ';
+}
+
 export function ReportPanel({ conferenceId }: { conferenceId: string }) {
   const base = `/api/v1/conferences/${conferenceId}`;
   const { data: jobs = [], error: jobsError, refresh: refreshJobs } = useResource<ReportJob[]>(`${base}/report-jobs`, 2000);
@@ -31,17 +70,25 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
   const submission = useRef({ body: '', key: '', jobId: '' });
   const completed = jobs.filter(job => job.status === 'done').map(job => job.report_version_id).join(',');
   const [conference, setConference] = useState<ConferenceItem>();
-  const [dates, setDates] = useState({ start: '', end: '', place: '' });
-  const [talks, setTalks] = useState<TalkProgress[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [dates, setDates] = useState({ start: '', end: '', place: '', organizer: '' });
+  const { data: progress, error: progressError } = useResource<Progress>(`${base}/progress`, 5000);
+  const operator = progress?.workflow === 'operator';
+  const { data: draft, error: draftError, setData: setDraft } = useResource<ReportDraft>(operator ? `${base}/report-draft` : null, 5000);
+  const [edit, setEdit] = useState<ReportEdit | null>(null);
+  const fields = edit?.fields ?? draft?.fields;
+  const contactRows = fields?.contacts ?? draft?.suggested_contacts ?? [];
+  const talks = (progress?.talks ?? []).filter(talk => !operator || !['not_held', 'insufficient_data'].includes(talk.status));
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
+  const selected = talks.filter(talk => operator || (canReport(talk) && !excluded.has(talk.id))).map(talk => talk.id);
+  const blocked = talks.some(talk => !canReport(talk));
   const [versions, setVersions] = useState<ReportVersion[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
 
-  const datesDirty = !!conference && (dates.start !== (conference.start_date ?? '') || dates.end !== (conference.end_date ?? '') || dates.place !== (conference.place ?? ''));
-  useUnsavedChanges(datesDirty || !!busy);
+  const datesDirty = !!conference && (dates.start !== (conference.start_date ?? '') || dates.end !== (conference.end_date ?? '') || dates.place !== (conference.place ?? '') || dates.organizer !== (conference.organizer ?? ''));
+  useUnsavedChanges(datesDirty || !!edit || !!busy);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,11 +97,7 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
       const value: ConferenceItem = await (await request(base, { signal })).json();
       if (signal.aborted) return;
       setConference(value);
-      setDates({ start: value.start_date ?? '', end: value.end_date ?? '', place: value.place ?? '' });
-      const progress: Progress = await (await request(`${base}/progress`, { signal })).json();
-      if (signal.aborted) return;
-      setTalks(progress.talks);
-      setSelected(progress.talks.filter(canReport).map(talk => talk.id));
+      setDates({ start: value.start_date ?? '', end: value.end_date ?? '', place: value.place ?? '', organizer: value.organizer ?? '' });
       const history = await (await request(`${base}/reports`, { signal })).json();
       if (!signal.aborted) setVersions(history);
     }
@@ -97,20 +140,41 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
           start_date: dates.start || null,
           end_date: dates.end || dates.start || null,
           place: dates.place.trim() || null,
-          organizer: conference.organizer,
+          organizer: dates.organizer.trim() || null,
         }),
       });
       const saved: ConferenceItem = await response.json();
       setConference(saved);
-      setDates({ start: saved.start_date ?? '', end: saved.end_date ?? '', place: saved.place ?? '' });
+      setDates({ start: saved.start_date ?? '', end: saved.end_date ?? '', place: saved.place ?? '', organizer: saved.organizer ?? '' });
       setStatus('Сведения о конференции сохранены.');
     });
   }
 
+  function editFields(value: ReportFields) {
+    if (!draft) return;
+    setEdit(previous => ({ revision: previous?.revision ?? draft.revision, fields: value }));
+  }
+
+  function saveFields() {
+    if (!edit) return;
+    void run('Сохранение…', async () => {
+      const response = await request(`${base}/report-draft`, {
+        method: 'PUT', headers: json, body: JSON.stringify(edit),
+      });
+      setDraft(await response.json() as ReportDraft);
+      setEdit(null);
+      setStatus('Черновик справки сохранён.');
+    });
+  }
+
   function build() {
-    const body = JSON.stringify({ unreviewed_confirmed: confirmed, talk_ids: selected });
+    const body = JSON.stringify({
+      unreviewed_confirmed: !operator && !progress?.auto_start && confirmed,
+      talk_ids: selected,
+      ...(operator ? { draft_revision: draft?.revision } : {}),
+    });
     void run('Постановка в очередь…', async () => {
-      if (submission.current.body !== body || jobs.some(job => job.id === submission.current.jobId && job.status === 'done')) {
+      if (submission.current.body !== body || jobs.some(job => job.id === submission.current.jobId && ['done', 'failed'].includes(job.status))) {
         // getRandomValues works over LAN HTTP, unlike randomUUID (secure contexts only).
         const key = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
         submission.current = { body, key, jobId: '' };
@@ -134,9 +198,9 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
   return (
     <section aria-labelledby="report-title" aria-busy={!!busy}>
       <div className="card">
-        <h2 id="report-title">Справка</h2>
+        <h2 id="report-title">{operator ? 'Предпросмотр справки' : 'Справка'}</h2>
         <p role="status">{busy && <span className="spinner" aria-hidden="true" />}{busy || status}</p>
-        {(error || jobsError) && <p role="alert">{error || jobsError}</p>}
+        {(error || jobsError || progressError || draftError) && <p role="alert">{error || jobsError || progressError || draftError}</p>}
         {conference && (
           <form onSubmit={(event) => { event.preventDefault(); saveDates(); }}>
             <fieldset>
@@ -151,9 +215,12 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
                 <label className="field"><span>Место</span>
                   <input value={dates.place} placeholder="г. Москва" onChange={(event) => setDates({ ...dates, place: event.target.value })} />
                 </label>
+                {operator && <label className="field"><span>Организатор</span>
+                  <input value={dates.organizer} onChange={(event) => setDates({ ...dates, organizer: event.target.value })} />
+                </label>}
                 <button disabled={!!busy} style={{ alignSelf: 'end' }}>Сохранить</button>
               </div>
-              {!conference.start_date && (
+              {!operator && !conference.start_date && (
                 <p className="pill warn" style={{ marginTop: '.8rem' }}>
                   Без дат в справке не будет периода проведения, сборка не пройдёт.
                 </p>
@@ -162,23 +229,79 @@ export function ReportPanel({ conferenceId }: { conferenceId: string }) {
           </form>
         )}
       </div>
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Сборка</h3>
-        <p className="muted">
-          Выберите доклады для справки. Доклады без интереса отделов входят карточкой: тема, авторы, организации и контакты. Остальные доклады без готовой сводки в неё не войдут. Подтверждённые рекомендации отделам включаются вместе с основаниями.
-        </p>
-        <fieldset disabled={!!busy} className="report-selection"><legend>Доклады — выбрано {selected.length} из {talks.length}</legend>
-          {talks.map(talk => <label className="check" key={talk.id}><input type="checkbox" aria-label={talk.title ?? 'Без темы'} disabled={!canReport(talk)} checked={selected.includes(talk.id)}
-            onChange={event => setSelected(previous => event.target.checked ? [...previous, talk.id] : previous.filter(id => id !== talk.id))} />
-            <span>{talk.title ?? 'Без темы'} <small>· {talk.card_only ? 'только карточка' : talk.status === 'reviewed' ? 'проверен' : talk.summary_status === 'stale' ? 'сводка устарела' : talk.summary_number ? 'ожидает проверки' : 'нет сводки'}</small></span></label>)}
+      {operator && fields && <form className="card" onSubmit={event => { event.preventDefault(); saveFields(); }}>
+        <fieldset disabled={!!busy}>
+          <legend>Поля бланка</legend>
+          <p className="muted">Пустые поля можно заполнить вручную после выгрузки.</p>
+          <div className="fields">
+            {(Object.keys(fieldLabels) as (keyof typeof fieldLabels)[]).map(key => <label className="field" key={key}>
+              <span>{fieldLabels[key]}</span>
+              <textarea rows={3} maxLength={key === 'program' || key === 'overview' ? 8000 : 4000}
+                placeholder={key === 'program' ? 'Секции из реестра' : undefined}
+                value={fields[key]} onChange={event => editFields({ ...fields, [key]: event.target.value })} />
+            </label>)}
+          </div>
+          <h3>Контакты и возможная совместная работа</h3>
+          {contactRows.map((row, index) => <fieldset className="fields" key={index}>
+            <legend>Контакт {index + 1}</legend>
+            {(Object.keys(contactLabels) as (keyof ReportContact)[]).map(key => <label className="field" key={key}>
+              <span>{contactLabels[key]}</span>
+              <input value={row[key]} maxLength={key === 'cooperation' ? 2000 : 1000}
+                onChange={event => editFields({ ...fields, contacts: contactRows.map((item, i) => i === index ? { ...item, [key]: event.target.value } : item) })} />
+            </label>)}
+            <button type="button" onClick={() => editFields({ ...fields, contacts: contactRows.filter((_, i) => i !== index) })}>Удалить контакт</button>
+          </fieldset>)}
+          <div className="row">
+            <button type="button" disabled={contactRows.length >= 500} onClick={() => editFields({ ...fields, contacts: [...contactRows, blankContact] })}>Добавить контакт</button>
+            <button disabled={!edit}>Сохранить поля</button>
+            {edit && <button type="button" onClick={() => setEdit(null)}>Отменить правки</button>}
+          </div>
         </fieldset>
-        {datesDirty && <p className="notice">Сохраните сведения о конференции перед сборкой.</p>}
+      </form>}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>{operator ? 'Доклады в справке' : 'Сборка'}</h3>
+        {!operator && <p className="muted">
+          Выберите доклады для справки. Карточки содержат название и авторов. Полные сводки также содержат ключевые тезисы и выводы, если они есть в источниках.
+        </p>}
+        {progress && !talks.length && <p className="notice">Сначала <a href={`#/c/${encodeURIComponent(conferenceId)}/materials`}>загрузите материалы и начните анализ</a>.</p>}
+        {blocked && <p className="notice">Часть докладов пока недоступна для выпуска. <a href={`#/c/${encodeURIComponent(conferenceId)}/review`}>Перейти к проверке</a>.</p>}
+        {operator ? talks.map(talk => {
+          const preview = draft?.talks.find(item => item.id === talk.id);
+          const people = preview?.speakers.map(person => [person.name, person.position, person.affiliation, ...person.contacts].filter(Boolean).join(', '));
+          const details = [...(people ?? []), ...(preview?.organizations ?? []), ...(preview?.contacts ?? [])];
+          return <details key={talk.id} className="report-talk-preview">
+            <summary>{talk.title || 'Без названия'} · {talk.section}</summary>
+            {details.length ? <p>{details.join(' · ')}</p> : <p><a href={`#/c/${encodeURIComponent(conferenceId)}/talks`}>Заполнить реквизиты в реестре</a></p>}
+            {!canReport(talk) && <p className="muted">{reportBlocker(talk)}</p>}
+            {talk.card_only && <p className="muted">Карточка</p>}
+            {!!preview?.annotation.length && <p>{preview.annotation.join(' ')}</p>}
+            {!!preview?.conclusions.length && <ul>{preview.conclusions.map((line, index) => <li key={index}>{line}</li>)}</ul>}
+            {talk.summary_number !== null && !talk.card_only && <a href={`#/c/${encodeURIComponent(conferenceId)}/talk/${encodeURIComponent(talk.id)}`}>Проверить или исправить аннотацию</a>}
+          </details>;
+        }) : !!talks.length && <fieldset disabled={!!busy} className="report-selection"><legend>Доклады — выбрано {selected.length} из {talks.length}</legend>
+          {talks.map(talk => <label className="check" key={talk.id}>
+            <input type="checkbox" aria-label={talk.title ?? 'Без темы'} disabled={!canReport(talk)} checked={selected.includes(talk.id)}
+              onChange={event => {
+                const checked = event.target.checked;
+                setExcluded(previous => {
+                  const next = new Set(previous);
+                  if (checked) next.delete(talk.id);
+                  else next.add(talk.id);
+                  return next;
+                });
+              }} />
+            <span>{talk.title ?? 'Без темы'}{!canReport(talk)
+              ? <small className="talk-subline">{reportBlocker(talk)}</small>
+              : <small> · {talk.card_only ? 'только карточка' : talk.status === 'reviewed' ? 'полная сводка' : 'ожидает проверки'}</small>}</span>
+          </label>)}
+        </fieldset>}
+        {(datesDirty || edit) && <p className="notice">Сохраните правки перед выпуском.</p>}
         <div className="row">
-          <button className="primary" disabled={!!busy || pending || !selected.length || datesDirty} onClick={build}>Собрать справку</button>
-          <label className="check">
+          <button className="primary" disabled={!!busy || pending || !selected.length || datesDirty || !!edit || (operator ? !draft || blocked || !progress?.screening_confirmed : progress?.auto_start && !conference?.start_date)} onClick={build}>{operator ? 'Выпустить справку' : 'Собрать справку'}</button>
+          {progress && !operator && !progress.auto_start && <label className="check">
             <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
             Собрать, даже если не все сводки проверены
-          </label>
+          </label>}
         </div>
         {!!jobs.length && <section aria-label="Задания выпуска"><h3>Задания выпуска</h3>
           {jobs.map(job => <details key={job.id} open={job.status === 'failed' || job.status === 'paused'}><summary>{job.status === 'done' ? 'Справка собрана' : job.status === 'failed' ? 'Сборка не завершена' : job.status === 'paused' ? 'Сборка приостановлена после перезапуска' : 'Справка собирается'} · {jobSteps[job.step] ?? job.step}</summary>

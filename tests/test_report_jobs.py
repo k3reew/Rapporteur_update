@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from httpx2 import Response
 
 from rapporteur.llm.client import ScriptedClient
+from rapporteur.report.export import render_formats
 
 from .test_multimodal import create_document_talk
 from .test_multimodal import web as web
@@ -74,8 +75,6 @@ def test_failed_export_is_retryable_without_partial_report(
     client, scripted = web
     conference, talk = create_document_talk(client, scripted)
     job = submit(client, conference, talk).json()
-    from rapporteur.report.export import render_formats
-
     original = render_formats
 
     def fail(*args: Any, **kwargs: Any) -> Any:
@@ -198,3 +197,76 @@ def test_missing_report_template_is_actionable(
     assert response.status_code == 500
     assert "бланк" in response.json()["message"]
     assert response.json()["request_id"]
+
+
+def test_operator_review_draft_publish_and_export(
+    web: tuple[TestClient, ScriptedClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from rapporteur import report_jobs
+
+    client, scripted = web
+    conference, talk = create_document_talk(client, scripted)
+    state = cast(FastAPI, client.app).state
+    with state.database.tx() as conn:
+        conn.execute(
+            "INSERT INTO preparations (conference_id,job,workflow,auto_start,proposal) "
+            "VALUES (?,'confirmed','operator',1,?) "
+            "ON CONFLICT(conference_id) DO UPDATE SET job='confirmed',workflow='operator',"
+            "auto_start=1,proposal=excluded.proposal",
+            (conference, json.dumps([{"talk_id": talk}])),
+        )
+        conn.execute(
+            "UPDATE conferences SET start_date=NULL,end_date=NULL WHERE id=?", (conference,)
+        )
+        conn.execute("UPDATE talks SET status='reviewed' WHERE id=?", (talk,))
+    base = f"/api/v1/conferences/{conference}"
+    before = client.get(base + "/report-draft").json()
+    assert before["revision"] == 0
+    request = {"revision": 0, "fields": {"participation": "Делегация отдела"}}
+    saved = client.put(base + "/report-draft", json=request)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["revision"] == 1
+    assert client.put(base + "/report-draft", json=request).status_code == 409
+
+    assert client.post(base + "/report-jobs", json={"idempotency_key": "first"}).status_code == 409
+    with state.database.tx() as conn:
+        conn.execute(
+            "UPDATE preparations SET screening_confirmed=1 WHERE conference_id=?", (conference,)
+        )
+    queued = client.post(
+        base + "/report-jobs", json={"idempotency_key": "second", "draft_revision": 1}
+    )
+    assert queued.status_code == 202, queued.text
+
+    original = render_formats
+
+    def modified_while_rendering(*args: Any, **kwargs: Any) -> Any:
+        rendered = original(*args, **kwargs)
+        changed = client.put(
+            base + "/report-draft",
+            json={"revision": 1, "fields": {"participation": "Обновлённые данные"}},
+        )
+        assert changed.status_code == 200, changed.text
+        return rendered
+
+    monkeypatch.setattr(report_jobs, "render_formats", modified_while_rendering)
+    assert state.processor.run_once()
+    assert client.get(base + "/reports").json() == []
+    failed = client.get(f"/api/v1/report-jobs/{queued.json()['id']}").json()
+    assert failed["status"] == "failed"
+    assert "Черновик справки изменился" in failed["error"]
+
+    monkeypatch.setattr(report_jobs, "render_formats", original)
+    replacement = client.post(
+        base + "/report-jobs", json={"idempotency_key": "third", "draft_revision": 2}
+    )
+    assert replacement.status_code == 202, replacement.text
+    assert state.processor.run_once()
+    report = client.get(base + "/reports").json()[0]
+    assert report["input"]["period_start"] is None
+    assert {item["format"] for item in report["files"]} == {"docx", "md", "pdf"}
+    assert not any("Рекомендации отделам" in warning for warning in report["warnings"])
+    md = client.get(f"/api/v1/report-versions/{report['id']}/files/md")
+    assert "Обновлённые данные" in md.text

@@ -3,6 +3,7 @@
 import json
 import threading
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
@@ -14,9 +15,11 @@ from rapporteur.errors import FailureCode, StageError
 from rapporteur.llm.client import (
     ChatRequest,
     ChatResponse,
+    LlmClient,
     Message,
     OllamaClient,
     ScriptedClient,
+    VllmClient,
 )
 from rapporteur.llm.profiles import ProfileError, load_profile
 from rapporteur.llm.prompts import PromptError, load_prompt
@@ -33,8 +36,10 @@ class FakeOllama(BaseHTTPRequestHandler):
     status: ClassVar[int] = 200
     reply: ClassVar[dict[str, Any]] = {}
     received: ClassVar[list[dict[str, Any]]] = []
+    route: ClassVar[str] = ""
 
     def do_POST(self) -> None:
+        type(self).route = self.path
         length = int(self.headers["Content-Length"])
         type(self).received.append(json.loads(self.rfile.read(length)))
         body = json.dumps(type(self).reply).encode()
@@ -113,10 +118,127 @@ def test_unreachable_ollama_is_a_controlled_failure() -> None:
     assert error.value.code is FailureCode.LLM_UNAVAILABLE
 
 
-def ask(client: ScriptedClient, **kwargs: Any) -> Any:
+def test_vllm_request_preserves_images_schema_and_reasoning(ollama: str) -> None:
+    from rapporteur.llm.client import make_client
+
+    profile = load_profile("server-vllm")
+    FakeOllama.reply = {
+        "choices": [
+            {"message": {"content": "{}", "reasoning": "вывод"}, "finish_reason": "length"}
+        ],
+        "usage": {"prompt_tokens": 123, "completion_tokens": 456},
+    }
+    response = make_client(profile, "http://127.0.0.1:9", ollama).chat(
+        request(messages=(*MESSAGES, Message("user", "График", ("iVBORw0KGgo=",))))
+    )
+
+    assert FakeOllama.route == "/v1/chat/completions"
+    sent = FakeOllama.received[0]
+    assert sent["messages"][0] == {"role": "system", "content": "Факты."}
+    assert sent["messages"][2]["content"] == [
+        {"type": "text", "text": "График"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}},
+    ]
+    assert sent["chat_template_kwargs"] == {"enable_thinking": True}
+    assert sent["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "result", "schema": {"type": "object"}},
+    }
+    assert (sent["max_completion_tokens"], sent["temperature"], sent["seed"]) == (2000, 0.1, 7)
+    assert (response.content, response.thinking, response.done_reason) == ("{}", "вывод", "length")
+    assert (response.prompt_tokens, response.completion_tokens) == (123, 456)
+
+
+def test_vllm_disables_reasoning_and_maps_errors(ollama: str) -> None:
+    from rapporteur.llm.client import make_client
+
+    client = make_client(load_profile("server-vllm"), "http://127.0.0.1:9", ollama)
+    FakeOllama.reply = {"choices": []}
+    with pytest.raises(StageError) as invalid:
+        client.chat(request(think=False, schema=None, seed=None))
+    assert invalid.value.code is FailureCode.LLM_INVALID_OUTPUT
+    sent = FakeOllama.received[0]
+    assert sent["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "response_format" not in sent and "seed" not in sent
+
+    FakeOllama.status = 503
+    FakeOllama.reply = {"error": {"message": "фрагмент закрытого материала"}}
+    with pytest.raises(StageError) as unavailable:
+        client.chat(request())
+    assert unavailable.value.code is FailureCode.LLM_UNAVAILABLE
+    assert "503" in unavailable.value.message and "закрытого" not in unavailable.value.message
+
+    FakeOllama.status = 400
+    FakeOllama.reply = {"error": {"message": "The maximum context length is 32768 tokens."}}
+    with pytest.raises(StageError) as overflow:
+        client.chat(request())
+    assert overflow.value.code is FailureCode.CONTEXT_OVERFLOW
+
+
+def test_gptq_replicas_each_serve_an_independent_simultaneous_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rapporteur.llm.client import VllmClient, VllmPool
+
+    barrier = threading.Barrier(2, timeout=3)
+
+    def chat(self: VllmClient, _request: ChatRequest) -> ChatResponse:
+        barrier.wait()
+        return ChatResponse(self.base_url, "", "stop", 10, 1, 0.0)
+
+    monkeypatch.setattr(VllmClient, "chat", chat)
+    urls = ("http://replica-1:8000", "http://replica-2:8000")
+    client = VllmPool(urls)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = workers.map(client.chat, [request(), request()])
+        assert {item.content for item in results} == set(urls)
+
+
+def ask(client: LlmClient, **kwargs: Any) -> Any:
     return ask_structured(
         client, PROFILE, PROMPT, MESSAGES, FactsDraft, think=True, max_repairs=2, seed=1, **kwargs
     )
+
+
+def test_vllm_recovers_complete_json_returned_in_reasoning(ollama: str) -> None:
+    FakeOllama.reply = {
+        "choices": [
+            {"message": {"content": None, "reasoning": facts_answer()}, "finish_reason": "stop"}
+        ],
+        "usage": {"prompt_tokens": 123, "completion_tokens": 456},
+    }
+    checked = []
+
+    def check(value: FactsDraft) -> list[str]:
+        checked.append(value)
+        return []
+
+    result = ask(VllmClient(ollama), check=check)
+
+    assert result.attempts == 1
+    assert checked == [FactsDraft.model_validate_json(facts_answer())]
+
+
+@pytest.mark.parametrize(
+    ("reasoning", "finish_reason", "changes"),
+    [
+        ('Рассуждение {"title": "пример"}', "stop", {}),
+        ('{"title":', "stop", {}),
+        ('{"title": "пример"}', "length", {}),
+        ('{"title": "пример"}', "stop", {"schema": None}),
+        ('{"title": "пример"}', "stop", {"think": False}),
+    ],
+)
+def test_vllm_does_not_promote_other_reasoning(
+    ollama: str, reasoning: str, finish_reason: str, changes: dict[str, Any]
+) -> None:
+    FakeOllama.reply = {
+        "choices": [
+            {"message": {"content": None, "reasoning": reasoning}, "finish_reason": finish_reason}
+        ],
+        "usage": {"prompt_tokens": 123, "completion_tokens": 456},
+    }
+    assert VllmClient(ollama).chat(request(**changes)).content == ""
 
 
 def test_invalid_answer_is_repaired_with_the_problems() -> None:

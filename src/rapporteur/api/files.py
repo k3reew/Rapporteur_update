@@ -16,6 +16,7 @@ from rapporteur import (
     db,
     departments,
     materials,
+    preparation,
     processing,
 )
 from rapporteur.api.dependencies import ReadTx, Tx, _database, _storage, _wake
@@ -26,6 +27,7 @@ from rapporteur.ingest.inventory import (
     MAX_UPLOAD_BYTES,
     PPTX,
     inspect_file,
+    require_supported_upload,
     upload_limit,
 )
 from rapporteur.ingest.limits import check_size
@@ -78,6 +80,7 @@ async def upload_material(
                     if len(head) < HEADER_BYTES:
                         head.extend(chunk[: HEADER_BYTES - len(head)])
                         if len(head) == HEADER_BYTES:
+                            require_supported_upload(bytes(head))
                             limit = upload_limit(bytes(head))
                     size += len(chunk)
                     check_size(size, limit)
@@ -85,6 +88,7 @@ async def upload_material(
                     await stream.write(chunk)
 
             def register() -> tuple[SourceFile, bool]:
+                require_supported_upload(bytes(head))
                 name = PurePosixPath(path).name
                 marked = program or PurePosixPath(name).stem.casefold() in {"программа", "program"}
                 inspection = inspect_file(staged, program=marked or purpose == "program")
@@ -111,11 +115,7 @@ async def upload_material(
                     result = materials.add_file(conn, conference_id, path, item, inspection)
                     storage.add_blob(sha, staged)
                     if result[1]:
-                        conn.execute(
-                            "UPDATE preparations SET version=version+1, job='queued' WHERE "
-                            "conference_id=?",
-                            (conference_id,),
-                        )
+                        preparation.materials_changed(conn, conference_id)
                 return result
 
             source, created = await run_in_threadpool(register)
@@ -137,6 +137,8 @@ def confirm_materials(
     request: Request, conn: Tx, conference_id: str, data: materials.BindingReview
 ) -> materials.Materials:
     conference = materials.require_conference(conn, conference_id)
+    if preparation.operator(conn, conference_id):
+        raise UserError("Подтвердите привязки на экране «Реестр докладов»", 409)
     materials.confirm(conn, conference_id, data)
     # После запуска обработки новые и перепривязанные доклады обрабатываются сразу.
     if conference["processing_started"] and processing.enqueue_ready(conn, conference_id):
@@ -239,9 +241,6 @@ def change_purpose(request: Request, conn: Tx, file_id: str, data: PurposeWrite)
             "('processed','reviewed') THEN 'stale' ELSE status END WHERE id=?",
             (talk_id,),
         )
-    conn.execute(
-        "UPDATE preparations SET job='queued', version=version+1 WHERE conference_id=?",
-        (row["conference_id"],),
-    )
+    preparation.materials_changed(conn, row["conference_id"])
     _wake(request)
     return Response(status_code=204)

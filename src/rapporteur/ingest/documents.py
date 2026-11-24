@@ -13,12 +13,12 @@ from rapporteur.contracts.enums import FragmentKind, TextOrigin
 from rapporteur.contracts.fragments import PageLocator
 from rapporteur.errors import FailureCode, StageError
 from rapporteur.ingest.limits import PresentationConfig, check_size, check_zip
-from rapporteur.ingest.pdf_reader import open_pdf, read_page
+from rapporteur.ingest.pdf_reader import open_pdf, read_page, text_in_reading_order
 from rapporteur.ingest.render import render_page
 from rapporteur.office import ConversionError, convert_to_pdf
 from rapporteur.text import normalize_text
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def image_pages(data: bytes) -> list[bytes]:
@@ -103,8 +103,9 @@ def pages(data: bytes, media_type: str) -> list[tuple[str, bytes, TextOrigin]]:
                     FailureCode.TOO_MANY_PAGES, "Документ должен содержать 1–300 страниц"
                 )
             result = []
+            text_layer = text_in_reading_order(source, len(pdf))
             for number in range(1, len(pdf) + 1):
-                text = read_page(pdf, number).text
+                text = read_page(pdf, number).text if text_layer is None else text_layer[number - 1]
                 image = render_page(pdf, number, PresentationConfig())
                 origin = TextOrigin.EXTRACTED
                 if not text.strip():
