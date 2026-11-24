@@ -327,7 +327,20 @@ def queue(
     )
 
 
-def materials_changed(conn: sqlite3.Connection, conference_id: str) -> None:
+def materials_changed(
+    conn: sqlite3.Connection, conference_id: str, *, unassigned_file: bool = False
+) -> None:
+    if unassigned_file and db.one(
+        conn,
+        "SELECT 1 FROM preparations WHERE conference_id=? AND workflow='operator' "
+        "AND job='confirmed'",
+        conference_id,
+    ):
+        conn.execute(
+            "UPDATE preparations SET version=version+1,input_snapshot=? WHERE conference_id=?",
+            (input_snapshot(conn, conference_id), conference_id),
+        )
+        return
     conn.execute(
         "UPDATE preparations SET version=version+1, error=NULL, review_reasons='[]', "
         "screening_confirmed=0, "
@@ -590,8 +603,8 @@ def apply(
     conference_id: str,
     data: ProposalWrite,
     storage: Storage | None = None,
-) -> bool:
-    """Сохраняет реестр и возвращает, нужно ли снова запускать обработку."""
+) -> set[str] | None:
+    """Сохраняет реестр. None — обычный запуск, множество — только затронутые доклады."""
     materials.require_conference(conn, conference_id)
     current = db.one(conn, "SELECT * FROM preparations WHERE conference_id=?", conference_id)
     if (
@@ -616,13 +629,16 @@ def apply(
     )
     if context_ids - files.keys():
         raise UserError("Материалы контекста отсутствуют в конференции")
+    incremental = current["job"] == "confirmed" and current["workflow"] == "operator"
     if current["job"] == "confirmed" and context_ids == set(
         json.loads(current["context_file_ids"])
     ):
-        previous_items = [
-            ProposedTalk.model_validate(item)
-            for item in cast(list[dict[str, Any]], state(conn, conference_id)["talks"])
-        ]
+        previous_proposal = (
+            cast(list[dict[str, Any]], state(conn, conference_id)["talks"])
+            if incremental
+            else json.loads(current["proposal"])
+        )
+        previous_items = [ProposedTalk.model_validate(item) for item in previous_proposal]
         by_id = {item.talk_id: item for item in previous_items}
         if (
             len(data.talks) == len(by_id) == len(previous_items)
@@ -646,7 +662,7 @@ def apply(
                     conference_id,
                 ),
             )
-            return False
+            return set()
     sections = {
         row["title"].casefold(): row["id"]
         for row in conn.execute(
@@ -802,15 +818,16 @@ def apply(
     conn.execute(
         "UPDATE preparations SET proposal=?, version=version+1, "
         "job='confirmed',review_reasons='[]',input_snapshot=?,context_file_ids=?,"
-        "screening_confirmed=0 WHERE conference_id=?",
+        "screening_confirmed=CASE WHEN ? THEN screening_confirmed ELSE 0 END WHERE conference_id=?",
         (
             db.dumps(saved),
             input_snapshot(conn, conference_id),
             db.dumps(sorted(context_ids)),
+            incremental,
             conference_id,
         ),
     )
-    return True
+    return changed.intersection(item["talk_id"] for item in saved) if incremental else None
 
 
 def propose(

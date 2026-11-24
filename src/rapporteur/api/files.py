@@ -115,7 +115,7 @@ async def upload_material(
                     result = materials.add_file(conn, conference_id, path, item, inspection)
                     storage.add_blob(sha, staged)
                     if result[1]:
-                        preparation.materials_changed(conn, conference_id)
+                        preparation.materials_changed(conn, conference_id, unassigned_file=True)
                 return result
 
             source, created = await run_in_threadpool(register)
@@ -241,6 +241,8 @@ def change_purpose(request: Request, conn: Tx, file_id: str, data: PurposeWrite)
             "('processed','reviewed') THEN 'stale' ELSE status END WHERE id=?",
             (talk_id,),
         )
-    preparation.materials_changed(conn, row["conference_id"])
+    preparation.materials_changed(
+        conn, row["conference_id"], unassigned_file=not row["confirmed"] and not affected
+    )
     _wake(request)
     return Response(status_code=204)

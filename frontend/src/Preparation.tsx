@@ -94,7 +94,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
     const remaining = contextIds.filter(id => id !== fileId);
     if (selection === 'new') {
       const file = files.find(item => item.source.id === fileId);
-      const title = file?.title_candidates?.title ?? '';
+      const title = file?.title_candidates?.title || file?.relative_path.replace(/^.*\//, '').replace(/\.[^.]+$/, '') || '';
       const speakers = (file?.title_candidates?.speakers ?? []).map(name => ({ name }));
       setOpenTalks(new Set([...openTalks, talks.length]));
       editTalks([...talks, { talk_id: null, title, speakers, links: [link], reason: '' }], remaining);
@@ -258,7 +258,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
       </fieldset></details></div>)}
       {operator && !!unassigned.length && <section className="unbound-materials" aria-labelledby="unbound-title">
         <h3 id="unbound-title">Материалы вне докладов</h3>
-        <p className="muted">Программу и организационные документы можно оставить материалами конференции.</p>
+        <p className="muted">Добавьте файл к существующему докладу или создайте новый. После сохранения реестра оценка обновится для затронутых докладов. Программу можно оставить материалом конференции.</p>
         {unassigned.map(file => {
           const id = file.source.id;
           return <div className="unbound-material" key={id}>

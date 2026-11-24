@@ -12,6 +12,8 @@ const recordings = /\.(aac|aiff?|amr|avi|flac|m4[av]|mkv|mov|mp[34]|mp[eg]|ogg|o
 export function Materials({ conferenceId, onPrepared }: { conferenceId: string; onPrepared: () => void }) {
   const base = `/api/v1/conferences/${conferenceId}`;
   const { data: review, error, refresh } = useResource<Review>(`${base}/materials`);
+  const { data: preparation, error: preparationError, refresh: refreshPreparation } =
+    useResource<{ workflow?: string; job: string | null }>(`${base}/preparation`);
   const { data: departments, error: departmentError } = useResource<Department[]>('/api/v1/departments');
   const ready = departments?.some(departmentReady) ?? false;
   const filesInput = useRef<HTMLInputElement>(null);
@@ -22,6 +24,7 @@ export function Materials({ conferenceId, onPrepared }: { conferenceId: string; 
   const [errors, setErrors] = useState<string[]>([]);
   const files = review?.files ?? [];
   const hasTalkMaterial = files.some(file => !['program', 'audio', 'video'].includes(file.source.kind));
+  const hasRegistry = preparation?.workflow === 'operator' && preparation.job === 'confirmed';
 
   async function upload(input: HTMLInputElement) {
     const selected = Array.from(input.files ?? []);
@@ -48,6 +51,7 @@ export function Materials({ conferenceId, onPrepared }: { conferenceId: string; 
         } catch (reason) { failures.push(`${path} — ${(reason as Error).message}`); }
       }
       refresh();
+      refreshPreparation();
       setStatus(`Загружено ${uploaded}, уже было в конференции ${duplicates}.`);
     } finally { setBusy(''); setErrors(failures); }
   }
@@ -78,7 +82,7 @@ export function Materials({ conferenceId, onPrepared }: { conferenceId: string; 
       <input className="sr-only" tabIndex={-1} aria-label="Папка конференции" type="file" ref={input => { folderInput.current = input; input?.setAttribute('webkitdirectory', ''); }} disabled={!!busy || !ready} onChange={e => void upload(e.currentTarget)} />
     </div>
     <p role="status">{busy || status}</p>
-    {(error || errors.length > 0) && <div role="alert">{error}<ul>{errors.map((message, index) => <li key={index}>{message}</li>)}</ul></div>}
+    {(error || preparationError || errors.length > 0) && <div role="alert">{error || preparationError}<ul>{errors.map((message, index) => <li key={index}>{message}</li>)}</ul></div>}
     {!review && !error && <p className="loading">Загрузка материалов…</p>}
     {review && !files.length && <p className="empty-state">Добавьте материалы, чтобы сервис предложил темы и авторов докладов.</p>}
     {!!files.length && <div className="material-list"><div className="list-caption"><span>Название и тип</span><span>Состояние</span></div>
@@ -93,14 +97,19 @@ export function Materials({ conferenceId, onPrepared }: { conferenceId: string; 
               const purpose = e.target.value;
               setBusy('Сохранение назначения…'); setErrors([]);
               void request(`/api/v1/files/${file.source.id}/purpose`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose }) })
-                .then(refresh).catch((reason: Error) => setErrors([reason.message])).finally(() => setBusy(''));
+                .then(() => { refresh(); refreshPreparation(); })
+                .catch((reason: Error) => setErrors([reason.message])).finally(() => setBusy(''));
             }}>{['presentation', 'document', 'notes', 'program'].map(kind => <option key={kind} value={kind}>{kinds[kind as keyof typeof kinds]}</option>)}</select></label>}
           <a href={`/api/v1/files/${file.source.id}/content`} target="_blank" rel="noreferrer">Открыть оригинал</a>
           {file.title_candidates?.speakers.length ? <p>Авторы в материале — {file.title_candidates.speakers.join(', ')}</p> : null}
         </div>
       </details>)}
     </div>}
-    <footer className="step-footer"><p className="muted">{hasTalkMaterial ? `Загружено файлов — ${files.length}. После анализа откроется реестр для проверки.` : 'Добавьте хотя бы один материал доклада, чтобы начать анализ.'}</p>
-      <button className="primary" disabled={!!busy || !ready || !hasTalkMaterial} onClick={() => void prepare()}>Начать анализ</button></footer>
+    <footer className="step-footer"><p className="muted">{hasRegistry
+      ? 'Новые файлы появятся в реестре в разделе «Материалы вне докладов».'
+      : hasTalkMaterial ? `Загружено файлов — ${files.length}. После анализа откроется реестр для проверки.` : 'Добавьте хотя бы один материал доклада, чтобы начать анализ.'}</p>
+      {hasRegistry
+        ? <button className="primary" disabled={!!busy} onClick={onPrepared}>Открыть реестр докладов</button>
+        : <button className="primary" disabled={!!busy || !ready || !hasTalkMaterial || !preparation} onClick={() => void prepare()}>Начать анализ</button>}</footer>
   </section>;
 }

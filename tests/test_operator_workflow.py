@@ -91,6 +91,35 @@ def test_operator_requires_registry_and_batch_screening_confirmation(tmp_path: P
         assert client.get(base + "/progress").json()["screening_confirmed"]
         assert app.state.processor.run_once()
         assert client.get(base + "/progress").json()["talks"][0]["card_only"]
+        # A new upload opens a versioned draft of the existing registry without running analysis.
+        old_state = client.get(base + "/preparation").json()
+        new_file = client.post(
+            base + "/materials",
+            params={"path": "новый.txt", "purpose": "document"},
+            headers={"Content-Type": "application/octet-stream"},
+            content="Тема нового доклада: мониторинг.".encode(),
+        )
+        assert new_file.status_code == 201
+        assert not app.state.processor.run_once()
+        registry = client.get(base + "/preparation").json()
+        assert registry["job"] == "confirmed"
+        assert registry["version"] == old_state["version"] + 1
+        assert registry["talks"] == old_state["talks"]
+        assert client.get(base + "/progress").json()["screening_confirmed"]
+        before = client.get(base + "/screening").json()
+        registry["talks"].append(
+            {"title": "Мониторинг", "links": [{"file_id": new_file.json()["id"]}]}
+        )
+        saved = client.put(
+            base + "/preparation",
+            json={"version": registry["version"], "talks": registry["talks"]},
+        )
+        assert saved.status_code == 200, saved.text
+        new_id = saved.json()["talks"][1]["talk_id"]
+        old, new = client.get(base + "/screening").json()
+        assert old == before[0]
+        assert new["talk_id"] == new_id and new["state"] == "queued"
+        assert not client.get(base + "/progress").json()["screening_confirmed"]
         updated = client.post(
             "/api/v1/departments",
             json={

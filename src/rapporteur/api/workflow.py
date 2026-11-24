@@ -173,9 +173,13 @@ def confirm_preparation(
 ) -> dict[str, object]:
     changed = preparation.apply(conn, conference_id, data, _storage(request))
     conference = materials.require_conference(conn, conference_id)
-    if changed and (conference["processing_started"] or preparation.automatic(conn, conference_id)):
-        processing.start_conference(conn, conference_id)
-        _wake(request)
+    if conference["processing_started"] or preparation.automatic(conn, conference_id):
+        if changed is None:
+            processing.start_conference(conn, conference_id)
+            _wake(request)
+        elif changed:
+            processing.enqueue(conn, sorted(changed))
+            _wake(request)
     return preparation.state(conn, conference_id)
 
 
