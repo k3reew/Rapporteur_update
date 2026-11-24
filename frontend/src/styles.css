@@ -309,6 +309,7 @@ mark { color: inherit; background: color-mix(in srgb, var(--warn) 28%, var(--sur
 .interest-item { display: flex; align-items: flex-start; gap: .6rem; margin-block: .6rem; }
 .screening-talk { padding: 1.25rem 0; border-bottom: 1px solid var(--border); }
 .screening-talk h3, .screening-talk > p { margin-block: 0 .5rem; }
+.screening-footer { justify-content: flex-end; align-items: flex-end; }
 .summary-prose { max-width: 75ch; }
 .summary-prose p { margin-block: 1rem; }
 .summary-prose .chip { font-size: .72rem; padding: 0 .25rem; vertical-align: baseline; }

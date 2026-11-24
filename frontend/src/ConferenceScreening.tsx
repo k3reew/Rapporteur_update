@@ -116,7 +116,7 @@ export function ConferenceScreening({ conferenceId, onConfirmed }: { conferenceI
           </article>;
         })}
       </div>
-      {(!progress.screening_confirmed || dirty) && <footer className="step-footer">
+      {(!progress.screening_confirmed || dirty) && <footer className="step-footer screening-footer">
         <button className="primary" disabled={busy || !canConfirm} onClick={() => void confirm()}>Подтвердить решения</button>
       </footer>}
     </>}
