@@ -3356,6 +3356,18 @@
             "type": "string",
             "title": "Reason",
             "default": ""
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "warnings_ignored": {
+            "type": "boolean",
+            "title": "Warnings Ignored",
+            "default": false
           }
         },
         "type": "object",

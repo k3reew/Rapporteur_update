@@ -162,6 +162,23 @@ test('развёрнутый доклад подсвечивается, поме
   expect(details.className).not.toContain('open');
 });
 
+test('предупреждение доклада можно отметить как проверенное и сохранить', async () => {
+  const api = vi.fn(async (url: string) => Response.json(url.endsWith('/materials')
+    ? { files: [], talks: [], sections: [] }
+    : { workflow: 'operator', version: 3, job: 'confirmed', talks: [{
+      talk_id: 't', title: 'Доклад', speakers: [], links: [{ file_id: 'f' }],
+      warnings: ['Сверьте тему с оригиналом.'],
+    }] }));
+  vi.stubGlobal('fetch', api);
+  render(<Preparation conferenceId="c" onConfirmed={() => {}} />);
+  fireEvent.focus(await screen.findByRole('button', { name: 'Предупреждение о докладе' }));
+  fireEvent.click(screen.getByLabelText('Отметить как проверенное'));
+  expect(screen.getByRole('button', { name: 'Предупреждение отмечено как проверенное' })).toBeDefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить реестр' }));
+  await waitFor(() => expect(api).toHaveBeenCalledWith('/api/v1/conferences/c/preparation',
+    expect.objectContaining({ method: 'PUT', body: expect.stringContaining('"warnings_ignored":true') })));
+});
+
 test('подтверждает реестр с секцией, должностью и материалом конференции', async () => {
   const proposal = { workflow: 'operator', auto_start: true, job: 'done', version: 2, context_file_ids: [], talks: [{
     talk_id: null, title: 'Доклад', speakers: [{ name: 'Автор' }], links: [{ file_id: 'f' }],

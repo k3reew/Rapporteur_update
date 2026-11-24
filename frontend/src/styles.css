@@ -182,6 +182,18 @@ legend { margin-bottom: 1rem; font-weight: 600; }
    у правленого доклада остаётся красная марка «изменён». */
 .talk-editor { scroll-margin-top: 1rem; transition: background-color .16s; }
 .talk-editor.open { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.talk-row { position: relative; }
+.talk-row.has-warning .talk-editor > summary { padding-right: 2.5rem; }
+.talk-warning { position: absolute; inset: .65rem .65rem auto auto; z-index: 2; }
+.talk-warning:hover, .talk-warning:focus-within { z-index: 3; }
+.talk-warning > button { display: block; margin-left: auto; padding: .15rem .45rem; background: var(--surface); }
+.talk-warning-popover {
+  display: none; position: absolute; inset: 100% 0 auto auto; width: min(20rem, 75vw);
+  padding: .8rem; background: var(--surface); border: 1px solid var(--border); border-radius: .4rem;
+  box-shadow: 0 .35rem 1rem #0003; overflow-wrap: anywhere;
+}
+.talk-warning:hover > .talk-warning-popover, .talk-warning:focus-within > .talk-warning-popover { display: block; }
+.talk-warning-popover ul { margin: 0 0 .6rem; padding-left: 1.1rem; }
 .edited-mark { padding: .15rem .7rem; background: var(--bad); color: #fff; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
 .source-binding { padding: 1rem 1.25rem; margin: 1.25rem 0; background: var(--subtle); }
 .unbound-materials { margin-top: 1.5rem; }

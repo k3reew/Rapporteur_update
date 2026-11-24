@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterator
 from itertools import pairwise
 from pathlib import PurePosixPath
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -92,6 +92,8 @@ class ProposedTalk(BaseModel):
     contacts: list[NonEmptyStr] = Field(default_factory=list)
     links: list[Link] = Field(min_length=1)
     reason: str = ""
+    warnings: list[str] = Field(default_factory=list)
+    warnings_ignored: bool = False
     section: NonEmptyStr | None = None
 
 
@@ -444,6 +446,47 @@ def state(conn: sqlite3.Connection, conference_id: str) -> dict[str, object]:
             "context_file_ids": [],
         }
     proposal = json.loads(row["proposal"])
+    reasons = json.loads(row["review_reasons"])
+    remaining = set(reasons)
+    paths = (
+        {
+            file["id"]: file["relative_path"]
+            for file in conn.execute(
+                "SELECT id,relative_path FROM files WHERE conference_id=?", (conference_id,)
+            )
+        }
+        if reasons
+        else {}
+    )
+    for item in proposal:
+        title = item["title"]
+        reason = item.get("reason", "")
+        linked_paths = [
+            paths[link["file_id"]] for link in item["links"] if link["file_id"] in paths
+        ]
+        individual = list(item.get("warnings", []))
+        if "(тема предварительная)" in title:
+            individual.append("Тема взята из имени файла. Сверьте её с оригиналом.")
+        if reason.startswith("Нужна проверка:"):
+            detail = reason.removeprefix("Нужна проверка: ")
+            source = detail.removeprefix("источник ").removeprefix("связь с материалом ")
+            individual.append(
+                f"Сверьте тему, авторов и привязку файла «{source.removesuffix('.')}» с оригиналом."
+                if source != detail
+                else "Сверьте тему, авторов и привязку материала с оригиналом."
+            )
+        elif reason.startswith("Граница предложена"):
+            individual.append(
+                "Прослушайте запись и проверьте, где начинается и заканчивается доклад."
+            )
+        remaining.discard(f"{title}: {reason}")
+        for message in reasons:
+            if any(message.startswith(f"{path}: ") for path in linked_paths):
+                individual.append(message)
+                remaining.discard(message)
+        if item.get("warnings_ignored") and set(individual) - set(item.get("warnings", [])):
+            item["warnings_ignored"] = False
+        item["warnings"] = list(dict.fromkeys(individual))
     if row["job"] == "confirmed":
         talks = {talk["id"]: talk for talk in db.conference_talks(conn, conference_id)}
         for item in proposal:
@@ -462,7 +505,12 @@ def state(conn: sqlite3.Connection, conference_id: str) -> dict[str, object]:
         "talks": proposal,
         "warnings": warnings,
         "auto_start": bool(row["auto_start"]),
-        "review_reasons": json.loads(row["review_reasons"]),
+        "review_reasons": [
+            reason
+            for reason in reasons
+            if reason in remaining
+            and reason != "Сверьте изменения с ранее подтверждённым реестром докладов."
+        ],
         "workflow": row["workflow"],
         "context_file_ids": json.loads(row["context_file_ids"]),
     }
@@ -572,13 +620,18 @@ def apply(
         json.loads(current["context_file_ids"])
     ):
         previous_items = [
-            ProposedTalk.model_validate(item) for item in json.loads(current["proposal"])
+            ProposedTalk.model_validate(item)
+            for item in cast(list[dict[str, Any]], state(conn, conference_id)["talks"])
         ]
         by_id = {item.talk_id: item for item in previous_items}
         if (
             len(data.talks) == len(by_id) == len(previous_items)
             and {item.talk_id for item in data.talks} == by_id.keys()
-            and all(item == by_id[item.talk_id] for item in data.talks)
+            and all(
+                item.model_copy(update={"warnings_ignored": by_id[item.talk_id].warnings_ignored})
+                == by_id[item.talk_id]
+                for item in data.talks
+            )
         ):
             conn.executemany(
                 "UPDATE talks SET position=? WHERE id=?",

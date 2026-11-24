@@ -10,7 +10,7 @@ import { useUnsavedChanges } from './useUnsavedChanges';
 type Link = { file_id: string; start_ms: number | null; end_ms: number | null; page_start: number | null; page_end: number | null };
 type Talk = {
   talk_id: string | null; title: string; speakers: Speaker[]; organizations?: string[]; contacts?: string[];
-  section?: string | null; links: Link[]; reason: string;
+  section?: string | null; links: Link[]; reason: string; warnings?: string[]; warnings_ignored?: boolean;
 };
 type State = {
   version: number; job: string | null; error: string | null; talks: Talk[]; warnings?: string[];
@@ -167,8 +167,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
   return <section className="workflow-page" aria-label="Подготовка докладов" aria-busy={busy || running}>
     <h2>{running ? 'Разбор материалов' : 'Реестр докладов'}</h2>
     {state?.job === 'done' && <p className="muted">Откройте доклад, чтобы сверить тему, авторов и привязки материалов.</p>}
-    {state?.job === 'done' && !!state.review_reasons?.length && <div className="notice">
-      <strong>Разбиение требует проверки</strong>
+    {state?.job === 'done' && !!state.review_reasons?.length && <div className="notice" role="status">
       <ul>{state.review_reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
     </div>}
     {state?.job === 'confirmed' && state.auto_start && !draft && <div className="next-action">
@@ -193,9 +192,21 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
       <p>Докладов в реестре — {talks.length}.</p>
       {!talks.length && <p className="notice">Назначьте материал докладом или <a href={`#/c/${encodeURIComponent(conferenceId)}/materials`}>загрузите дополнительные материалы</a>.</p>}
       {operator && <datalist id="preparation-sections">{review?.sections.map(section => <option key={section.id} value={section.title} />)}</datalist>}
-      {talks.map((talk, index) => <details
+      {talks.map((talk, index) => <div className={`talk-row${talk.warnings?.length ? ' has-warning' : ''}`} key={index}>
+        {!!talk.warnings?.length && <div className="talk-warning">
+          <button type="button" className={talk.warnings_ignored ? 'text-ok' : 'text-warn'}
+            aria-label={talk.warnings_ignored ? 'Предупреждение отмечено как проверенное' : 'Предупреждение о докладе'}
+            aria-describedby={`talk-warning-${index}`}>
+            <span aria-hidden="true">{talk.warnings_ignored ? '✓' : '⚠'}</span>
+          </button>
+          <div className="talk-warning-popover">
+            <ul id={`talk-warning-${index}`}>{talk.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+            <label className="check"><input type="checkbox" checked={!!talk.warnings_ignored} disabled={busy || running}
+              onChange={event => update(index, { warnings_ignored: event.target.checked })} /> Отметить как проверенное</label>
+          </div>
+        </div>}
+        <details
         className={`talk-editor${openTalks.has(index) ? ' open' : ''}`}
-        key={index}
         open={openTalks.has(index)}
         onToggle={event => toggleTalk(index, event)}
       ><summary><span><span>{index + 1}. </span><strong>{talk.title || 'Тема не указана'}</strong><small>{talk.speakers.map(s => s.name).join(', ') || 'Автор не установлен'} · материалов {talk.links.length}</small></span>
@@ -208,7 +219,6 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
         <CardEditor card={talk} titleLabel={`Тема доклада ${index + 1}`} onChange={value => update(index, value)} />
         {operator && <label className="field">Секция<input list="preparation-sections" value={talk.section ?? ''}
           onChange={event => update(index, { section: event.target.value })} /></label>}
-        <small>{talk.reason}</small>
         {talk.links.map((link, position) => {
           const file = files.find(f => f.source.id === link.file_id);
           const audio = file?.source.kind === 'audio' || file?.source.kind === 'video';
@@ -245,7 +255,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
             {talks.map((candidate, i) => i !== index && <option key={i} value={i}>{i + 1}. {candidate.title || 'Доклад без названия'}</option>)}
           </select></label>}
           <button onClick={() => editTalks(talks.filter((_, i) => i !== index))}>Исключить из разбиения</button></div>
-      </fieldset></details>)}
+      </fieldset></details></div>)}
       {operator && !!unassigned.length && <section className="unbound-materials" aria-labelledby="unbound-title">
         <h3 id="unbound-title">Материалы вне докладов</h3>
         <p className="muted">Программу и организационные документы можно оставить материалами конференции.</p>
