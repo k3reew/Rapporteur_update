@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from rapporteur import processing
 from rapporteur.app import create_app
 
-from .workflow_support import WorkflowClient
+from .workflow_support import WorkflowClient, seed_regulation
 
 
 def test_operator_requires_registry_and_batch_screening_confirmation(tmp_path: Path) -> None:
@@ -201,8 +201,6 @@ def test_operator_groups_content_across_provisional_folders(tmp_path: Path) -> N
     )
     app = create_app(tmp_path, client=lambda _: llm, process=False)
     with TestClient(app) as client:
-        from .workflow_support import seed_regulation
-
         seed_regulation(app.state.database)
         cid = client.post(
             "/api/v1/conferences",
@@ -241,3 +239,53 @@ def test_operator_groups_content_across_provisional_folders(tmp_path: Path) -> N
         assert len(state["talks"][0]["links"]) == 2
         assert all(len(talk["links"]) == 1 for talk in state["talks"][1:])
         assert state["context_file_ids"] == [uploaded["03_Встреча/03_Открытие/слово.txt"]]
+
+
+def test_reextract_returns_talk_draft_without_saving_or_reading_other_files(tmp_path: Path) -> None:
+    llm = WorkflowClient([json.dumps({"title": "Анализ волн", "speakers": ["Анна Иванова"]})])
+    app = create_app(tmp_path, client=lambda _: llm, process=False)
+    seed_regulation(app.state.database)
+    with TestClient(app) as client:
+        cid = client.post("/api/v1/conferences", json={"title": "Конференция"}).json()["id"]
+        base = f"/api/v1/conferences/{cid}"
+        files = []
+        for filename, text in (
+            ("доклад.txt", "Анализ волн\nАнна Иванова\nИнститут акустики\nanna@example.org"),
+            ("другой.txt", "Другой доклад о распространении света"),
+        ):
+            upload = client.post(
+                base + "/materials",
+                params={"path": filename, "purpose": "document"},
+                headers={"Content-Type": "application/octet-stream"},
+                content=text.encode(),
+            )
+            assert upload.status_code == 201
+            files.append(upload.json()["id"])
+        with app.state.database.tx() as conn:
+            conn.execute(
+                "INSERT INTO preparations(conference_id,version,job) VALUES (?,1,'done')", (cid,)
+            )
+        saved = client.put(
+            base + "/preparation",
+            json={
+                "version": 1,
+                "talks": [
+                    {"title": title, "links": [{"file_id": file_id}]}
+                    for title, file_id in zip(("Черновик", "Другой"), files, strict=True)
+                ],
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        registry = saved.json()
+        talk = registry["talks"][0]
+        url = base + "/preparation/reextract"
+        changed = client.post(url, json={"version": registry["version"], "talk": talk})
+        assert changed.status_code == 200, changed.text
+        result = changed.json()
+        assert result["title"] == "Анализ волн"
+        assert result["speakers"][0]["name"] == "Анна Иванова"
+        assert result["speakers"][0]["contacts"] == ["anna@example.org"]
+        assert result["links"] == talk["links"]
+        assert "распространении света" not in llm.requests[0].messages[1].content
+        assert client.get(base + "/preparation").json() == registry
+        assert client.post(url, json={"version": 1, "talk": talk}).status_code == 409

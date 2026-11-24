@@ -178,6 +178,7 @@ legend { margin-bottom: 1rem; font-weight: 600; }
 .talk-editor summary strong { font-size: 1rem; font-weight: 600; }
 .detail-action { color: var(--accent); font-size: .85rem; }
 .talk-editor-body { padding: 0 0 1.5rem; max-width: 850px; }
+.talk-editor-actions .reextract-talk { margin-left: auto; }
 /* Развёрнутый доклад выделяется цветом и поднимается к верхней границе экрана;
    у правленого доклада остаётся красная марка «изменён». */
 .talk-editor { scroll-margin-top: 1rem; transition: background-color .16s; }

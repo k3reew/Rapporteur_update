@@ -11,13 +11,14 @@ from rapporteur import (
     departments,
     interest,
     materials,
+    model_choice,
     preparation,
     processing,
     screening,
 )
-from rapporteur.api.dependencies import ReadTx, Tx, _storage, _wake
-from rapporteur.contracts.enums import SummaryStatus, TalkStatus
-from rapporteur.errors import NotFoundError, UserError
+from rapporteur.api.dependencies import ReadTx, Tx, _database, _storage, _wake
+from rapporteur.contracts.enums import FileKind, SummaryStatus, TalkStatus
+from rapporteur.errors import FailureCode, NotFoundError, StageError, UserError
 
 api = APIRouter()
 
@@ -181,6 +182,60 @@ def confirm_preparation(
             processing.enqueue(conn, sorted(changed))
             _wake(request)
     return preparation.state(conn, conference_id)
+
+
+@api.post("/conferences/{conference_id}/preparation/reextract")
+def reextract_talk(
+    request: Request, conference_id: str, data: preparation.ReextractRequest
+) -> preparation.ReextractTalk:
+    """Перечитать сведения карточки одного доклада и вернуть черновик."""
+    database = _database(request)
+    talk = data.talk
+    file_ids = {link.file_id for link in talk.links}
+
+    def check_version() -> None:
+        with database.read() as conn:
+            materials.require_conference(conn, conference_id)
+            current = db.one(
+                conn, "SELECT version,job FROM preparations WHERE conference_id=?", conference_id
+            )
+            if (
+                not current
+                or current["version"] != data.version
+                or current["job"]
+                not in (
+                    "done",
+                    "confirmed",
+                )
+            ):
+                raise UserError(
+                    "Реестр изменился. Обновите страницу и откройте доклад заново.", 409
+                )
+
+    check_version()
+    with database.read() as conn:
+        if talk.talk_id and not any(
+            item["id"] == talk.talk_id for item in db.conference_talks(conn, conference_id)
+        ):
+            raise NotFoundError("Доклад отсутствует в конференции")
+        files = {
+            row["id"]: row
+            for row in conn.execute("SELECT * FROM files WHERE conference_id=?", (conference_id,))
+            if row["id"] in file_ids and row["kind"] != FileKind.PROGRAM
+        }
+        if files.keys() != file_ids:
+            raise UserError("Один из материалов доклада недоступен.")
+        profile = model_choice.active_profile(conn)
+    worker: processing.Processor = request.app.state.processor
+    try:
+        result = preparation.reextract_card(
+            talk, files, _storage(request), worker.client(profile), profile
+        )
+    except StageError as error:
+        status = 503 if error.code is FailureCode.LLM_UNAVAILABLE else 422
+        raise UserError(error.message, status, code=error.code.value) from error
+    check_version()
+    return result
 
 
 def _require_registry(conn: ReadTx, conference_id: str) -> None:

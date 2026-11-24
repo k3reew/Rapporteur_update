@@ -26,6 +26,7 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
   const [openTalks, setOpenTalks] = useState<ReadonlySet<number>>(new Set());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [extracting, setExtracting] = useState<number>();
   const [manualOpen, setManualOpen] = useState(false);
   const allowNavigation = useUnsavedChanges(!!draft || busy);
   const files = review?.files ?? [];
@@ -131,6 +132,21 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
       setDraft(undefined); setOpenTalks(new Set());
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
+  }
+  async function reextract(index: number) {
+    const talk = talks[index];
+    const version = draft?.version ?? state?.version;
+    setBusy(true); setExtracting(index); setError('');
+    try {
+      const response = await request(`${url}/reextract`, {
+        method: 'POST', headers, body: JSON.stringify({
+          version, talk: cleanCard({ ...talk, section: talk.section?.trim() || null }),
+        }),
+      });
+      const { title, speakers, organizations, contacts }: Talk = await response.json();
+      update(index, { title, speakers, organizations, contacts });
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); setExtracting(undefined); }
   }
   async function save() {
     setBusy(true); setError('');
@@ -249,12 +265,16 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
             </select></label>
           </div>;
         })}
-        <div className="row">{!operator && <button onClick={() => split(index)}>Разделить интервал</button>}
+        <div className="row talk-editor-actions">{!operator && <button onClick={() => split(index)}>Разделить интервал</button>}
           {talks.length > 1 && <label className="field">Объединить с докладом<select value="" onChange={event => merge(index, Number(event.target.value))}>
             <option value="" disabled>Выберите доклад</option>
             {talks.map((candidate, i) => i !== index && <option key={i} value={i}>{i + 1}. {candidate.title || 'Доклад без названия'}</option>)}
           </select></label>}
-          <button onClick={() => editTalks(talks.filter((_, i) => i !== index))}>Исключить из разбиения</button></div>
+          <button onClick={() => editTalks(talks.filter((_, i) => i !== index))}>Исключить из разбиения</button>
+          <button type="button" className="reextract-talk" disabled={!talk.links.length} onClick={() => void reextract(index)}>
+            {extracting === index ? 'Извлекаем информацию…' : 'Извлечь информацию повторно'}
+          </button>
+        </div>
       </fieldset></details></div>)}
       {operator && !!unassigned.length && <section className="unbound-materials" aria-labelledby="unbound-title">
         <h3 id="unbound-title">Материалы вне докладов</h3>

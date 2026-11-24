@@ -22,9 +22,11 @@ HTTP 202 означает принятие фоновой работы. Гото
 
 Загрузка нового файла после подтверждения операторского реестра сохраняет состояние `confirmed` и увеличивает версию реестра. Файл можно добавить в `talks[].links` существующего или нового доклада. При подтверждении обновлённого реестра новый отбор ставится в очередь только для докладов с изменившимися данными.
 
+`POST /api/v1/conferences/{id}/preparation/reextract` принимает текущую `version` реестра и один объект `talk` с привязанными материалами. Запрос повторяет извлечение сведений карточки и возвращает черновик. Чтобы сохранить его, подтвердите реестр обычным способом.
+
 ## Методы и пути
 
-Все пути приложения получены из `create_app(..., process=False).openapi()`. Схема содержит 31 адрес и 47 операций, включая `/health`.
+Все пути приложения получены из `create_app(..., process=False).openapi()`. Схема содержит 32 адреса и 48 операций, включая `/health`.
 
 | Метод и путь | Действие | Тело | Успех |
 | --- | --- | --- | --- |
@@ -52,6 +54,7 @@ HTTP 202 означает принятие фоновой работы. Гото
 | `GET /api/v1/conferences/{conference_id}/preparation` | Прочитать предложение | `-` | 200 |
 | `POST /api/v1/conferences/{conference_id}/preparation` | Поставить подготовку в очередь | `-` | 202 |
 | `PUT /api/v1/conferences/{conference_id}/preparation` | Подтвердить предложение | `ProposalWrite` | 200 |
+| `POST /api/v1/conferences/{conference_id}/preparation/reextract` | Повторно извлечь сведения одного доклада | `ReextractRequest` | 200 |
 | `GET /api/v1/talks/{talk_id}/summary` | Сводка, пакет и статус | `-` | 200 |
 | `PUT /api/v1/talks/{talk_id}/summary` | Сохранить правку сводки | `SummaryEdit` | 200 |
 | `POST /api/v1/talks/{talk_id}/summary/review` | Подтвердить сводку | `SummaryReview` | 200 |
@@ -132,6 +135,7 @@ HTTP 202 означает принятие фоновой работы. Гото
 | `GET /api/v1/conferences/{conference_id}/preparation` | `conference_id` | `path` | string | да |
 | `POST /api/v1/conferences/{conference_id}/preparation` | `conference_id` | `path` | string | да |
 | `PUT /api/v1/conferences/{conference_id}/preparation` | `conference_id` | `path` | string | да |
+| `POST /api/v1/conferences/{conference_id}/preparation/reextract` | `conference_id` | `path` | string | да |
 | `GET /api/v1/talks/{talk_id}/summary` | `talk_id` | `path` | string | да |
 | `PUT /api/v1/talks/{talk_id}/summary` | `talk_id` | `path` | string | да |
 | `POST /api/v1/talks/{talk_id}/summary/review` | `talk_id` | `path` | string | да |

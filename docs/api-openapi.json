@@ -977,6 +977,56 @@
         }
       }
     },
+    "/api/v1/conferences/{conference_id}/preparation/reextract": {
+      "post": {
+        "summary": "Reextract Talk",
+        "description": "Перечитать сведения карточки одного доклада и вернуть черновик.",
+        "operationId": "reextract_talk_api_v1_conferences__conference_id__preparation_reextract_post",
+        "parameters": [
+          {
+            "name": "conference_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conference Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReextractRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReextractTalk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/conferences/{conference_id}/screening": {
       "get": {
         "summary": "Conference Screening",
@@ -3439,6 +3489,110 @@
           "paragraph_ids"
         ],
         "title": "Recommendation"
+      },
+      "ReextractRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "talk": {
+            "$ref": "#/components/schemas/ReextractTalk"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "talk"
+        ],
+        "title": "ReextractRequest"
+      },
+      "ReextractTalk": {
+        "properties": {
+          "talk_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Talk Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Title"
+          },
+          "speakers": {
+            "items": {
+              "$ref": "#/components/schemas/Speaker"
+            },
+            "type": "array",
+            "title": "Speakers"
+          },
+          "organizations": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Organizations"
+          },
+          "contacts": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Contacts"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Links"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "warnings_ignored": {
+            "type": "boolean",
+            "title": "Warnings Ignored",
+            "default": false
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "links"
+        ],
+        "title": "ReextractTalk"
       },
       "RejectedEvidence": {
         "properties": {

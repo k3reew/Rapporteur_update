@@ -103,6 +103,15 @@ class ProposalWrite(BaseModel):
     context_file_ids: list[str] | None = None
 
 
+class ReextractTalk(ProposedTalk):
+    title: str = Field(max_length=1000)
+
+
+class ReextractRequest(BaseModel):
+    version: int = Field(ge=1)
+    talk: ReextractTalk
+
+
 class PreparationStart(BaseModel):
     model_config = ConfigDict(extra="forbid")
     auto_start: bool = False
@@ -120,9 +129,12 @@ class Boundaries(BaseModel):
     talks: list[Boundary]
 
 
-class MaterialMatch(BaseModel):
+class TalkIdentity(BaseModel):
     title: Annotated[str, Field(max_length=1000)] | None
     speakers: list[AuthorName] = Field(max_length=20)
+
+
+class MaterialMatch(TalkIdentity):
     talk_index: int | None = Field(ge=0)
     confidence: float = Field(ge=0, le=1)
     reason: str = Field(max_length=600)
@@ -1247,12 +1259,95 @@ def _card_lines(
     return lines
 
 
-def with_card(
-    talk: ProposedTalk,
+def reextract_card(
+    talk: ReextractTalk,
+    files: dict[str, db.Row],
+    storage: Storage,
+    client: LlmClient,
+    profile: ModelProfile,
+) -> ReextractTalk:
+    extracted = {
+        file_id: extract(file, storage, client, profile) for file_id, file in files.items()
+    }
+    lines = _card_lines(talk, files, extracted)
+    if not lines:
+        lines = [
+            fragment.normalized_text
+            for link in talk.links
+            for fragment in slice_fragments(extracted[link.file_id].fragments, link)
+            if fragment.origin is not TextOrigin.VLM
+        ]
+    if not lines:
+        raise UserError("В выбранных материалах или диапазонах нет текста для извлечения.")
+    budget = max(
+        1000,
+        min(
+            12000,
+            (profile.generation.context_tokens - min(profile.generation.max_tokens, 6000) - 2000)
+            * 2,
+        ),
+    )
+    source = "\n".join(lines)[:budget]
+    identity = json_task(
+        client,
+        profile,
+        "Найди точную тему доклада и имена явно указанных авторов. "
+        "Копируй формулировку и имена из текста. Если данных нет, верни null для темы "
+        "и пустой список авторов. Не принимай упомянутых исследователей за авторов доклада.",
+        source,
+        TalkIdentity,
+        task="Повторное извлечение темы и авторов",
+    )
+    normalized_source = _normalized(source)
+    title = (identity.title or "").strip()
+    if not title or _normalized(title) not in normalized_source:
+        title = talk.title
+    previous = {_normalized(speaker.name): speaker for speaker in talk.speakers}
+    speakers = [
+        previous.get(_normalized(name)) or Speaker(name=name.strip())
+        for name in dict.fromkeys(identity.speakers)
+        if name.strip()
+        and re.search(rf"(?<!\w){re.escape(_normalized(name))}(?!\w)", normalized_source)
+    ]
+
+    def find_details(lines: list[str], names: list[str]) -> card.CardHints:
+        answer = json_task(
+            client,
+            profile,
+            card.CARD_INSTRUCTION,
+            card.card_prompt(lines, names),
+            card.CardAnswer,
+            task="Повторное извлечение организаций и контактов",
+        )
+        return card.grounded(answer, lines, names)
+
+    updated = with_card(
+        talk.model_copy(
+            update={
+                "title": title,
+                "speakers": speakers or talk.speakers,
+                "organizations": [],
+                "contacts": [],
+            }
+        ),
+        None,
+        source.splitlines(),
+        find_details,
+    )
+    return updated.model_copy(
+        update={
+            "organizations": updated.organizations or talk.organizations,
+            "contacts": updated.contacts or talk.contacts,
+        }
+    )
+
+
+def with_card[T: ProposedTalk](
+    talk: T,
     known: materials.ReviewTalk | None,
     lines: list[str],
     model: Callable[[list[str], list[str]], card.CardHints] | None = None,
-) -> ProposedTalk:
+) -> T:
     """Дополняет карточку: сначала сведения из реестра (их мог исправить оператор), затем
     найденное шаблонами на страницах, затем — если шаблонов не хватило — моделью.
     Заполненные поля не заменяются."""

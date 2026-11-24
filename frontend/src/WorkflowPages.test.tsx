@@ -179,6 +179,26 @@ test('предупреждение доклада можно отметить к
     expect.objectContaining({ method: 'PUT', body: expect.stringContaining('"warnings_ignored":true') })));
 });
 
+test('повторное извлечение меняет только выбранный черновик доклада', async () => {
+  const first = { talk_id: 't1', title: 'Первый', speakers: [], links: [{ file_id: 'f' }] };
+  const second = { talk_id: 't2', title: 'Второй', speakers: [], links: [{ file_id: 'g' }] };
+  const api = vi.fn(async (url: string) => Response.json(
+    url.endsWith('/reextract') ? { ...second, title: 'Уточнённая тема' }
+      : url.endsWith('/materials') ? { files: [], talks: [], sections: [] }
+      : { workflow: 'operator', version: 2, job: 'confirmed', talks: [first, second] }
+  ));
+  vi.stubGlobal('fetch', api);
+  render(<Preparation conferenceId="c" onConfirmed={vi.fn()} />);
+  const buttons = await screen.findAllByRole('button', { name: 'Извлечь информацию повторно' });
+  fireEvent.click(buttons[1]);
+  await screen.findByText('Уточнённая тема');
+  expect(screen.getByText('Первый')).toBeDefined();
+  expect(api).toHaveBeenCalledWith('/api/v1/conferences/c/preparation/reextract', expect.objectContaining({
+    method: 'POST', body: expect.stringContaining('"talk_id":"t2"'),
+  }));
+  expect(await screen.findByRole('button', { name: 'Подтвердить реестр' })).toBeDefined();
+});
+
 test('подтверждает реестр с секцией, должностью и материалом конференции', async () => {
   const proposal = { workflow: 'operator', auto_start: true, job: 'done', version: 2, context_file_ids: [], talks: [{
     talk_id: null, title: 'Доклад', speakers: [{ name: 'Автор' }], links: [{ file_id: 'f' }],
