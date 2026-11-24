@@ -57,7 +57,8 @@ export function Interest({ talkId, value, refresh, automatic, sourceOf, decision
   const awaiting = awaitsOperator(value);
   const requiresDecision = decision?.unresolved ?? awaiting;
   return <details className="interest-details" open={requiresDecision || undefined}><summary><span className={requiresDecision ? 'text-warn' : undefined}>{(awaiting ? proposals[value.state] : undefined) ?? labels[value.state] ?? value.state}</span>
-    {shown.map(item => <span key={item.department_id} className="interest-leader"><Score item={item} manual={value.manual} /> {item.department_name}</span>)}</summary>
+    {shown.map(item => <span key={item.department_id} className="interest-leader"><Score item={item} manual={value.manual} /> {item.department_name}</span>)}
+    {editable && decision && value.manual && <span className="detail-action">Изменить решение</span>}</summary>
     {value.stale && <p className="notice">Изменились материалы, положения или модель. Пересчитайте отбор.</p>}
     {value.manual && <p className="muted">Решение оператора</p>}
     {requiresDecision && <p className="notice">
@@ -89,7 +90,7 @@ export function Interest({ talkId, value, refresh, automatic, sourceOf, decision
       </div>
     </div>)}
     {(error || value.error) && <p role="alert">{error || value.error}</p>}
-    {editable && (!decision || requiresDecision) && <div className="row">
+    {editable && <div className="row">
       <button disabled={busy || !selected.length || decision?.disabled}
         onClick={() => decision ? decision.update(selected) : void save(selected)}>{decision ? 'Подтвердить выбор отделов' : 'Подтвердить интерес'}</button>
       <button disabled={busy || decision?.disabled}
