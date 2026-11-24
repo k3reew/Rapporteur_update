@@ -541,7 +541,8 @@ def apply(
     conference_id: str,
     data: ProposalWrite,
     storage: Storage | None = None,
-) -> None:
+) -> bool:
+    """Сохраняет реестр и возвращает, нужно ли снова запускать обработку."""
     materials.require_conference(conn, conference_id)
     current = db.one(conn, "SELECT * FROM preparations WHERE conference_id=?", conference_id)
     if (
@@ -566,6 +567,32 @@ def apply(
     )
     if context_ids - files.keys():
         raise UserError("Материалы контекста отсутствуют в конференции")
+    if current["job"] == "confirmed" and context_ids == set(
+        json.loads(current["context_file_ids"])
+    ):
+        previous_items = [
+            ProposedTalk.model_validate(item) for item in json.loads(current["proposal"])
+        ]
+        by_id = {item.talk_id: item for item in previous_items}
+        if (
+            len(data.talks) == len(by_id) == len(previous_items)
+            and {item.talk_id for item in data.talks} == by_id.keys()
+            and all(item == by_id[item.talk_id] for item in data.talks)
+        ):
+            conn.executemany(
+                "UPDATE talks SET position=? WHERE id=?",
+                [(position, item.talk_id) for position, item in enumerate(data.talks, 1)],
+            )
+            conn.execute(
+                "UPDATE preparations SET proposal=?,version=version+1,input_snapshot=? "
+                "WHERE conference_id=?",
+                (
+                    db.dumps([item.model_dump(mode="json") for item in data.talks]),
+                    input_snapshot(conn, conference_id),
+                    conference_id,
+                ),
+            )
+            return False
     sections = {
         row["title"].casefold(): row["id"]
         for row in conn.execute(
@@ -641,7 +668,7 @@ def apply(
         (conference_id,),
     )
     saved = []
-    for item in data.talks:
+    for position, item in enumerate(data.talks, 1):
         section_id = None
         section = item.section or (materials.DEFAULT_SECTION if new_workflow else None)
         if section:
@@ -652,13 +679,11 @@ def apply(
         talk_id = item.talk_id or materials.add_talk(conn, conference_id, item.title, section_id)
         old = talks.get(talk_id)
         if old is not None and section_id is not None and section_id != old["section_id"]:
-            position = conn.execute(
-                "SELECT coalesce(max(position),0)+1 FROM talks WHERE section_id=?", (section_id,)
-            ).fetchone()[0]
             conn.execute(
-                "UPDATE talks SET section_id=?,position=?,import_folder=NULL WHERE id=?",
-                (section_id, position, talk_id),
+                "UPDATE talks SET section_id=?,import_folder=NULL WHERE id=?",
+                (section_id, talk_id),
             )
+        conn.execute("UPDATE talks SET position=? WHERE id=?", (position, talk_id))
         title: str | None = item.title
         if title == _UNTITLED and item.talk_id and talks[item.talk_id]["title"] is None:
             title = None
@@ -731,6 +756,7 @@ def apply(
             conference_id,
         ),
     )
+    return True
 
 
 def propose(

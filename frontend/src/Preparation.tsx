@@ -46,6 +46,13 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
   function update(index: number, changes: Partial<Talk>) {
     editTalks(talks.map((talk, position) => position === index ? { ...talk, ...changes } : talk));
   }
+  function moveTalk(from: number, to: number) {
+    const indices = talks.map((_, index) => index);
+    indices.splice(from, 1);
+    indices.splice(to, 0, from);
+    setOpenTalks(new Set(indices.flatMap((index, position) => openTalks.has(index) ? [position] : [])));
+    editTalks(indices.map(index => talks[index]));
+  }
   function split(index: number) {
     const talk = talks[index];
     const link = talk.links[0];
@@ -191,8 +198,13 @@ export function Preparation({ conferenceId, onConfirmed, onStarted }: { conferen
         key={index}
         open={openTalks.has(index)}
         onToggle={event => toggleTalk(index, event)}
-      ><summary><span><strong>{talk.title || 'Тема не указана'}</strong><small>{talk.speakers.map(s => s.name).join(', ') || 'Автор не установлен'} · материалов {talk.links.length}</small></span>
+      ><summary><span><span>{index + 1}. </span><strong>{talk.title || 'Тема не указана'}</strong><small>{talk.speakers.map(s => s.name).join(', ') || 'Автор не установлен'} · материалов {talk.links.length}</small></span>
         <span className="row">{editedTalks.has(index) && <span className="edited-mark" title="Карточка изменена: правки ещё не сохранены">изменён</span>}<span className="detail-action">Изменить</span></span></summary><fieldset className="talk-editor-body" disabled={busy || running}>
+        {talks.length > 1 && <label>Порядковый номер доклада
+          <select value={index} onChange={event => moveTalk(index, Number(event.target.value))}>
+            {talks.map((_, position) => <option key={position} value={position}>{position + 1}</option>)}
+          </select>
+        </label>}
         <CardEditor card={talk} titleLabel={`Тема доклада ${index + 1}`} onChange={value => update(index, value)} />
         {operator && <label className="field">Секция<input list="preparation-sections" value={talk.section ?? ''}
           onChange={event => update(index, { section: event.target.value })} /></label>}
